@@ -425,7 +425,7 @@ def init_db():
     conn.commit(); conn.close()
 
 
-def create_player(username, pw, creation_mode="archetype", tier=2, rank=1, species="Human", archetype=""):
+def create_player(username, pw, creation_mode="archetype", tier=2, rank=1, species="", archetype=""):
     conn = get_conn(); c = conn.cursor()
     try:
         salt = secrets.token_hex(16)
@@ -434,8 +434,14 @@ def create_player(username, pw, creation_mode="archetype", tier=2, rank=1, speci
         uid = c.lastrowid
         tier = max(1, min(MAX_TIER, int(tier)))
         rank = max(1, min(3, int(rank)))
-        species = species if species in PLAYER_SPECIES else "Human"
-        archetype = archetype if archetype in ARCHETYPES else ""
+        if creation_mode == "advanced":
+            # In Advanced Character Creation the Magister does not choose Species.
+            # The Player selects Species on their character sheet.
+            species = ""
+            archetype = ""
+        else:
+            species = species if species in PLAYER_SPECIES else "Human"
+            archetype = archetype if archetype in ARCHETYPES else ""
 
         attrs = default_attributes()
         skills = default_skills()
@@ -1305,8 +1311,8 @@ def edit_view(cid, gm_mode=False):
         st.session_state[species_init_key] = True
 
     # Standard creation: the Magister defines Species + Archetype.
-    # Advanced creation: the Magister enables the mode, then the Player
-    # chooses Species + Archetype on the character sheet.
+    # Advanced creation: the Magister only enables the mode. The Player
+    # chooses Species on the character sheet. No Archetype is used.
     mode = ch.get("creation_mode") or "archetype"
     if gm_mode:
         advanced_key = _k(cid, "sel", "advanced")
@@ -1360,7 +1366,10 @@ def edit_view(cid, gm_mode=False):
                 on_change=cb_species_change, args=(cid,),
             )
         else:
-            c[2].text_input("Species", value=species_label(ch.get("species") or "Unknown"), disabled=True, key=f"gm_species_{cid}")
+            # In Advanced Character Creation the Magister does not choose Species.
+            # Leave this field completely out of the Magister's character editor.
+            c[2].markdown("**Species**")
+            c[2].caption("Chosen by the Player")
     elif mode != "advanced":
         c[2].text_input("Species", value=species_label(ch.get("species") or "Unknown"), disabled=True, key=f"player_species_{cid}")
     else:
@@ -1454,11 +1463,6 @@ def edit_view(cid, gm_mode=False):
     wc[0].markdown("**Summary**")
     wc[0].caption(f"{len(wargear)} wargear item(s) · {len(talents)} talent(s)")
     wc[1].text_area("Notes", key=_k(cid, "t", "notes"), height=110)
-
-    if mode == "advanced":
-        # Advanced creation still records and applies the Player's selected
-        # Archetype. The Advanced flag adds the Tier ×10 XP allowance.
-        pass
 
     save_build(
         cid, st.session_state[_k(cid, "t", "name")], st.session_state[_k(cid, "t", "chapter")],
@@ -1604,14 +1608,16 @@ def gm_view():
         cre = st.columns(2)
         with cre[0]:
             st.markdown("#### Recruit Player")
+            # This control is intentionally outside the form so changing it
+            # immediately shows/hides the Species and Archetype fields.
+            padvanced = st.checkbox("Advanced Character Creation", value=False, key="recruit_player_advanced")
             with st.form("newp"):
                 nu = st.text_input("Username")
                 npw = st.text_input("Password", type="password")
                 st.markdown("**Character Definition**")
-                pc2 = st.columns([1, 1, 2])
+                pc2 = st.columns(2)
                 ptier = pc2[0].number_input("Tier", 1, MAX_TIER, int(get_campaign()["tier"]))
                 prank = pc2[1].selectbox("Rank", [1, 2, 3], format_func=rank_label)
-                padvanced = pc2[2].checkbox("Advanced Character Creation", value=False)
                 if not padvanced:
                     pc1 = st.columns(2)
                     pspecies = pc1[0].selectbox("Species", PLAYER_SPECIES, format_func=species_label)
@@ -1623,7 +1629,7 @@ def gm_view():
                 else:
                     pspecies = ""
                     parch = ""
-                    st.caption("Advanced Character Creation: the Player chooses Species. No Archetype is used.")
+                    st.info("Advanced Character Creation: the Player chooses Species on the character sheet. No Archetype is used.")
                 if st.form_submit_button("Recruit"):
                     if nu.strip() and npw:
                         mode = "advanced" if padvanced else "archetype"

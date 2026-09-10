@@ -1227,6 +1227,11 @@ def inject_theme():
     .skrow .t{ text-align:center; font-family:'Cinzel',serif; color:var(--gold2); font-weight:700; }
     .tal,.wg{ background:var(--panel2); border:1px solid #3a2e18; border-radius:3px; padding:6px 10px; margin-bottom:5px; }
     .tal .tn{ font-family:'Cinzel',serif; color:var(--gold2); letter-spacing:.03em; }
+    .chapter-card{ background:var(--panel2); border:1px solid #3a2e18; border-left:3px solid var(--gold); border-radius:3px; padding:9px 12px; margin-bottom:6px; }
+    .chapter-card .ctitle{ font-family:'Cinzel',serif; color:var(--gold2); font-size:.95rem; font-weight:700; letter-spacing:.02em; }
+    .chapter-card .cmeta{ float:right; opacity:.65; font-size:.75rem; }
+    .chapter-card .clabel{ color:var(--gold); font-family:'Cinzel',serif; font-size:.68rem; text-transform:uppercase; letter-spacing:.07em; margin-top:7px; }
+    .chapter-card .ctext{ margin-top:2px; line-height:1.45; font-size:.88rem; }
     .tal .tc{ float:right; opacity:.6; font-size:.75rem; }
     .foot{ text-align:center; color:var(--gold); opacity:.5; font-family:'Cinzel',serif; letter-spacing:.3em;
         font-size:.75rem; margin-top:20px; }
@@ -1454,8 +1459,19 @@ def battle_view(cid):
             cd = CHAPTERS[ch["chapter"]]
             st.markdown("<div class='sectionttl'>Chapter</div>", unsafe_allow_html=True)
             st.markdown(f"<div class='tal'><span class='tn'>{html.escape(ch['chapter'])}</span><span class='tc'>Legion {html.escape(cd['legion'])} · {html.escape(cd['primarch'])}</span></div>", unsafe_allow_html=True)
-            st.markdown(f"<div class='tal'><b>{html.escape(cd['ability'])}</b></div>", unsafe_allow_html=True)
-            st.markdown(f"<div class='tal'><span class='tn'>{html.escape(cd['tradition'])}</span></div>", unsafe_allow_html=True)
+            ability = cd.get("ability", "")
+            ability_name, ability_text = (ability.split(":", 1) + [""])[:2] if ":" in ability else (ability, "")
+            tradition = cd.get("tradition", "")
+            tradition_name, tradition_text = (tradition.split(":", 1) + [""])[:2] if ":" in tradition else (tradition, "")
+            st.markdown(
+                f"<div class='chapter-card'><span class='ctitle'>{html.escape(ch["chapter"])}</span>"
+                f"<span class='cmeta'>Legion {html.escape(cd['legion'])} · {html.escape(cd['primarch'])}</span>"
+                f"<div class='clabel'>{html.escape(ability_name)}</div>"
+                f"<div class='ctext'>{html.escape(ability_text.strip())}</div>"
+                f"<div class='clabel'>{html.escape(tradition_name)}</div>"
+                f"<div class='ctext'>{html.escape(tradition_text.strip())}</div></div>",
+                unsafe_allow_html=True,
+            )
 
         package = species_package(ch["species"])
         if package.get("abilities"):
@@ -1715,7 +1731,7 @@ def edit_view(cid, gm_mode=False):
     st.caption("Enter the name, effect, and XP cost. The effect will appear in Battle View.")
     tdf = ch["talents"] if ch["talents"] else [{"name": "", "effect": "", "cost": 20}]
     edited_talents = st.data_editor(
-        tdf, num_rows="dynamic", key=f"tal_{cid}", use_container_width=True,
+        tdf, num_rows="dynamic", key=f"tal_{cid}_v2", use_container_width=True,
         column_config={
             "name": st.column_config.TextColumn("Talent", width="medium"),
             "effect": st.column_config.TextColumn("Effect", width="large"),
@@ -1741,7 +1757,7 @@ def edit_view(cid, gm_mode=False):
     edited_wargear = st.data_editor(
         wdf,
         num_rows="dynamic",
-        key=f"wg_{cid}",
+        key=f"wg_{cid}_v2",
         use_container_width=True,
         hide_index=True,
         column_config={

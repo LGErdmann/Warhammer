@@ -932,6 +932,22 @@ def inject_theme():
     .vdead{ color:var(--red); font-weight:700; }
     .row{ border:1px solid #3a2e18; border-radius:3px; padding:6px 10px; margin-bottom:6px; background:var(--panel); }
     .fold{ display:inline-block; }
+    .combat-header{ background:linear-gradient(135deg,#2a1b0e,#100a06); border:2px solid var(--gold); border-radius:6px; padding:12px 16px; margin:10px 0 12px; text-align:center; }
+    .combat-header .title{ font-family:'Cinzel',serif; font-size:1.25rem; font-weight:900; color:var(--gold2); letter-spacing:.14em; text-transform:uppercase; }
+    .combat-header .sub{ font-size:.8rem; opacity:.75; letter-spacing:.08em; text-transform:uppercase; margin-top:3px; }
+    .combat-card{ background:linear-gradient(110deg,#21170c,#120c07); border:1px solid #5a4421; border-radius:6px; padding:9px 12px; margin:0 0 7px; box-shadow:0 2px 5px #0008; }
+    .combat-card.player{ border-left:6px solid var(--gold); }
+    .combat-card.npc{ border-left:6px solid var(--npc); }
+    .combat-pos{ font-family:'Cinzel',serif; font-size:1.55rem; font-weight:900; color:var(--gold2); text-align:center; line-height:1; }
+    .combat-name{ font-family:'Cinzel',serif; font-size:1.05rem; font-weight:700; color:var(--bone); letter-spacing:.04em; }
+    .combat-kind{ display:inline-block; font-family:'Cinzel',serif; font-size:.62rem; font-weight:700; letter-spacing:.08em; padding:2px 6px; border-radius:2px; margin-left:6px; vertical-align:middle; }
+    .combat-kind.player{ color:#171209; background:var(--gold2); }
+    .combat-kind.npc{ color:#fff; background:#754b9c; }
+    .combat-meta{ font-size:.72rem; opacity:.72; text-transform:uppercase; letter-spacing:.05em; margin-top:2px; }
+    .combat-arrow{ text-align:center; color:var(--gold); font-size:1rem; line-height:.8; margin:-2px 0 3px; opacity:.8; }
+    .combat-mod{ font-family:'Cinzel',serif; font-size:.68rem; color:var(--gold2); text-transform:uppercase; letter-spacing:.04em; }
+    .combat-legend{ display:flex; gap:14px; justify-content:center; font-size:.7rem; text-transform:uppercase; letter-spacing:.06em; opacity:.8; margin:5px 0 10px; }
+    .combat-legend .p{ color:var(--gold2); } .combat-legend .n{ color:var(--npc); }
     /* Visão de Batalha */
     .hero{ background:linear-gradient(135deg,#20180d,#100b06); border:1px solid var(--gold);
         border-radius:4px; padding:14px 18px; margin-bottom:10px; }
@@ -961,9 +977,8 @@ def inject_theme():
 
 
 def archetype_options(tier=None, species=None):
-    """Archetypes are not restricted by character Tier or Rank."""
-    return [name for name, data in ARCHETYPES.items()
-            if species is None or data.get("species") == species]
+    """Return every Core Rulebook Archetype. Tier, Rank and Species do not filter the list."""
+    return list(ARCHETYPES.keys())
 
 
 def default_archetype_for_species(species, tier=None):
@@ -1017,8 +1032,10 @@ def cb_archetype_change(cid):
     species_before = st.session_state.get(_k(cid, "sel", "sp"), data["species"])
     if previous and previous != archetype:
         strip_archetype_package(cid, previous, species_before)
-    st.session_state[_k(cid, "sel", "sp")] = data["species"]
-    package = species_package(data["species"])
+    # Species and Archetype are independent choices.
+    # The Magister chooses both; selecting an Archetype must never change Species.
+    selected_species = st.session_state.get(_k(cid, "sel", "sp"), species_before)
+    package = species_package(selected_species)
     ap = ARCHETYPE_PACKAGES.get(archetype, {})
     for attr, value in package.get("attributes", {}).items():
         st.session_state[_k(cid, "a", attr)] = max(int(st.session_state.get(_k(cid, "a", attr), 1)), int(value))
@@ -1280,28 +1297,42 @@ def edit_view(cid, gm_mode=False):
         advanced = st.checkbox("Advanced Character Creation", key=advanced_key)
         mode = "advanced" if advanced else "archetype"
         if mode == "archetype":
-            arch_options = archetype_options(int(st.session_state[_k(cid, "n", "tier")]), st.session_state[spk])
+            arch_options = archetype_options()
             if st.session_state.get(ark) not in arch_options and arch_options:
                 st.session_state[ark] = arch_options[0]
             if arch_options:
-                st.selectbox("Archetype", arch_options, key=ark, on_change=cb_archetype_change, args=(cid,))
+                st.selectbox(
+                    "Archetype",
+                    arch_options,
+                    key=ark,
+                    on_change=cb_archetype_change,
+                    args=(cid,),
+                    format_func=lambda name: f"{name}  ·  T{ARCHETYPES[name]['tier']}  ·  {species_label(ARCHETYPES[name]['species'])}",
+                )
                 ad = ARCHETYPES[st.session_state[ark]]
                 st.caption(f"Tier {ad['tier']} · {ad['species']} · {ad['xp']} XP · {ad['faction']}")
             else:
-                st.info("No Archetype is available for this Tier and Species. Use Advanced Character Creation or choose a compatible Tier.")
+                st.info("No Archetype is available.")
         else:
             st.caption("Advanced Character Creation: no Archetype is selected. The character receives Tier ×10 bonus XP.")
     else:
         if mode == "archetype":
-            arch_options = archetype_options(int(st.session_state[_k(cid, "n", "tier")]), st.session_state[spk])
+            arch_options = archetype_options()
             if st.session_state.get(ark) not in arch_options and arch_options:
                 st.session_state[ark] = arch_options[0]
             if arch_options:
-                st.selectbox("Archetype", arch_options, key=ark, on_change=cb_archetype_change, args=(cid,))
+                st.selectbox(
+                    "Archetype",
+                    arch_options,
+                    key=ark,
+                    on_change=cb_archetype_change,
+                    args=(cid,),
+                    format_func=lambda name: f"{name}  ·  T{ARCHETYPES[name]['tier']}  ·  {species_label(ARCHETYPES[name]['species'])}",
+                )
                 ad = ARCHETYPES[st.session_state[ark]]
                 st.caption(f"Tier {ad['tier']} · {ad['species']} · {ad['xp']} XP · {ad['faction']}")
             else:
-                st.info("No Archetype is available for this Tier and Species. Use Advanced Character Creation or choose a compatible Tier.")
+                st.info("No Archetype is available.")
         # Advanced characters do not expose the creation mode to the player.
     if mode == "archetype" and ch.get("creation_mode") != "archetype":
         # A newly-created character defaults to Archetype creation.
@@ -1315,7 +1346,6 @@ def edit_view(cid, gm_mode=False):
         species_list,
         format_func=species_label,
         key=spk,
-        disabled=(mode == "archetype"),
         on_change=cb_species_change,
         args=(cid,),
     )
@@ -1328,24 +1358,28 @@ def edit_view(cid, gm_mode=False):
         if exp != ch["earned_xp"]:
             set_earned_xp(cid, exp)
     else:
-        c[3].markdown(f"**Rank:** {rank_label(ch.get('rank', 1))}<br><small>Rank is controlled by the Magister.</small>", unsafe_allow_html=True)
+        c[3].markdown(f"**Rank:** {rank_label(ch.get('rank', 1))}<br><small></small>", unsafe_allow_html=True)
 
     st.markdown("#### Attributes")
     acol = st.columns(4)
     for i, a in enumerate(ATTRS):
         acol[i % 4].number_input(a, 1, 12, key=_k(cid, "a", a))
+    # Read current values before rendering the Skill pools.
+    # Streamlit executes this function top-to-bottom, so these dictionaries
+    # must exist before the skill widgets use them.
+    cur_attr = {a: int(st.session_state[_k(cid, "a", a)]) for a in ATTRS}
+    cur_skill = {s: int(st.session_state[_k(cid, "s", s)]) for s in SKILLS}
+
     st.markdown("#### Skills")
     scol = st.columns(3)
     for i, s in enumerate(SKILLS):
         with scol[i % 3]:
             cc = st.columns([3, 1])
             cc[0].number_input(s, 0, 8, key=_k(cid, "s", s))
-            pool = cur_skill[s] + cur_attr[SKILLS[s]]
+            # Show the complete test pool beside each Skill.
+            pool = int(st.session_state[_k(cid, "s", s)]) + int(st.session_state[_k(cid, "a", SKILLS[s])])
             cc[1].markdown(f"<div style='padding-top:30px;color:#e8c96a;font-family:Cinzel'>{pool}</div>",
                            unsafe_allow_html=True)
-
-    cur_attr = {a: int(st.session_state[_k(cid, "a", a)]) for a in ATTRS}
-    cur_skill = {s: int(st.session_state[_k(cid, "s", s)]) for s in SKILLS}
 
     package = species_package(st.session_state[spk])
     if package:
@@ -1877,29 +1911,40 @@ def gm_view():
             cols[3].markdown("**IN COMBAT**" if in_combat else "")
 
         st.divider()
-        st.markdown("#### Current Combat Order")
-        st.caption("The Magister decides the order. Initiative modifiers are recorded for reference and never reorder combatants automatically.")
         current = get_combatants()
+        st.markdown("<div class='combat-header'><div class='title'>⚔ Combat Order</div><div class='sub'>The Magister controls the sequence of turns</div></div>", unsafe_allow_html=True)
+        st.markdown("<div class='combat-legend'><span class='p'>● Player</span><span class='n'>● NPC</span><span>↑↓ Reorder</span></div>", unsafe_allow_html=True)
         if not current:
-            st.caption("No characters are currently in combat.")
+            st.info("No characters are currently in combat. Add Players or NPCs above.")
         else:
             for idx, ch in enumerate(current):
-                c = st.columns([0.55, 3.1, 1.3, 1.0, 1.0, 1.0, 1.0])
-                c[0].markdown(f"### {idx + 1}")
-                kind_label = "NPC" if ch["kind"] == "npc" else "PLAYER"
-                ncls = "npc" if ch["kind"] == "npc" else ""
-                c[1].markdown(f"**<span class='{ncls}'>{ch['name'] or 'Unnamed'}</span>** · {kind_label}<br><small>{species_label(ch['species'])} · T{ch['tier']} · {rank_label(ch['rank'])}</small>", unsafe_allow_html=True)
-                modifier = c[2].number_input("Modifier", -100, 100, int(ch.get("initiative_modifier", 0)), step=1, key=f"combat_mod_{ch['id']}", label_visibility="collapsed")
-                if modifier != int(ch.get("initiative_modifier", 0)):
-                    set_combat_modifier(ch["id"], modifier)
-                if c[3].button("Up", key=f"combat_up_{ch['id']}", disabled=(idx == 0), use_container_width=True):
+                kind_label = "PLAYER" if ch["kind"] != "npc" else "NPC"
+                role_cls = "player" if ch["kind"] != "npc" else "npc"
+                name = ch["name"] or "Unnamed"
+                modifier_value = int(ch.get("initiative_modifier", 0))
+                sign = "+" if modifier_value >= 0 else ""
+                st.markdown(
+                    f"<div class='combat-card {role_cls}'><div style='display:flex;align-items:center;gap:12px'>"
+                    f"<div class='combat-pos'>{idx + 1:02d}</div>"
+                    f"<div style='flex:1'><div class='combat-name'>{name}<span class='combat-kind {role_cls}'>{kind_label}</span></div>"
+                    f"<div class='combat-meta'>{species_label(ch['species'])} · Tier {ch['tier']} · {rank_label(ch['rank'])}</div></div>"
+                    f"<div class='combat-mod'>INIT {sign}{modifier_value}</div></div></div>",
+                    unsafe_allow_html=True,
+                )
+                controls = st.columns([1.1, 1.1, 1.1, 1.1, 1.6])
+                if controls[0].button("↑ Move Up", key=f"combat_up_{ch['id']}", disabled=(idx == 0), use_container_width=True):
                     move_combatant(ch["id"], -1); st.rerun()
-                if c[4].button("Down", key=f"combat_down_{ch['id']}", disabled=(idx == len(current) - 1), use_container_width=True):
+                if controls[1].button("↓ Move Down", key=f"combat_down_{ch['id']}", disabled=(idx == len(current) - 1), use_container_width=True):
                     move_combatant(ch["id"], 1); st.rerun()
-                if c[5].button("Open", key=f"combat_current_open_{ch['id']}", use_container_width=True):
+                modifier = controls[2].number_input("Init Mod", -100, 100, modifier_value, step=1, key=f"combat_mod_{ch['id']}")
+                if modifier != modifier_value:
+                    set_combat_modifier(ch["id"], modifier)
+                if controls[3].button("Open Sheet", key=f"combat_current_open_{ch['id']}", use_container_width=True):
                     st.session_state.editing = ch["id"]; st.rerun()
-                if c[6].button("Remove", key=f"combat_current_remove_{ch['id']}", use_container_width=True):
+                if controls[4].button("Remove", key=f"combat_current_remove_{ch['id']}", use_container_width=True):
                     set_combatant(ch["id"], False); st.rerun()
+                if idx < len(current) - 1:
+                    st.markdown("<div class='combat-arrow'>▼</div>", unsafe_allow_html=True)
 
     # ---- Campaign ----
     # ---- Campaign ----

@@ -131,6 +131,58 @@ ARCHETYPE_PACKAGES = {
 
 VITAL_FIELDS = {"cur_wounds", "cur_shock", "cur_wrath"}
 
+# Official First Founding Chapters from the Core Rulebook (2nd edition).
+# Homebrew material is intentionally excluded from this catalog.
+CHAPTERS = {
+    "Blood Angels": {
+        "legion": "IX", "primarch": "Sanguinius",
+        "ability": "Savage Echoes: You may reroll Double Rank dice once per melee attack Test.",
+        "tradition": "The Red Thirst: Whenever you are in melee combat and see blood, make a DN 3 Willpower Test. If you fail, you are Frenzied."
+    },
+    "Dark Angels": {
+        "legion": "I", "primarch": "Lion El'Jonson",
+        "ability": "Grim Resolve: You may reroll Double Rank dice once per ranged attack Test when you Aim.",
+        "tradition": "The Unforgiven: You suffer a +2 DN penalty to social Tests made against anyone outside your Chapter."
+    },
+    "Imperial Fists": {
+        "legion": "VII", "primarch": "Rogal Dorn",
+        "ability": "Siege Masters: You may reroll Double Rank dice once per attack against a building, fortification, or enemy in cover. You may also add +Rank bonus dice to Tests related to architectural engineering.",
+        "tradition": "No Retreat: If an Imperial Fists Space Marine fails a Willpower Test, the GM gains 1 Ruin."
+    },
+    "Iron Hands": {
+        "legion": "X", "primarch": "Ferrus Manus",
+        "ability": "The Flesh Is Weak: Choose one Augmetic Enhancement. You do not suffer the penalties of being Wounded and gain +1 bonus die to Willpower Tests for every augmetic you have.",
+        "tradition": "Ruthless Logic: You suffer a +2 DN penalty to Fellowship-based Tests against a target that does not have the IRON HANDS or ADEPTUS MECHANICUS Keywords."
+    },
+    "Raven Guard": {
+        "legion": "XIX", "primarch": "Corvus Corax",
+        "ability": "Master of Shadows: You may reroll Rank dice once per Stealth Test. Running, using a Jump Pack, or similar circumstances do not affect your Stealth Tests.",
+        "tradition": "Dark Heritage: You are missing the Mucranoid and Bletcher's Gland implants and suffer a +1 DN penalty to Fellowship-based Tests against targets that could be frightened by your appearance."
+    },
+    "Salamanders": {
+        "legion": "XVIII", "primarch": "Vulkan",
+        "ability": "Promethean Cult: You may reroll Rank dice once per attack Test made with a weapon with the FIRE or MELTA Keywords. You may reroll Double Rank dice once each time you roll Determination against damage from FIRE or MELTA.",
+        "tradition": "Infernal Inheritance: Whenever an ally within 30 metres is killed, the GM gains +1 Ruin. You suffer a +2 DN penalty to Fellowship-based Tests against targets that could be frightened by your appearance."
+    },
+    "Space Wolves": {
+        "legion": "VI", "primarch": "Leman Russ",
+        "ability": "Hunters Unleashed: You have the Acute Sense Talent and the Dual Wield Talent.",
+        "tradition": "Savage Within: You cannot Fall Back."
+    },
+    "Ultramarines": {
+        "legion": "XIII", "primarch": "Roboute Guilliman",
+        "ability": "Tactical Versatility: You may Shift for Glory twice as part of a Test.",
+        "tradition": "Pride of Ultramar: You start each session with 1 Wrath Point instead of 2."
+    },
+    "White Scars": {
+        "legion": "V", "primarch": "Jaghatai Khan",
+        "ability": "Lightning Assault: You may reroll Double Rank dice once each time you make a Pilot Test. You triple your Speed when you Charge.",
+        "tradition": "Ritual Scarring: You suffer a +1 DN penalty to Fellowship-based Tests against targets that could be frightened by your appearance."
+    },
+}
+CHAPTER_OPTIONS = list(CHAPTERS.keys()) + ["Other / Successor Chapter"]
+
+
 # Wrath & Glory 2e: Rank is based on total XP earned and may only increase.
 RANKS = {
     1: {"name": "Initiate", "min_xp": 0, "bonus": 1},
@@ -331,8 +383,13 @@ def secs_since(iso):
 #  DATABASE (with automatic schema migration)
 # ============================================================
 def get_conn():
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    # WAL + busy timeout allow the Magister and multiple Players to use the
+    # same SQLite database concurrently without requiring page refreshes.
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=10.0)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA busy_timeout=10000")
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
     return conn
 
 
@@ -358,7 +415,7 @@ def init_db():
         tier INTEGER DEFAULT 2, starting_tier INTEGER DEFAULT 2, rank INTEGER DEFAULT 1, earned_xp INTEGER DEFAULT 0, other_xp INTEGER DEFAULT 0,
         attributes TEXT, skills TEXT, talents TEXT, wargear TEXT, armour INTEGER DEFAULT 0,
         cur_wounds INTEGER DEFAULT 0, cur_shock INTEGER DEFAULT 0, cur_wrath INTEGER DEFAULT 0,
-        notes TEXT, folder_id INTEGER, portrait BLOB, comms_on INTEGER DEFAULT 1, comms_changed_at TEXT)""")
+        notes TEXT, folder_id INTEGER, portrait BLOB, comms_on INTEGER DEFAULT 1, comms_changed_at TEXT, updated_at TEXT, revision INTEGER DEFAULT 0)""")
     c.execute("""CREATE TABLE IF NOT EXISTS campaign(id INTEGER PRIMARY KEY CHECK (id=1),
         name TEXT, tier INTEGER DEFAULT 2, ruin INTEGER DEFAULT 0, session_no INTEGER DEFAULT 1)""")
     c.execute("""CREATE TABLE IF NOT EXISTS log(id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -370,6 +427,13 @@ def init_db():
         session_id INTEGER NOT NULL, character_id INTEGER NOT NULL, base_xp INTEGER DEFAULT 0, bonus_xp INTEGER DEFAULT 0,
         total_xp INTEGER DEFAULT 0, UNIQUE(session_id, character_id))""")
     c.execute("""CREATE TABLE IF NOT EXISTS combatant(character_id INTEGER PRIMARY KEY, added_at TEXT, initiative_order INTEGER DEFAULT 9999, initiative_modifier INTEGER DEFAULT 0)""")
+    c.execute("""CREATE TABLE IF NOT EXISTS progression_undo(
+        id INTEGER PRIMARY KEY AUTOINCREMENT, character_id INTEGER NOT NULL, action TEXT NOT NULL,
+        snapshot TEXT NOT NULL, created_at TEXT NOT NULL)""")
+    c.execute("""CREATE TABLE IF NOT EXISTS player_audit(
+        id INTEGER PRIMARY KEY AUTOINCREMENT, character_id INTEGER NOT NULL, user_id INTEGER,
+        actor TEXT NOT NULL, source TEXT NOT NULL, field TEXT NOT NULL,
+        old_value TEXT, new_value TEXT, changed_at TEXT NOT NULL)""")
     _ensure_columns(conn, "combatant", {"added_at": "TEXT", "initiative_order": "INTEGER DEFAULT 9999", "initiative_modifier": "INTEGER DEFAULT 0"})
     c.execute("""CREATE TABLE IF NOT EXISTS combat_encounter(
         id INTEGER PRIMARY KEY AUTOINCREMENT, session_no INTEGER, title TEXT, notes TEXT,
@@ -391,7 +455,7 @@ def init_db():
         "wargear": "TEXT", "armour": "INTEGER DEFAULT 0", "cur_wounds": "INTEGER DEFAULT 0",
         "cur_shock": "INTEGER DEFAULT 0", "cur_wrath": "INTEGER DEFAULT 0", "notes": "TEXT",
         "folder_id": "INTEGER", "portrait": "BLOB", "comms_on": "INTEGER DEFAULT 1",
-        "comms_changed_at": "TEXT"})
+        "comms_changed_at": "TEXT", "updated_at": "TEXT", "revision": "INTEGER DEFAULT 0"})
     _ensure_columns(conn, "folders", {"name": "TEXT"})
     # Existing characters keep their current Tier as their recorded starting Tier.
     conn.execute("UPDATE characters SET starting_tier = COALESCE(starting_tier, tier, 2) WHERE starting_tier IS NULL")
@@ -574,7 +638,7 @@ def _decode(row):
         ch["skills"].setdefault(s, 0)
     for k, dv in {"tier": 2, "starting_tier": 2, "rank": 1, "earned_xp": 0, "other_xp": 0, "armour": 0, "cur_wounds": 0,
                   "cur_shock": 0, "cur_wrath": 0, "comms_on": 1, "kind": "player",
-                  "name": "", "chapter": "", "species": "", "archetype": "", "creation_mode": "archetype", "archetype_history": "[]", "wargear": "", "notes": ""}.items():
+                  "name": "", "chapter": "", "species": "", "archetype": "", "creation_mode": "archetype", "archetype_history": "[]", "wargear": "", "notes": "", "updated_at": "", "revision": 0}.items():
         if ch.get(k) is None:
             ch[k] = dv
     return ch
@@ -599,29 +663,184 @@ def list_characters(kind=None):
     conn.close(); return [_decode(r) for r in rows]
 
 
-def save_build(cid, name, chapter, species, tier, attributes, skills, talents, wargear, armour, notes, other_xp, archetype="", creation_mode="advanced"):
-    conn = get_conn()
-    conn.execute("""UPDATE characters SET name=?,chapter=?,species=?,archetype=?,creation_mode=?,tier=?,attributes=?,skills=?,
-                    talents=?,wargear=?,armour=?,notes=?,other_xp=? WHERE id=?""",
-                 (name, chapter, species, archetype, creation_mode, int(tier), json.dumps(attributes), json.dumps(skills),
-                  json.dumps(talents), wargear, int(armour), notes, int(other_xp), cid))
-    conn.commit(); conn.close()
+def _audit_value(value):
+    """Stable JSON/text representation for the player audit log."""
+    if isinstance(value, (dict, list, tuple)):
+        return json.dumps(value, ensure_ascii=False, sort_keys=True)
+    if value is None:
+        return ""
+    return str(value)
 
 
-def adjust_vital(cid, field, delta):
-    if field not in VITAL_FIELDS:
+def record_player_audit(cid, user_id, actor, source, changes):
+    """Write one audit row per changed character-sheet field made by a Player."""
+    if not changes or not user_id or not actor:
         return
-    conn = get_conn()
-    row = conn.execute(f"SELECT {field} FROM characters WHERE id=?", (cid,)).fetchone()
-    if row is not None:
-        conn.execute(f"UPDATE characters SET {field}=? WHERE id=?", (max(0, int(row[0] or 0) + delta), cid))
+    conn = get_conn(); ts = now_iso(); rows = []
+    for field, old_value, new_value in changes:
+        if _audit_value(old_value) == _audit_value(new_value):
+            continue
+        rows.append((int(cid), int(user_id), str(actor), str(source), str(field),
+                     _audit_value(old_value), _audit_value(new_value), ts))
+    if rows:
+        conn.executemany("""INSERT INTO player_audit
+            (character_id,user_id,actor,source,field,old_value,new_value,changed_at)
+            VALUES(?,?,?,?,?,?,?,?)""", rows)
         conn.commit()
     conn.close()
 
 
-def set_earned_xp(cid, val):
-    conn = get_conn(); conn.execute("UPDATE characters SET earned_xp=? WHERE id=?", (max(0, int(val)), cid))
+def get_player_audit(character_id, limit=300):
+    conn = get_conn()
+    rows = conn.execute("SELECT * FROM player_audit WHERE character_id=? ORDER BY id DESC LIMIT ?",
+                        (int(character_id), int(limit))).fetchall()
+    conn.close(); return [dict(r) for r in rows]
+
+
+
+def get_player_registry():
+    conn = get_conn()
+    rows = conn.execute("""SELECT c.*, u.username AS username
+                         FROM characters c LEFT JOIN users u ON u.id=c.user_id
+                         WHERE c.kind='player' ORDER BY c.name, c.id""").fetchall()
+    conn.close(); return [_decode(r) for r in rows]
+
+def save_build(cid, name, chapter, species, tier, attributes, skills, talents, wargear, armour, notes, other_xp,
+               archetype="", creation_mode="advanced", actor_role="gm", actor_user_id=None, actor_name="",
+               source="Character Sheet", expected_revision=None):
+    conn = get_conn()
+    row = conn.execute("SELECT * FROM characters WHERE id=?", (int(cid),)).fetchone()
+    if row is None:
+        conn.close(); return False, "Character not found."
+    old = _decode(row)
+    current_revision = int(old.get("revision", 0) or 0)
+    if expected_revision is not None and current_revision != int(expected_revision):
+        conn.close(); return False, "This character sheet changed in another session. The latest version was loaded; review your edits before saving again."
+    new_values = {"name": name, "chapter": chapter, "species": species, "archetype": archetype,
+                  "creation_mode": creation_mode, "tier": int(tier), "attributes": attributes, "skills": skills,
+                  "talents": talents, "wargear": wargear, "armour": int(armour), "notes": notes, "other_xp": int(other_xp)}
+    old_values = {"name": old.get("name", ""), "chapter": old.get("chapter", ""), "species": old.get("species", ""),
+                  "archetype": old.get("archetype", ""), "creation_mode": old.get("creation_mode", "advanced"),
+                  "tier": int(old.get("tier", 1)), "attributes": old.get("attributes", {}), "skills": old.get("skills", {}),
+                  "talents": old.get("talents", []), "wargear": old.get("wargear", []), "armour": int(old.get("armour", 0)),
+                  "notes": old.get("notes", ""), "other_xp": int(old.get("other_xp", 0))}
+    changes = [(f, old_values[f], new_values[f]) for f in new_values]
+    if not any(_audit_value(a) != _audit_value(b) for _, a, b in changes):
+        conn.close(); return True, "No changes."
+    new_revision = current_revision + 1
+    cur = conn.execute("""UPDATE characters SET name=?,chapter=?,species=?,archetype=?,creation_mode=?,tier=?,attributes=?,skills=?,
+                    talents=?,wargear=?,armour=?,notes=?,other_xp=?,updated_at=?,revision=? WHERE id=? AND revision=?""",
+                 (name, chapter, species, archetype, creation_mode, int(tier), json.dumps(attributes), json.dumps(skills),
+                  json.dumps(talents), wargear, int(armour), notes, int(other_xp), now_iso(), new_revision, int(cid), current_revision))
+    if cur.rowcount != 1:
+        conn.rollback(); conn.close(); return False, "Concurrent change detected. The latest version was not overwritten."
     conn.commit(); conn.close()
+    if actor_role == "player":
+        record_player_audit(cid, actor_user_id, actor_name, source, changes)
+    return True, "Saved."
+
+
+def adjust_vital(cid, field, delta, actor_role="gm", actor_user_id=None, actor_name="", source="Battle Sheet"):
+    if field not in VITAL_FIELDS:
+        return False
+    conn = get_conn(); row = conn.execute("SELECT * FROM characters WHERE id=?", (int(cid),)).fetchone()
+    if row is None:
+        conn.close(); return False
+    old = _decode(row); old_val = int(old.get(field, 0) or 0); new_val = max(0, old_val + int(delta))
+    new_rev = int(old.get("revision", 0) or 0) + 1
+    conn.execute("UPDATE characters SET %s=?, updated_at=?, revision=? WHERE id=?" % field,
+                 (new_val, now_iso(), new_rev, int(cid)))
+    conn.commit(); conn.close()
+    if actor_role == "player" and actor_user_id:
+        record_player_audit(cid, actor_user_id, actor_name, source, [(field, old_val, new_val)])
+    return True
+
+
+def _progression_snapshot(ch):
+    """Fields that can be restored when the Magister needs to undo a progression mistake."""
+    fields = ["name", "chapter", "species", "archetype", "creation_mode", "archetype_history",
+              "tier", "starting_tier", "rank", "earned_xp", "other_xp", "attributes", "skills",
+              "talents", "wargear", "armour", "notes"]
+    snap = {}
+    for field in fields:
+        value = ch.get(field)
+        if field in {"attributes", "skills", "talents", "wargear"}:
+            snap[field] = value
+        else:
+            snap[field] = value
+    return snap
+
+def record_progression_undo(cid, action):
+    ch = load_character(cid)
+    if not ch:
+        return
+    conn = get_conn()
+    conn.execute("INSERT INTO progression_undo(character_id,action,snapshot,created_at) VALUES(?,?,?,?)",
+                 (int(cid), str(action), json.dumps(_progression_snapshot(ch), ensure_ascii=False), now_iso()))
+    # Keep a useful but bounded correction history.
+    conn.execute("""DELETE FROM progression_undo WHERE character_id=? AND id NOT IN
+                    (SELECT id FROM progression_undo WHERE character_id=? ORDER BY id DESC LIMIT 20)""", (int(cid), int(cid)))
+    conn.commit(); conn.close()
+
+def get_progression_undo(cid, limit=10):
+    conn = get_conn()
+    rows = conn.execute("SELECT id, action, created_at FROM progression_undo WHERE character_id=? ORDER BY id DESC LIMIT ?",
+                        (int(cid), int(limit))).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+def restore_progression_undo(undo_id):
+    conn = get_conn()
+    row = conn.execute("SELECT * FROM progression_undo WHERE id=?", (int(undo_id),)).fetchone()
+    if not row:
+        conn.close(); return False, "Correction record not found."
+    snap = json.loads(row["snapshot"])
+    # Save the current state too, so an accidental undo can itself be undone.
+    current = conn.execute("SELECT * FROM characters WHERE id=?", (int(row["character_id"]),)).fetchone()
+    if not current:
+        conn.close(); return False, "Character not found."
+    current_ch = _decode(current)
+    conn.execute("INSERT INTO progression_undo(character_id,action,snapshot,created_at) VALUES(?,?,?,?)",
+                 (int(row["character_id"]), "Before undo: " + str(row["action"]),
+                  json.dumps(_progression_snapshot(current_ch), ensure_ascii=False), now_iso()))
+    conn.execute("""UPDATE characters SET name=?,chapter=?,species=?,archetype=?,creation_mode=?,archetype_history=?,
+                    tier=?,starting_tier=?,rank=?,earned_xp=?,other_xp=?,attributes=?,skills=?,talents=?,wargear=?,
+                    armour=?,notes=?,updated_at=?,revision=revision+1 WHERE id=?""",
+                 (snap.get("name", ""), snap.get("chapter", ""), snap.get("species", ""), snap.get("archetype", ""),
+                  snap.get("creation_mode", "archetype"), snap.get("archetype_history", "[]"), int(snap.get("tier", 1)),
+                  int(snap.get("starting_tier", 1)), int(snap.get("rank", 1)), int(snap.get("earned_xp", 0)),
+                  int(snap.get("other_xp", 0)), json.dumps(snap.get("attributes", {})), json.dumps(snap.get("skills", {})),
+                  json.dumps(snap.get("talents", []), ensure_ascii=False), json.dumps(snap.get("wargear", []), ensure_ascii=False),
+                  int(snap.get("armour", 0)), snap.get("notes", ""), now_iso(), int(row["character_id"])))
+    conn.commit(); conn.close()
+    return True, f"Reverted {row['action']}."
+
+def set_earned_xp(cid, val):
+    record_progression_undo(cid, "Manual XP correction")
+    conn = get_conn(); conn.execute("UPDATE characters SET earned_xp=?, updated_at=?, revision=revision+1 WHERE id=?", (max(0, int(val)), now_iso(), cid))
+    conn.commit(); conn.close()
+
+def adjust_earned_xp(cid, delta):
+    ch = load_character(cid)
+    if not ch:
+        return False
+    record_progression_undo(cid, "XP adjustment")
+    new_xp = max(0, int(ch.get("earned_xp", 0)) + int(delta))
+    conn = get_conn()
+    conn.execute("UPDATE characters SET earned_xp=?, updated_at=?, revision=revision+1 WHERE id=?", (new_xp, now_iso(), cid))
+    conn.commit(); conn.close(); return True
+
+def correct_progression_state(cid, earned_xp, rank, tier):
+    """GM-only correction tool. Unlike normal advancement, this may move XP/Rank/Tier backwards."""
+    ch = load_character(cid)
+    if not ch:
+        return False
+    record_progression_undo(cid, "Manual progression correction")
+    conn = get_conn()
+    conn.execute("UPDATE characters SET earned_xp=?, rank=?, tier=?, updated_at=?, revision=revision+1 WHERE id=?",
+                 (max(0, int(earned_xp)), max(1, min(3, int(rank))), max(1, min(MAX_TIER, int(tier))), now_iso(), int(cid)))
+    conn.commit(); conn.close()
+    return True
 
 def set_rank(cid, rank, force=False):
     rank = max(1, min(3, int(rank)))
@@ -633,7 +852,8 @@ def set_rank(cid, rank, force=False):
     eligible = rank_eligible_from_xp(earned)
     if rank < int(row["rank"] or 1) or (not force and rank > eligible):
         conn.close(); return False
-    conn.execute("UPDATE characters SET rank=? WHERE id=?", (rank, cid))
+    record_progression_undo(cid, f"Rank change to {rank}")
+    conn.execute("UPDATE characters SET rank=?, updated_at=?, revision=revision+1 WHERE id=?", (rank, now_iso(), cid))
     conn.commit(); conn.close(); return True
 
 def get_archetype_history(ch):
@@ -661,12 +881,13 @@ def ascend_archetype(cid, new_archetype):
     current = ARCHETYPES.get(ch.get("archetype"), {})
     if current.get("faction") and data.get("faction") != current.get("faction"):
         return False, "The new Archetype must belong to the same Faction."
+    record_progression_undo(cid, f"Archetype Ascension to {new_archetype}")
     history = get_archetype_history(ch)
     if ch.get("archetype"):
         history.append({"archetype": ch["archetype"], "tier": int(ch["tier"]), "retained": True})
     conn = get_conn()
-    conn.execute("UPDATE characters SET archetype=?, tier=?, archetype_history=? WHERE id=?",
-                 (new_archetype, int(data["tier"]), json.dumps(history), cid))
+    conn.execute("UPDATE characters SET archetype=?, tier=?, archetype_history=?, updated_at=?, revision=revision+1 WHERE id=?",
+                 (new_archetype, int(data["tier"]), json.dumps(history), now_iso(), cid))
     conn.commit(); conn.close()
     return True, f"Character ascended to {new_archetype}. Attribute and Skill bonuses from the new Archetype were not granted."
 
@@ -683,12 +904,16 @@ def set_tier(cid, tier, force=False):
     max_allowed = min(MAX_TIER, starting + earned // 100)
     if tier < current or (not force and tier > max_allowed):
         conn.close(); return False
-    conn.execute("UPDATE characters SET tier=? WHERE id=?", (tier, cid))
+    record_progression_undo(cid, f"Tier change to {tier}")
+    conn.execute("UPDATE characters SET tier=?, updated_at=?, revision=revision+1 WHERE id=?", (tier, now_iso(), cid))
     conn.commit(); conn.close(); return True
 
 
 def award_xp(cid, amt):
-    conn = get_conn(); conn.execute("UPDATE characters SET earned_xp=MAX(0,earned_xp+?) WHERE id=?", (int(amt), cid))
+    if int(amt) == 0:
+        return
+    record_progression_undo(cid, f"Awarded {int(amt)} XP")
+    conn = get_conn(); conn.execute("UPDATE characters SET earned_xp=MAX(0,earned_xp+?), updated_at=?, revision=revision+1 WHERE id=?", (int(amt), now_iso(), cid))
     conn.commit(); conn.close()
 
 
@@ -722,9 +947,15 @@ def set_folder(cid, fid):
     conn.commit(); conn.close()
 
 
-def set_portrait(cid, blob):
-    conn = get_conn(); conn.execute("UPDATE characters SET portrait=? WHERE id=?", (blob, cid))
+def set_portrait(cid, blob, actor_role="gm", actor_user_id=None, actor_name="", source="Character Sheet"):
+    conn = get_conn(); row = conn.execute("SELECT portrait FROM characters WHERE id=?", (int(cid),)).fetchone()
+    old_blob = row["portrait"] if row else None
+    conn.execute("UPDATE characters SET portrait=?, updated_at=?, revision=revision+1 WHERE id=?", (blob, now_iso(), int(cid)))
     conn.commit(); conn.close()
+    if actor_role == "player" and actor_user_id:
+        old_label = "Portrait present" if old_blob else "No portrait"
+        record_player_audit(cid, actor_user_id, actor_name, source, [("portrait", old_label, "Portrait updated")])
+
 
 
 def delete_character(cid):
@@ -796,6 +1027,11 @@ def create_session_record(session_no, title, notes, base_xp, npc_ids):
 
 
 def award_session_xp(session_id, awards, close_session=True, advance_campaign=False):
+    # Snapshot each character before applying the session award so the Magister can undo it.
+    for cid, base_xp, bonus_xp in awards:
+        total = max(0, int(base_xp)) + max(0, int(bonus_xp))
+        if total:
+            record_progression_undo(int(cid), f"Session XP award #{int(session_id)}")
     conn = get_conn()
     for cid, base_xp, bonus_xp in awards:
         total = max(0, int(base_xp)) + max(0, int(bonus_xp))
@@ -803,7 +1039,7 @@ def award_session_xp(session_id, awards, close_session=True, advance_campaign=Fa
             "INSERT OR REPLACE INTO session_award(session_id,character_id,base_xp,bonus_xp,total_xp) VALUES(?,?,?,?,?)",
             (int(session_id), int(cid), max(0, int(base_xp)), max(0, int(bonus_xp)), total),
         )
-        conn.execute("UPDATE characters SET earned_xp=MAX(0,earned_xp+?) WHERE id=?", (total, int(cid)))
+        conn.execute("UPDATE characters SET earned_xp=MAX(0,earned_xp+?), updated_at=?, revision=revision+1 WHERE id=?", (total, now_iso(), int(cid)))
     if close_session:
         conn.execute("UPDATE session_record SET closed_at=? WHERE id=?", (now_iso(), int(session_id)))
     if advance_campaign:
@@ -1094,7 +1330,6 @@ def cb_species_change(cid):
 # ============================================================
 #  COMPONENTES AO VIVO
 # ============================================================
-@st.fragment(run_every=REFRESH_S)
 def live_vitals(cid):
     ch = load_character(cid)
     if not ch:
@@ -1109,15 +1344,17 @@ def live_vitals(cid):
         with cols[i]:
             st.metric(label, f"{ch[field]} / {mx}")
             b = st.columns(4)
-            b[0].button("−5", key=f"lv{field}{cid}a", on_click=adjust_vital, args=(cid, field, -5))
-            b[1].button("−1", key=f"lv{field}{cid}b", on_click=adjust_vital, args=(cid, field, -1))
-            b[2].button("+1", key=f"lv{field}{cid}c", on_click=adjust_vital, args=(cid, field, +1))
-            b[3].button("+5", key=f"lv{field}{cid}d", on_click=adjust_vital, args=(cid, field, +5))
+            user = st.session_state.get("user") or {}
+            is_player = user.get("role") != "gm"
+            actor_args = ("player" if is_player else "gm", user.get("id"), user.get("username", ""))
+            b[0].button("−5", key=f"lv{field}{cid}a", on_click=adjust_vital, args=(cid, field, -5, actor_args[0], actor_args[1], actor_args[2]))
+            b[1].button("−1", key=f"lv{field}{cid}b", on_click=adjust_vital, args=(cid, field, -1, actor_args[0], actor_args[1], actor_args[2]))
+            b[2].button("+1", key=f"lv{field}{cid}c", on_click=adjust_vital, args=(cid, field, +1, actor_args[0], actor_args[1], actor_args[2]))
+            b[3].button("+5", key=f"lv{field}{cid}d", on_click=adjust_vital, args=(cid, field, +5, actor_args[0], actor_args[1], actor_args[2]))
     if asc:
         st.warning("100+ Earned XP - this character may ascend to the next Tier.")
 
 
-@st.fragment(run_every=REFRESH_S)
 def vox_live(listener_cid=None):
     """Show only Vox signals reaching the receiving character.
 
@@ -1169,6 +1406,7 @@ def vox_live(listener_cid=None):
 # ============================================================
 #  BATTLE VIEW (player themed)
 # ============================================================
+@st.fragment(run_every=REFRESH_S)
 def battle_view(cid):
     ch = load_character(cid)
     if not ch:
@@ -1211,6 +1449,13 @@ def battle_view(cid):
                 st.markdown("<div class='sectionttl'>Archetype Skill Bonuses</div>", unsafe_allow_html=True)
                 for sk, rating in ap["skills"].items():
                     st.markdown(f"<div class='tal'><span class='tn'>{html.escape(sk)}</span><span class='tc'>+{int(rating)}</span></div>", unsafe_allow_html=True)
+
+        if ch.get("chapter") in CHAPTERS:
+            cd = CHAPTERS[ch["chapter"]]
+            st.markdown("<div class='sectionttl'>Chapter</div>", unsafe_allow_html=True)
+            st.markdown(f"<div class='tal'><span class='tn'>{html.escape(ch['chapter'])}</span><span class='tc'>Legion {html.escape(cd['legion'])} · {html.escape(cd['primarch'])}</span></div>", unsafe_allow_html=True)
+            st.markdown(f"<div class='tal'><b>{html.escape(cd['ability'])}</b></div>", unsafe_allow_html=True)
+            st.markdown(f"<div class='tal'><span class='tn'>{html.escape(cd['tradition'])}</span></div>", unsafe_allow_html=True)
 
         package = species_package(ch["species"])
         if package.get("abilities"):
@@ -1261,6 +1506,31 @@ def _k(cid, sec, f):
     return f"f_{cid}_{sec}_{f}"
 
 
+def _sync_character_widgets(cid, ch, species_list):
+    meta_key = _k(cid, "meta", "db_revision")
+    db_revision = int(ch.get("revision", 0) or 0)
+    previous = st.session_state.get(meta_key)
+    if previous is not None and int(previous) == db_revision:
+        return False
+    if previous is not None:
+        for a in ATTRS: st.session_state[_k(cid, "a", a)] = int(ch["attributes"].get(a, 1))
+        for sk in SKILLS: st.session_state[_k(cid, "s", sk)] = int(ch["skills"].get(sk, 0))
+        st.session_state[_k(cid, "t", "name")] = ch.get("name", "")
+        st.session_state[_k(cid, "t", "chapter")] = ch.get("chapter", "") or ""
+        st.session_state[_k(cid, "t", "notes")] = ch.get("notes", "") or ""
+        st.session_state[_k(cid, "n", "tier")] = int(ch.get("tier", 1))
+        st.session_state[_k(cid, "n", "armour")] = int(ch.get("armour", 0))
+        st.session_state[_k(cid, "n", "other")] = int(ch.get("other_xp", 0))
+        st.session_state[_k(cid, "sel", "arch")] = ch.get("archetype", "") or ""
+        if ch.get("species") in species_list: st.session_state[_k(cid, "sel", "sp")] = ch.get("species")
+        st.session_state[f"tal_{cid}"] = ch.get("talents", []) or [{"name":"", "effect":"", "cost":20}]
+        st.session_state[f"wg_{cid}"] = ch.get("wargear", []) or [{"name":"", "effect":""}]
+    st.session_state[meta_key] = db_revision
+    st.session_state[_k(cid, "meta", "last_sync")] = now_iso()
+    return previous is not None
+
+
+@st.fragment(run_every=REFRESH_S)
 def edit_view(cid, gm_mode=False):
     ch = load_character(cid)
     if not ch:
@@ -1268,6 +1538,9 @@ def edit_view(cid, gm_mode=False):
         return
     camp = get_campaign()
     species_list = NPC_SPECIES if ch["kind"] == "npc" else PLAYER_SPECIES
+
+    synced_from_remote = _sync_character_widgets(cid, ch, species_list)
+    if synced_from_remote: st.info("Character sheet synchronized with the latest version from another session.")
 
     for a in ATTRS:
         st.session_state.setdefault(_k(cid, "a", a), int(ch["attributes"][a]))
@@ -1358,7 +1631,22 @@ def edit_view(cid, gm_mode=False):
 
     c = st.columns([2, 2, 2])
     c[0].text_input("Name", key=_k(cid, "t", "name"))
-    c[1].text_input("Chapter / Faction", key=_k(cid, "t", "chapter"))
+    current_chapter = st.session_state.get(_k(cid, "t", "chapter"), ch.get("chapter") or "")
+    if st.session_state.get(spk) in ("Adeptus Astartes", "Primaris Astartes"):
+        chapter_choice = c[1].selectbox(
+            "Chapter",
+            CHAPTER_OPTIONS,
+            index=(CHAPTER_OPTIONS.index(current_chapter) if current_chapter in CHAPTER_OPTIONS else len(CHAPTER_OPTIONS)-1),
+            key=_k(cid, "sel", "chapter"),
+        )
+        if chapter_choice == "Other / Successor Chapter":
+            c[1].text_input("Custom Chapter", value="" if current_chapter in CHAPTER_OPTIONS else current_chapter, key=_k(cid, "t", "chapter_custom"))
+            st.session_state[_k(cid, "t", "chapter")] = st.session_state.get(_k(cid, "t", "chapter_custom"), "")
+        else:
+            st.session_state[_k(cid, "t", "chapter")] = chapter_choice
+    else:
+        st.session_state[_k(cid, "t", "chapter")] = ""
+        c[1].caption("Chapter applies to Adeptus Astartes characters.")
     if gm_mode:
         if mode == "archetype":
             c[2].selectbox(
@@ -1380,9 +1668,10 @@ def edit_view(cid, gm_mode=False):
     c[1].number_input("Armour", 0, 30, key=_k(cid, "n", "armour"))
     c[2].number_input("Other XP", 0, 100000, key=_k(cid, "n", "other"))
     if gm_mode:
-        exp = c[3].number_input("Earned XP", 0, 100000, int(ch["earned_xp"]), key=f"earn_{cid}")
-        if exp != ch["earned_xp"]:
-            set_earned_xp(cid, exp)
+        # Earned XP is awarded only when the Magister closes a session.
+        # It is intentionally read-only here so editing a character sheet
+        # can never grant XP by accident.
+        c[3].metric("Earned XP", int(ch.get("earned_xp", 0)))
     else:
         c[3].markdown(f"**Rank:** {rank_label(ch.get('rank', 1))}<br><small></small>", unsafe_allow_html=True)
 
@@ -1481,14 +1770,27 @@ def edit_view(cid, gm_mode=False):
     wc[0].caption(f"{len(wargear)} wargear item(s) · {len(talents)} talent(s)")
     wc[1].text_area("Notes", key=_k(cid, "t", "notes"), height=110)
 
-    save_build(
+    save_result = save_build(
         cid, st.session_state[_k(cid, "t", "name")], st.session_state[_k(cid, "t", "chapter")],
         st.session_state[spk], int(st.session_state[_k(cid, "n", "tier")]), cur_attr, cur_skill,
         talents, json.dumps(wargear, ensure_ascii=False), st.session_state[_k(cid, "n", "armour")],
         st.session_state[_k(cid, "t", "notes")], st.session_state[_k(cid, "n", "other")],
         st.session_state.get(ark, ""),
-        mode
+        mode,
+        actor_role=("gm" if gm_mode else "player"),
+        actor_user_id=(st.session_state.get("user") or {}).get("id"),
+        actor_name=(st.session_state.get("user") or {}).get("username", ""),
+        source=("Magister Character Sheet" if gm_mode else "Player Character Sheet"),
+        expected_revision=int(st.session_state.get(_k(cid, "meta", "db_revision"), ch.get("revision", 0) or 0))
     )
+    if save_result[0]:
+        latest = load_character(cid)
+        if latest: st.session_state[_k(cid, "meta", "db_revision")] = int(latest.get("revision", 0) or 0)
+    else:
+        latest = load_character(cid)
+        if latest: _sync_character_widgets(cid, latest, species_list)
+        st.warning(save_result[1])
+        st.stop()
 
     cur = dict(ch); cur.update({"attributes": cur_attr, "skills": cur_skill, "species": st.session_state[spk],
                                 "tier": int(st.session_state[_k(cid, "n", "tier")]), "talents": talents,
@@ -1508,7 +1810,10 @@ def edit_view(cid, gm_mode=False):
             st.image(ch["portrait"], width=170)
         up = st.file_uploader("Upload", type=["png", "jpg", "jpeg"], key=f"port_{cid}")
         if up is not None and st.button("Save Portrait", key=f"pb_{cid}"):
-            set_portrait(cid, up.getvalue()); st.rerun()
+            set_portrait(cid, up.getvalue(), actor_role=("gm" if gm_mode else "player"),
+                         actor_user_id=(st.session_state.get("user") or {}).get("id"),
+                         actor_name=(st.session_state.get("user") or {}).get("username", ""),
+                         source=("Magister Character Sheet" if gm_mode else "Player Character Sheet")); st.rerun()
 
 
 # ============================================================
@@ -1573,6 +1878,39 @@ def vox_toggle_list(chars):
             c[2].button("Activate Vox", key=f"vt_{ch['id']}", on_click=set_comms, args=(ch["id"], 1))
 
 
+@st.fragment(run_every=REFRESH_S)
+def players_audit_view():
+    players = get_player_registry()
+    st.markdown("#### Player Registry & Audit")
+    st.caption("Live audit of changes made by Players. This panel synchronizes automatically.")
+    if not players:
+        st.info("No Players are registered."); return
+    for c in players:
+        count = len(get_player_audit(c["id"], 10000))
+        cols = st.columns([3.5, 1, 1.5, 1.2])
+        cols[0].markdown(f"**{c['name'] or 'Unnamed'}** · `{c.get('username') or 'unlinked'}`")
+        cols[1].caption(f"T{c['tier']} · {rank_label(c['rank'])}")
+        cols[2].metric("Changes", count)
+        if cols[3].button("Audit", key=f"audit_open_{c['id']}", use_container_width=True):
+            st.session_state["audit_player_id"] = int(c["id"]); st.rerun()
+    ids = [int(c["id"]) for c in players]
+    selected = st.session_state.get("audit_player_id")
+    if selected not in ids: selected = ids[0]; st.session_state["audit_player_id"] = selected
+    labels = {int(c["id"]): f"{c['name'] or 'Unnamed'} · {c.get('username') or 'unlinked'}" for c in players}
+    selected = st.selectbox("Player", ids, index=ids.index(selected), format_func=lambda x: labels[x], key="audit_player_select")
+    st.session_state["audit_player_id"] = selected
+    rows = get_player_audit(selected, 500)
+    st.divider(); st.markdown(f"### Audit: {labels[selected]}")
+    if not rows: st.info("No Player changes have been recorded yet."); return
+    for r in rows:
+        stamp = str(r["changed_at"]).replace("T", " ")[:19]
+        st.markdown(f"**{stamp}** · {r['actor']} · `{r['source']}` · **{r['field']}**")
+        left, right = st.columns(2)
+        with left: st.caption("Before"); st.code(str(r.get("old_value", "")), language="text")
+        with right: st.caption("After"); st.code(str(r.get("new_value", "")), language="text")
+        st.divider()
+
+
 def gm_view():
     camp = get_campaign()
     st.markdown("<div class='banner'>✠ MAGISTER SANCTUM ✠<span class='sub'>Campaign Command</span></div>",
@@ -1588,7 +1926,7 @@ def gm_view():
             edit_view(cid, gm_mode=True)
         return
 
-    tabs = st.tabs(["Characters", "Vox", "Progression", "Session", "Combat", "Campaign", "Maintenance"])
+    tabs = st.tabs(["Characters", "Players", "Vox", "Progression", "Session", "Combat", "Campaign", "Maintenance"])
 
     # ---- Characters / Folders ----
     with tabs[0]:
@@ -1720,8 +2058,12 @@ def gm_view():
                                on_change=lambda cid=ch["id"]: set_folder(cid, st.session_state[f"mva_{cid}"]))
                 a[2].markdown("📡" + (" ON" if ch["comms_on"] else " OFF"))
 
-    # ---- Vox ----
+    # ---- Players / Audit ----
     with tabs[1]:
+        players_audit_view()
+
+    # ---- Vox ----
+    with tabs[2]:
         folders = list_folders()
         chars = list_characters()
         folder_map = {f["id"]: f["name"] for f in folders}
@@ -1772,7 +2114,7 @@ def gm_view():
         vox_live()
 
     # ---- Progression ----
-    with tabs[2]:
+    with tabs[3]:
         st.markdown("#### Progression")
         st.caption("Rank and Tier are controlled by the Magister. XP thresholds unlock normal advancement; the Magister may also approve an early advancement.")
 
@@ -1845,8 +2187,47 @@ def gm_view():
         else:
             st.info("No character is currently eligible for Archetype Ascension.")
 
+        st.divider()
+        st.markdown("#### Corrections & Undo")
+        st.caption("GM-only recovery tools for mistakes. These can remove XP, restore Rank/Tier, and undo an Ascension or other progression change. Normal advancement rules are not enforced here.")
+        correction_chars = list_characters()
+        if correction_chars:
+            correction_labels = {int(c["id"]): f"{c['name'] or 'Unnamed'} · {c['kind'].upper()} · Tier {c['tier']} · {rank_label(c['rank'])} · {c['earned_xp']} XP" for c in correction_chars}
+            correction_id = st.selectbox("Character", list(correction_labels.keys()), format_func=lambda x: correction_labels[x], key="progression_correction_character")
+            cc = load_character(correction_id)
+            if cc:
+                with st.container(border=True):
+                    st.markdown(f"**{cc['name'] or 'Unnamed'}**")
+                    cols = st.columns(3)
+                    new_xp = cols[0].number_input("Earned XP", min_value=0, max_value=100000, value=int(cc.get("earned_xp", 0)), step=5, key=f"corr_xp_{correction_id}")
+                    new_rank = cols[1].selectbox("Rank", [1, 2, 3], index=max(0, min(2, int(cc.get("rank", 1)) - 1)), format_func=rank_label, key=f"corr_rank_{correction_id}")
+                    new_tier = cols[2].number_input("Tier", min_value=1, max_value=MAX_TIER, value=int(cc.get("tier", 1)), step=1, key=f"corr_tier_{correction_id}")
+                    if st.button("Apply Progression Correction", key=f"corr_apply_{correction_id}", type="primary", use_container_width=True):
+                        if correct_progression_state(correction_id, new_xp, new_rank, new_tier):
+                            add_log("Magister", f"Corrected progression for {cc['name'] or 'Unnamed'}: Tier {new_tier}, Rank {new_rank}, {new_xp} XP.")
+                            st.success("Progression corrected. The previous state was saved for undo.")
+                            st.rerun()
+
+                    st.markdown("**Recent progression history**")
+                    history_rows = get_progression_undo(correction_id, 10)
+                    if history_rows:
+                        for h in history_rows:
+                            stamp = str(h["created_at"]).replace("T", " ")[:19]
+                            hc = st.columns([4, 1.5])
+                            hc[0].caption(f"{stamp} · {h['action']}")
+                            if hc[1].button("Undo", key=f"undo_prog_{h['id']}", use_container_width=True):
+                                ok, msg = restore_progression_undo(h["id"])
+                                if ok:
+                                    add_log("Magister", f"Undid progression change for {cc['name'] or 'Unnamed'}: {h['action']}")
+                                    st.success(msg)
+                                    st.rerun()
+                                else:
+                                    st.error(msg)
+                    else:
+                        st.caption("No progression corrections or advancement changes have been recorded yet.")
+
     # ---- Session ----
-    with tabs[3]:
+    with tabs[4]:
         st.markdown("#### Session")
         st.caption("Close the session, award table XP and individual bonuses, record notes, and mark the NPCs involved.")
         current_session = int(camp.get("session_no", 1))
@@ -1921,7 +2302,7 @@ def gm_view():
                         st.markdown(f"**{aw['name']}** · +{aw['total_xp']} XP (base {aw['base_xp']} + bonus {aw['bonus_xp']})")
 
     # ---- Combat ----
-    with tabs[4]:
+    with tabs[5]:
         st.markdown("#### Combat")
         st.caption("The Magister controls the combat order manually. Add Players and NPCs, apply initiative modifiers, and arrange the turn order.")
         all_combat_chars = list_characters()
@@ -1999,7 +2380,7 @@ def gm_view():
 
     # ---- Campaign ----
     # ---- Campaign ----
-    with tabs[5]:
+    with tabs[6]:
         st.markdown("#### Campaign Configuration")
         with st.form("campf"):
             cc = st.columns([3, 1, 1])
@@ -2026,7 +2407,7 @@ def gm_view():
             st.markdown(f"<div class='row'><b>{lg['ts']}</b> - {lg['text']}</div>", unsafe_allow_html=True)
 
     # ---- Maintenance ----
-    with tabs[6]:
+    with tabs[7]:
         st.markdown("#### File Maintenance")
         st.caption("The .db backup contains everything: players, NPCs, folders, XP, Vox, portraits. "
                    "On free hosting the disk may reset; download backups regularly.")

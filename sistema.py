@@ -1565,7 +1565,7 @@ def gm_view():
                                 add_log("Magister", f"{c['name']} advanced to Rank {next_rank}{' early' if not ready else ''}.")
                                 st.rerun()
                     else:
-                        ac[0].button("Maximum Rank", disabled=True, use_container_width=True)
+                        ac[0].button("Maximum Rank", disabled=True, key=f"prog_max_r_{c['id']}", use_container_width=True)
                     if next_tier <= MAX_TIER:
                         ready = earned >= 100
                         label = f"Approve Tier {next_tier}" if ready else f"Approve Tier {next_tier} Early"
@@ -1574,7 +1574,7 @@ def gm_view():
                                 add_log("Magister", f"{c['name']} advanced to Tier {next_tier}{' early' if not ready else ''}.")
                                 st.rerun()
                     else:
-                        ac[1].button("Maximum Tier", disabled=True, use_container_width=True)
+                        ac[1].button("Maximum Tier", disabled=True, key=f"prog_max_t_{c['id']}", use_container_width=True)
 
         progression_section("Players", "player")
         st.divider()

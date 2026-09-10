@@ -8,7 +8,6 @@ import hashlib
 import secrets
 import json
 import math
-import html
 import os
 from datetime import datetime, timezone
 
@@ -20,7 +19,9 @@ COMMS_FADE_S = 60
 #  DADOS DE WRATH & GLORY
 # ============================================================
 ATTRS = ["Strength", "Toughness", "Agility", "Initiative", "Willpower", "Intellect", "Fellowship"]
-ATTR_PT = {a: a for a in ATTRS}
+ATTR_PT = {"Strength": "Força", "Toughness": "Dureza", "Agility": "Agilidade",
+           "Initiative": "Iniciativa", "Willpower": "Vontade", "Intellect": "Intelecto",
+           "Fellowship": "Interação"}
 SKILLS = {
     "Athletics": "Strength", "Awareness": "Intellect", "Ballistic Skill": "Agility",
     "Cunning": "Fellowship", "Deception": "Fellowship", "Insight": "Fellowship",
@@ -29,35 +30,8 @@ SKILLS = {
     "Psychic Mastery": "Willpower", "Scholar": "Intellect", "Stealth": "Agility",
     "Survival": "Willpower", "Tech": "Intellect", "Weapon Skill": "Initiative",
 }
-PLAYER_SPECIES = ["Human", "Adeptus Astartes", "Primaris Astartes", "Aeldari", "Ork"]
-SPECIES_LABELS = {
-    "Astra Militarum (Humano)": "Astra Militarum (Human)",
-    "Adepta Sororitas": "Adepta Sororitas",
-    "Aeldari (Asuryani)": "Aeldari (Asuryani)",
-    "Inquisição": "Inquisition",
-    "Drukhari": "Drukhari",
-    "Ork": "Ork",
-    "T'au": "T'au",
-    "Necron": "Necron",
-    "Tyranid": "Tyranid",
-    "Genestealer": "Genestealer",
-    "Daemon de Khorne": "Daemon of Khorne",
-    "Daemon de Nurgle": "Daemon of Nurgle",
-    "Daemon de Tzeentch": "Daemon of Tzeentch",
-    "Daemon de Slaanesh": "Daemon of Slaanesh",
-    "Cultista do Caos": "Chaos Cultist",
-    "Fera": "Beast",
-    "Servitor": "Servitor",
-    "Outro": "Other",
-    "Human": "Human",
-    "Aeldari": "Aeldari",
-    "Ork": "Ork",
-    "Primaris Astartes": "Primaris Astartes",
-}
-
-def species_label(sp):
-    return SPECIES_LABELS.get(sp, sp)
-
+PLAYER_SPECIES = ["Adeptus Astartes", "Primaris Astartes", "Astra Militarum (Humano)",
+                  "Adepta Sororitas", "Aeldari (Asuryani)", "Outro"]
 NPC_SPECIES = ["Adeptus Astartes", "Primaris Astartes", "Chaos Space Marine",
                "Astra Militarum (Humano)", "Adepta Sororitas", "Inquisição", "Rogue Trader",
                "Aeldari (Asuryani)", "Drukhari", "Ork", "T'au", "Necron", "Tyranid",
@@ -69,137 +43,34 @@ SKILL_COST = {0: 0, 1: 2, 2: 6, 3: 12, 4: 20, 5: 30, 6: 42, 7: 56, 8: 72}
 # O XP aqui é o custo TOTAL do pacote: atributos + perícias + habilidades.
 # As habilidades não são cobradas novamente como talentos.
 SPECIES_PACKAGES = {
-    "Human": {"xp": 0, "attributes": {}, "skills": {}, "abilities": [], "speed": 6, "size": "Average"},
     "Adeptus Astartes": {
         "xp": 160,
-        "attributes": {"Agility": 4, "Initiative": 4, "Intellect": 3, "Strength": 4, "Toughness": 4, "Willpower": 3},
-        "skills": {"Athletics": 3, "Awareness": 3, "Ballistic Skill": 3, "Stealth": 3, "Weapon Skill": 3},
+        "attributes": {
+            "Agility": 4,
+            "Initiative": 4,
+            "Intellect": 3,
+            "Strength": 4,
+            "Toughness": 4,
+            "Willpower": 3,
+        },
+        "skills": {
+            "Athletics": 3,
+            "Awareness": 3,
+            "Ballistic Skill": 3,
+            "Stealth": 3,
+            "Weapon Skill": 3,
+        },
         "abilities": [
             "Defender of Humanity: Add +Rank Icons to any successful attack against a Mob.",
-            "Honour the Chapter: You are subject to the orders of your chapter master, and must honour the beliefs and traditions of your chapter. Your Resolve increases by +1.",
-            "Space Marine Implants: You are immune to the Bleeding Condition. You gain +1 bonus dice to any test related to one of the 19 implants if the GM agrees it is appropriate.",
-        ], "speed": 7, "size": "Average"},
-    "Primaris Astartes": {
-        "xp": 198,
-        "attributes": {"Agility": 4, "Initiative": 4, "Intellect": 3, "Strength": 5, "Toughness": 5, "Willpower": 3},
-        "skills": {"Athletics": 3, "Awareness": 3, "Ballistic Skill": 4, "Stealth": 3, "Weapon Skill": 3},
-        "abilities": [
-            "Defender of Humanity: Add +Rank Icons to any successful attack against a Mob.",
-            "Honour the Chapter (Primaris): You are subject to the orders of your chapter master, and must honour the beliefs and traditions of your chapter. Your Resolve increases by +1. As a Primaris, you ignore any impurities in your Chapter Gene-Seed and gain +3 Wounds.",
-            "Space Marine Implants: You are immune to the Bleeding Condition. You gain +1 bonus dice to any test related to one of the 22 implants if the GM agrees it is appropriate.",
-        ], "speed": 7, "size": "Average"},
-    "Aeldari": {
-        "xp": 10, "attributes": {"Agility": 3}, "skills": {},
-        "abilities": ["Intense Emotion: +1 DN to all Resolve Tests. If you fail a Willpower-based test in a scene involving emotion, the GM gains +1 Ruin.", "Psychosensitive: You may choose to take the PSYKER Keyword."],
-        "speed": 8, "size": "Average"},
-    "Ork": {
-        "xp": 20, "attributes": {"Strength": 3, "Toughness": 3}, "skills": {},
-        "abilities": ["Orky: +1 bonus die to Intimidation Tests.", "Bigger is Better: You calculate Influence using Strength instead of Fellowship."],
-        "speed": 6, "size": "Average"},
-}
-
-# Bonuses included by the Core Rulebook archetypes for the archetypes whose
-# package data is encoded here. Other archetypes still set Species/Tier/XP and
-# can be customised manually, matching the Advanced Character Creation workflow.
-ARCHETYPE_PACKAGES = {
-    "Sister of Battle": {"attributes": {"Strength":3,"Toughness":3,"Agility":3,"Willpower":3}, "skills":{"Ballistic Skill":2,"Scholar":1,"Weapon Skill":2}},
-    "Sanctioned Psyker": {"attributes":{"Willpower":4}, "skills":{"Psychic Mastery":1}},
-    "Skitarius": {"attributes":{"Toughness":3}, "skills":{"Ballistic Skill":2,"Tech":1}},
-    "Death Cult Assassin": {"attributes":{"Agility":4}, "skills":{"Weapon Skill":2}},
-    "Rogue Trader": {"attributes":{"Fellowship":3}, "skills":{"Awareness":1,"Cunning":1,"Insight":2,"Persuasion":2}},
-    "Space Marine Scout": {"attributes":{"Strength":4,"Toughness":4,"Agility":4,"Initiative":4,"Willpower":3,"Intellect":3}, "skills":{"Athletics":3,"Awareness":3,"Ballistic Skill":3,"Stealth":3,"Weapon Skill":3}},
-    "Ranger": {"attributes":{"Agility":3}, "skills":{"Ballistic Skill":2,"Stealth":1,"Survival":2}},
-    "Kommando": {"attributes":{"Strength":3,"Toughness":3,"Agility":3}, "skills":{"Stealth":2,"Survival":1,"Weapon Skill":2}},
-    "Tech-Priest": {"attributes":{"Intellect":3}, "skills":{"Scholar":1,"Tech":3}},
-    "Crusader": {"attributes":{"Initiative":3,"Willpower":3}, "skills":{"Scholar":1,"Weapon Skill":3}},
-    "Imperial Commissar": {"attributes":{"Strength":3,"Toughness":3,"Willpower":4}, "skills":{"Ballistic Skill":1,"Intimidation":2,"Leadership":2,"Weapon Skill":1}},
-    "Tactical Space Marine": {"attributes":{"Strength":4,"Toughness":5,"Agility":5,"Initiative":5,"Willpower":3,"Intellect":3}, "skills":{"Athletics":3,"Awareness":3,"Ballistic Skill":5,"Leadership":1,"Scholar":1,"Stealth":3,"Survival":1,"Weapon Skill":4}},
-    "Warlock": {"attributes":{}, "skills":{}},
-    "Nob": {"attributes":{}, "skills":{}},
-    "Inquisitor": {"attributes":{}, "skills":{}},
-    "Primaris Intercessor": {"attributes":{}, "skills":{}},
+            "Honour the Chapter: You are subject to the orders of your chapter master, and must honour the beliefs and traditions of your Chapter.",
+            "Space Marine Implants: You are immune to the Bleeding Condition. You gain +1 bonus die to any test related to one of the 19 implants.",
+        ],
+        "speed": 7,
+        "size": "Average",
+    },
 }
 
 VITAL_FIELDS = {"cur_wounds", "cur_shock", "cur_wrath"}
-
-# Wrath & Glory 2e: Rank is based on total XP earned and may only increase.
-RANKS = {
-    1: {"name": "Initiate", "min_xp": 0, "bonus": 1},
-    2: {"name": "Veteran", "min_xp": 40, "bonus": 2},
-    3: {"name": "Champion", "min_xp": 80, "bonus": 3},
-}
-MAX_TIER = 4
-
-# ============================================================
-#  IDIOMA / LOCALIZAÇÃO
-# ============================================================
-UI = {
-    "en": {
-        "language": "Language", "english": "English", "portuguese": "Português",
-        "creation_mode": "Character Creation", "advanced": "Advanced / No Archetype",
-        "archetype_mode": "With Archetype", "archetype": "Archetype",
-        "species": "Species", "tier": "Tier", "record": "Record Changes",
-        "character_sheet": "Character Sheet", "battle_view": "Battle View",
-        "character_not_found": "Character sheet not found.", "controlled_by_gm": "Controlled by the Magister",
-    },
-    "pt": {
-        "language": "Idioma", "english": "English", "portuguese": "Português",
-        "creation_mode": "Criação da Ficha", "advanced": "Avançada / Sem Archetype",
-        "archetype_mode": "Com Archetype", "archetype": "Archetype",
-        "species": "Espécie", "tier": "Tier", "record": "Registrar Alterações",
-        "character_sheet": "Ficha do Personagem", "battle_view": "Visão de Batalha",
-        "character_not_found": "Ficha não encontrada.", "controlled_by_gm": "Controlado pelo Magister",
-    },
-}
-
-def T(key):
-    lang = st.session_state.get("lang", "en")
-    return UI.get(lang, UI["en"]).get(key, key)
-
-# Core Rulebook 2e archetypes. Archetype XP includes the Species package.
-# This list is intentionally limited to the Core Rulebook; supplements can be added later.
-ARCHETYPES = {
-    "Sister Hospitaller": {"tier": 1, "species": "Human", "xp": 24, "faction": "Adepta Sororitas"},
-    "Ministorum Priest": {"tier": 1, "species": "Human", "xp": 12, "faction": "Adeptus Ministorum"},
-    "Imperial Guard": {"tier": 1, "species": "Human", "xp": 6, "faction": "Astra Militarum"},
-    "Inquisitorial Acolyte": {"tier": 1, "species": "Human", "xp": 6, "faction": "Inquisition"},
-    "Inquisitorial Sage": {"tier": 1, "species": "Human", "xp": 16, "faction": "Inquisition"},
-    "Ganger": {"tier": 1, "species": "Human", "xp": 6, "faction": "Scum"},
-    "Corsair": {"tier": 1, "species": "Aeldari", "xp": 10, "faction": "Aeldari"},
-    "Boy": {"tier": 1, "species": "Ork", "xp": 20, "faction": "Orks"},
-    "Sister of Battle": {"tier": 2, "species": "Human", "xp": 64, "faction": "Adepta Sororitas"},
-    "Sanctioned Psyker": {"tier": 2, "species": "Human", "xp": 32, "faction": "Adeptus Astra Telepathica"},
-    "Skitarius": {"tier": 2, "species": "Human", "xp": 28, "faction": "Adeptus Mechanicus"},
-    "Death Cult Assassin": {"tier": 2, "species": "Human", "xp": 36, "faction": "Adeptus Ministorum"},
-    "Tempestus Scion": {"tier": 2, "species": "Human", "xp": 30, "faction": "Astra Militarum"},
-    "Rogue Trader": {"tier": 2, "species": "Human", "xp": 36, "faction": "Rogue Trader Dynasties"},
-    "Scavvy": {"tier": 2, "species": "Human", "xp": 20, "faction": "Scum"},
-    "Space Marine Scout": {"tier": 2, "species": "Adeptus Astartes", "xp": 170, "faction": "Adeptus Astartes"},
-    "Ranger": {"tier": 2, "species": "Aeldari", "xp": 34, "faction": "Aeldari"},
-    "Kommando": {"tier": 2, "species": "Ork", "xp": 54, "faction": "Orks"},
-    "Tech-Priest": {"tier": 3, "species": "Human", "xp": 44, "faction": "Adeptus Mechanicus"},
-    "Crusader": {"tier": 3, "species": "Human", "xp": 54, "faction": "Adeptus Ministorum"},
-    "Imperial Commissar": {"tier": 3, "species": "Human", "xp": 76, "faction": "Astra Militarum"},
-    "Desperado": {"tier": 3, "species": "Human", "xp": 52, "faction": "Scum"},
-    "Tactical Space Marine": {"tier": 3, "species": "Adeptus Astartes", "xp": 277, "faction": "Adeptus Astartes"},
-    "Warlock": {"tier": 3, "species": "Aeldari", "xp": 56, "faction": "Aeldari"},
-    "Nob": {"tier": 3, "species": "Ork", "xp": 56, "faction": "Orks"},
-    "Inquisitor": {"tier": 4, "species": "Human", "xp": 110, "faction": "Inquisition"},
-    "Primaris Intercessor": {"tier": 4, "species": "Primaris Astartes", "xp": 228, "faction": "Adeptus Astartes"},
-}
-
-def rank_eligible_from_xp(xp):
-    xp = int(xp or 0)
-    if xp >= 80:
-        return 3
-    if xp >= 40:
-        return 2
-    return 1
-
-def rank_label(rank):
-    r = max(1, min(3, int(rank or 1)))
-    return f"Rank {r} — {RANKS[r]['name']}"
-
 
 
 def default_attributes():
@@ -249,11 +120,9 @@ def species_speed(sp):
     return 7 if is_astartes(sp) else 6
 
 
-def rank_from_xp(xp, current_rank=1):
-    """Returns the GM-controlled Rank and whether Tier Ascension is available."""
+def rank_from_xp(xp):
     xp = int(xp or 0)
-    rank = max(1, min(3, int(current_rank or 1)))
-    return rank, xp >= 100
+    return min(3, 1 + xp // 40), xp >= 100
 
 
 def derived_traits(ch):
@@ -271,43 +140,24 @@ def derived_traits(ch):
     }
 
 
-def creation_base_attribute(ch, species, attr):
-    if ch.get("creation_mode") == "archetype" and ch.get("archetype") in ARCHETYPE_PACKAGES:
-        ap = ARCHETYPE_PACKAGES[ch["archetype"]]
-        if attr in ap.get("attributes", {}):
-            return int(ap["attributes"][attr])
-    return species_base_attribute(species, attr)
-
-
-def creation_base_skill(ch, species, skill):
-    if ch.get("creation_mode") == "archetype" and ch.get("archetype") in ARCHETYPE_PACKAGES:
-        ap = ARCHETYPE_PACKAGES[ch["archetype"]]
-        if skill in ap.get("skills", {}):
-            return int(ap["skills"][skill])
-    return species_base_skill(species, skill)
-
-
 def xp_spent(ch):
     species = ch.get("species", "")
     package = species_package(species)
 
     # A espécie paga o pacote inteiro uma única vez.
     # Atributos/perícias incluídos no pacote não são cobrados novamente.
-    if ch.get("creation_mode") == "archetype" and ch.get("archetype") in ARCHETYPES:
-        total = int(ARCHETYPES[ch["archetype"]].get("xp", 0))
-    else:
-        total = int(package.get("xp", 0))
+    total = int(package.get("xp", 0))
 
     for a in ATTRS:
         value = int(ch["attributes"].get(a, 1))
-        base = creation_base_attribute(ch, species, a)
+        base = species_base_attribute(species, a)
 
         if value > base:
             total += ATTR_COST.get(value, 0) - ATTR_COST.get(base, 0)
 
     for s in SKILLS:
         value = int(ch["skills"].get(s, 0))
-        base = creation_base_skill(ch, species, s)
+        base = species_base_skill(species, s)
 
         if value > base:
             total += SKILL_COST.get(value, 0) - SKILL_COST.get(base, 0)
@@ -366,8 +216,8 @@ def init_db():
         role TEXT NOT NULL DEFAULT 'player', created_at TEXT)""")
     c.execute("""CREATE TABLE IF NOT EXISTS folders(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT)""")
     c.execute("""CREATE TABLE IF NOT EXISTS characters(id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER, kind TEXT DEFAULT 'player', name TEXT, chapter TEXT, species TEXT, archetype TEXT, creation_mode TEXT DEFAULT 'advanced',
-        tier INTEGER DEFAULT 2, starting_tier INTEGER DEFAULT 2, rank INTEGER DEFAULT 1, earned_xp INTEGER DEFAULT 0, other_xp INTEGER DEFAULT 0,
+        user_id INTEGER, kind TEXT DEFAULT 'player', name TEXT, chapter TEXT, species TEXT,
+        tier INTEGER DEFAULT 2, earned_xp INTEGER DEFAULT 0, other_xp INTEGER DEFAULT 0,
         attributes TEXT, skills TEXT, talents TEXT, wargear TEXT, armour INTEGER DEFAULT 0,
         cur_wounds INTEGER DEFAULT 0, cur_shock INTEGER DEFAULT 0, cur_wrath INTEGER DEFAULT 0,
         notes TEXT, folder_id INTEGER, portrait BLOB, comms_on INTEGER DEFAULT 1, comms_changed_at TEXT)""")
@@ -381,21 +231,13 @@ def init_db():
                                        "ruin": "INTEGER DEFAULT 0", "session_no": "INTEGER DEFAULT 1"})
     _ensure_columns(conn, "characters", {
         "user_id": "INTEGER", "kind": "TEXT DEFAULT 'player'", "name": "TEXT", "chapter": "TEXT",
-        "species": "TEXT", "archetype": "TEXT", "creation_mode": "TEXT DEFAULT 'advanced'", "tier": "INTEGER DEFAULT 2", "starting_tier": "INTEGER DEFAULT 2", "rank": "INTEGER DEFAULT 1", "earned_xp": "INTEGER DEFAULT 0",
+        "species": "TEXT", "tier": "INTEGER DEFAULT 2", "earned_xp": "INTEGER DEFAULT 0",
         "other_xp": "INTEGER DEFAULT 0", "attributes": "TEXT", "skills": "TEXT", "talents": "TEXT",
         "wargear": "TEXT", "armour": "INTEGER DEFAULT 0", "cur_wounds": "INTEGER DEFAULT 0",
         "cur_shock": "INTEGER DEFAULT 0", "cur_wrath": "INTEGER DEFAULT 0", "notes": "TEXT",
         "folder_id": "INTEGER", "portrait": "BLOB", "comms_on": "INTEGER DEFAULT 1",
         "comms_changed_at": "TEXT"})
     _ensure_columns(conn, "folders", {"name": "TEXT"})
-    # Existing characters keep their current Tier as their recorded starting Tier.
-    conn.execute("UPDATE characters SET starting_tier = COALESCE(starting_tier, tier, 2) WHERE starting_tier IS NULL")
-    # Existing characters inherit the Rank supported by their already-earned XP.
-    conn.execute("""UPDATE characters SET rank = CASE
-        WHEN earned_xp >= 80 THEN 3
-        WHEN earned_xp >= 40 THEN 2
-        ELSE 1 END
-        WHERE rank IS NULL OR rank < 1""")
     conn.commit()
     if c.execute("SELECT COUNT(*) FROM campaign").fetchone()[0] == 0:
         c.execute("INSERT INTO campaign(id,name,tier,ruin,session_no) VALUES(1,?,2,0,1)", ("A Cruzada de Gilead",))
@@ -413,11 +255,11 @@ def create_player(username, pw):
         c.execute("INSERT INTO users(username,pw_hash,salt,role,created_at) VALUES(?,?,?,?,?)",
                   (username, hash_pw(pw, salt), salt, "player", now_iso()))
         uid = c.lastrowid
-        c.execute("""INSERT INTO characters(user_id,kind,name,chapter,species,tier,starting_tier,rank,earned_xp,other_xp,
+        c.execute("""INSERT INTO characters(user_id,kind,name,chapter,species,tier,earned_xp,other_xp,
                      attributes,skills,talents,wargear,armour,cur_wounds,cur_shock,cur_wrath,notes,
                      comms_on,comms_changed_at)
-                     VALUES(?, 'player', ?,?,?,?,?,?,0,0,?,?,?,?,0,0,0,0,?,1,?)""",
-                  (uid, username, "", "Adeptus Astartes", 2, 2, 1, json.dumps(default_attributes()),
+                     VALUES(?, 'player', ?,?,?,?,0,0,?,?,?,?,0,0,0,0,?,1,?)""",
+                  (uid, username, "", "Adeptus Astartes", 2, json.dumps(default_attributes()),
                    json.dumps(default_skills()), json.dumps([]), "", "", now_iso()))
         conn.commit(); return True, "Servo recrutado."
     except sqlite3.IntegrityError:
@@ -428,11 +270,11 @@ def create_player(username, pw):
 
 def create_npc(name, species, tier):
     conn = get_conn()
-    conn.execute("""INSERT INTO characters(user_id,kind,name,chapter,species,tier,starting_tier,rank,earned_xp,other_xp,
+    conn.execute("""INSERT INTO characters(user_id,kind,name,chapter,species,tier,earned_xp,other_xp,
                     attributes,skills,talents,wargear,armour,cur_wounds,cur_shock,cur_wrath,notes,
                     comms_on,comms_changed_at)
-                    VALUES(NULL,'npc',?,?,?,?,?,1,0,0,?,?,?,?,0,0,0,0,?,1,?)""",
-                 (name or "NPC", "", species, int(tier), int(tier), json.dumps(default_attributes()),
+                    VALUES(NULL,'npc',?,?,?,?,0,0,?,?,?,?,0,0,0,0,?,1,?)""",
+                 (name or "NPC", "", species, int(tier), json.dumps(default_attributes()),
                   json.dumps(default_skills()), json.dumps([]), "", "", now_iso()))
     conn.commit(); conn.close()
 
@@ -452,64 +294,6 @@ def set_password(uid, newpw):
     conn.commit(); conn.close()
 
 
-def normalize_talents(raw):
-    """Converte talentos antigos/novos para o formato nome + efeito + XP."""
-    if isinstance(raw, list):
-        parsed = raw
-    else:
-        text = raw or "[]"
-        try:
-            parsed = json.loads(text)
-        except Exception:
-            parsed = []
-            if str(text).strip():
-                parsed = [ln for ln in str(text).splitlines() if ln.strip()]
-
-    out = []
-    for t in parsed:
-        if isinstance(t, dict):
-            name = str(t.get("name", "")).strip()
-            effect = str(t.get("effect", "")).strip()
-            try:
-                cost = int(t.get("cost", 20) or 0)
-            except Exception:
-                cost = 20
-        else:
-            name = str(t).strip()
-            effect = ""
-            cost = 20
-        if name:
-            out.append({"name": name, "effect": effect, "cost": cost})
-    return out
-
-
-def normalize_wargear(raw):
-    """Converte wargear antigo (linhas de texto) para nome + efeito."""
-    if isinstance(raw, list):
-        parsed = raw
-    else:
-        text = raw or ""
-        try:
-            parsed = json.loads(text) if text.strip().startswith("[") else None
-        except Exception:
-            parsed = None
-        if parsed is None:
-            parsed = [{"name": ln.strip(), "effect": ""}
-                      for ln in text.splitlines() if ln.strip()]
-
-    out = []
-    for w in parsed:
-        if isinstance(w, dict):
-            name = str(w.get("name", "")).strip()
-            effect = str(w.get("effect", "")).strip()
-        else:
-            name = str(w).strip()
-            effect = ""
-        if name:
-            out.append({"name": name, "effect": effect})
-    return out
-
-
 def _decode(row):
     ch = dict(row)
     try:
@@ -520,15 +304,27 @@ def _decode(row):
         ch["skills"] = json.loads(ch.get("skills") or "{}")
     except Exception:
         ch["skills"] = {}
-    ch["talents"] = normalize_talents(ch.get("talents"))
-    ch["wargear"] = normalize_wargear(ch.get("wargear"))
+    raw = ch.get("talents") or "[]"; tal = []
+    try:
+        parsed = json.loads(raw)
+        if isinstance(parsed, list):
+            for t in parsed:
+                if isinstance(t, dict):
+                    tal.append({"name": t.get("name", ""), "cost": int(t.get("cost", 20))})
+                else:
+                    tal.append({"name": str(t), "cost": 20})
+        elif isinstance(parsed, str) and parsed.strip():
+            tal = [{"name": ln, "cost": 20} for ln in parsed.splitlines() if ln.strip()]
+    except Exception:
+        tal = [{"name": ln, "cost": 20} for ln in raw.splitlines() if ln.strip()]
+    ch["talents"] = tal
     for a in ATTRS:
         ch["attributes"].setdefault(a, 1)
     for s in SKILLS:
         ch["skills"].setdefault(s, 0)
-    for k, dv in {"tier": 2, "starting_tier": 2, "rank": 1, "earned_xp": 0, "other_xp": 0, "armour": 0, "cur_wounds": 0,
+    for k, dv in {"tier": 2, "earned_xp": 0, "other_xp": 0, "armour": 0, "cur_wounds": 0,
                   "cur_shock": 0, "cur_wrath": 0, "comms_on": 1, "kind": "player",
-                  "name": "", "chapter": "", "species": "", "archetype": "", "creation_mode": "advanced", "wargear": "", "notes": ""}.items():
+                  "name": "", "chapter": "", "species": "", "wargear": "", "notes": ""}.items():
         if ch.get(k) is None:
             ch[k] = dv
     return ch
@@ -553,11 +349,11 @@ def list_characters(kind=None):
     conn.close(); return [_decode(r) for r in rows]
 
 
-def save_build(cid, name, chapter, species, tier, attributes, skills, talents, wargear, armour, notes, other_xp, archetype="", creation_mode="advanced"):
+def save_build(cid, name, chapter, species, tier, attributes, skills, talents, wargear, armour, notes, other_xp):
     conn = get_conn()
-    conn.execute("""UPDATE characters SET name=?,chapter=?,species=?,archetype=?,creation_mode=?,tier=?,attributes=?,skills=?,
+    conn.execute("""UPDATE characters SET name=?,chapter=?,species=?,tier=?,attributes=?,skills=?,
                     talents=?,wargear=?,armour=?,notes=?,other_xp=? WHERE id=?""",
-                 (name, chapter, species, archetype, creation_mode, int(tier), json.dumps(attributes), json.dumps(skills),
+                 (name, chapter, species, int(tier), json.dumps(attributes), json.dumps(skills),
                   json.dumps(talents), wargear, int(armour), notes, int(other_xp), cid))
     conn.commit(); conn.close()
 
@@ -577,35 +373,6 @@ def set_earned_xp(cid, val):
     conn = get_conn(); conn.execute("UPDATE characters SET earned_xp=? WHERE id=?", (max(0, int(val)), cid))
     conn.commit(); conn.close()
 
-def set_rank(cid, rank):
-    rank = max(1, min(3, int(rank)))
-    conn = get_conn()
-    row = conn.execute("SELECT earned_xp, rank FROM characters WHERE id=?", (cid,)).fetchone()
-    if row is None:
-        conn.close(); return False
-    earned = int(row["earned_xp"] or 0)
-    eligible = rank_eligible_from_xp(earned)
-    # Rank can only increase when the XP threshold has been reached.
-    if rank < int(row["rank"] or 1) or rank > eligible:
-        conn.close(); return False
-    conn.execute("UPDATE characters SET rank=? WHERE id=?", (rank, cid))
-    conn.commit(); conn.close(); return True
-
-def set_tier(cid, tier):
-    tier = max(1, min(MAX_TIER, int(tier)))
-    conn = get_conn()
-    row = conn.execute("SELECT tier, earned_xp FROM characters WHERE id=?", (cid,)).fetchone()
-    if row is None:
-        conn.close(); return False
-    current = int(row["tier"] or 1)
-    starting = int(row["starting_tier"] or current or 1)
-    earned = int(row["earned_xp"] or 0)
-    max_allowed = min(MAX_TIER, starting + earned // 100)
-    if tier > max_allowed:
-        conn.close(); return False
-    conn.execute("UPDATE characters SET tier=? WHERE id=?", (tier, cid))
-    conn.commit(); conn.close(); return True
-
 
 def award_xp(cid, amt):
     conn = get_conn(); conn.execute("UPDATE characters SET earned_xp=MAX(0,earned_xp+?) WHERE id=?", (int(amt), cid))
@@ -615,25 +382,6 @@ def award_xp(cid, amt):
 def set_comms(cid, on):
     conn = get_conn()
     conn.execute("UPDATE characters SET comms_on=?, comms_changed_at=? WHERE id=?", (int(on), now_iso(), cid))
-    conn.commit(); conn.close()
-
-
-def set_comms_for_folder(fid, on):
-    """Liga/desliga o Vox de todos os personagens de uma pasta."""
-    if fid is None:
-        return
-    conn = get_conn()
-    conn.execute("UPDATE characters SET comms_on=?, comms_changed_at=? WHERE folder_id=?",
-                 (int(on), now_iso(), int(fid)))
-    conn.commit(); conn.close()
-
-
-def set_folder_for_many(cids, fid):
-    if not cids:
-        return
-    conn = get_conn()
-    conn.executemany("UPDATE characters SET folder_id=? WHERE id=?",
-                     [(fid if fid else None, int(cid)) for cid in cids])
     conn.commit(); conn.close()
 
 
@@ -781,33 +529,8 @@ def cb_close():
     st.session_state.editing = None
 
 
-def cb_archetype_change(cid):
-    ak = _k(cid, "sel", "arch")
-    archetype = st.session_state.get(ak, "")
-    data = ARCHETYPES.get(archetype)
-    if not data:
-        return
-    st.session_state[_k(cid, "sel", "sp")] = data["species"]
-    st.session_state[_k(cid, "n", "tier")] = int(data["tier"])
-    # Archetype mode uses Species + Archetype as the source of the starting package.
-    package = species_package(data["species"])
-    ap = ARCHETYPE_PACKAGES.get(archetype, {})
-    for attr, value in package.get("attributes", {}).items():
-        st.session_state[_k(cid, "a", attr)] = int(value)
-    for skill, value in package.get("skills", {}).items():
-        st.session_state[_k(cid, "s", skill)] = int(value)
-    for attr, value in ap.get("attributes", {}).items():
-        st.session_state[_k(cid, "a", attr)] = int(value)
-    for skill, value in ap.get("skills", {}).items():
-        st.session_state[_k(cid, "s", skill)] = int(value)
-
-
 def cb_species_change(cid):
     """Quando a espécie muda, aplica o pacote de bônus da nova espécie."""
-    st.session_state.setdefault(_k(cid, "sel", "mode"), "archetype" if ch.get("creation_mode") == "archetype" else "advanced")
-    ark = _k(cid, "sel", "arch")
-    if ark not in st.session_state:
-        st.session_state[ark] = ch.get("archetype") if ch.get("archetype") in ARCHETYPES else list(ARCHETYPES.keys())[0]
     spk = _k(cid, "sel", "sp")
     species = st.session_state.get(spk, "")
 
@@ -830,10 +553,10 @@ def live_vitals(cid):
     if not ch:
         return
     d = derived_traits(ch)
-    rank, asc = rank_from_xp(ch["earned_xp"], ch.get("rank", 1))
-    trio = [("cur_wounds", "Wounds", d["Max Wounds"]),
-            ("cur_shock", "Shock", d["Max Shock"]),
-            ("cur_wrath", "Wrath", d["Max Wrath"])]
+    rank, asc = rank_from_xp(ch["earned_xp"])
+    trio = [("cur_wounds", "Ferimentos", d["Max Wounds"]),
+            ("cur_shock", "Choque", d["Max Shock"]),
+            ("cur_wrath", "Ira", d["Max Wrath"])]
     cols = st.columns(3)
     for i, (field, label, mx) in enumerate(trio):
         with cols[i]:
@@ -844,7 +567,7 @@ def live_vitals(cid):
             b[2].button("+1", key=f"lv{field}{cid}c", on_click=adjust_vital, args=(cid, field, +1))
             b[3].button("+5", key=f"lv{field}{cid}d", on_click=adjust_vital, args=(cid, field, +5))
     if asc:
-        st.warning("100+ Earned XP — this character may ascend to the next Tier.")
+        st.warning("100+ XP ganho — este servo pode ascender de Tier.")
 
 
 @st.fragment(run_every=REFRESH_S)
@@ -863,7 +586,7 @@ def vox_live(listener_cid=None):
         listener = load_character(listener_cid)
         if not listener or listener.get("folder_id") is None:
             st.markdown(
-                "<div class='wg' style='opacity:.6'>No Vox network — no communications available.</div>",
+                "<div class='wg' style='opacity:.6'>Sem pasta Vox — nenhuma comunicação disponível.</div>",
                 unsafe_allow_html=True,
             )
             return
@@ -885,7 +608,7 @@ def vox_live(listener_cid=None):
             shown.append((ch["name"] or "?", ch["kind"], False))
 
     if not shown:
-        st.markdown("<div class='wg' style='opacity:.6'>No signal on the Vox network.</div>", unsafe_allow_html=True)
+        st.markdown("<div class='wg' style='opacity:.6'>Sem sinal na rede Vox.</div>", unsafe_allow_html=True)
         return
 
     html = ""
@@ -902,30 +625,30 @@ def vox_live(listener_cid=None):
 def battle_view(cid):
     ch = load_character(cid)
     if not ch:
-        st.error("Character sheet not found.")
+        st.error("Ficha não encontrada.")
         return
     d = derived_traits(ch)
     rank, _ = rank_from_xp(ch["earned_xp"])
     ncls = "npc" if ch["kind"] == "npc" else ""
-    st.markdown(f"<div class='hero'><div class='nm {ncls}'>{ch['name'] or 'Character'}</div>"
-                f"<div class='meta'>{ch['chapter'] or ''} &nbsp;·&nbsp; {species_label(ch['species'])} &nbsp;·&nbsp; "
+    st.markdown(f"<div class='hero'><div class='nm {ncls}'>{ch['name'] or 'Servo'}</div>"
+                f"<div class='meta'>{ch['chapter'] or ''} &nbsp;·&nbsp; {ch['species']} &nbsp;·&nbsp; "
                 f"Tier {ch['tier']} &nbsp;·&nbsp; Rank {rank}</div></div>", unsafe_allow_html=True)
 
-    st.markdown("<div class='sectionttl'>Vitals</div>", unsafe_allow_html=True)
+    st.markdown("<div class='sectionttl'>Vitalidade</div>", unsafe_allow_html=True)
     live_vitals(cid)
 
     left, right = st.columns([1.5, 1])
     with left:
-        st.markdown("<div class='sectionttl'>Derived Traits</div>", unsafe_allow_html=True)
-        order = [("Defence", "Defence"), ("Resilience", "Resilience"), ("Soak", "Soak"),
-                 ("Determination", "Determination"), ("Resolve", "Resolve"), ("Conviction", "Conviction"),
-                 ("Passive Awareness", "Passive Awareness"), ("Influence", "Influence"), ("Speed", "Speed")]
+        st.markdown("<div class='sectionttl'>Traços Derivados</div>", unsafe_allow_html=True)
+        order = [("Defence", "Defesa"), ("Resilience", "Resiliência"), ("Soak", "Absorção"),
+                 ("Determination", "Determinação"), ("Resolve", "Resolução"), ("Conviction", "Convicção"),
+                 ("Passive Awareness", "Percepção"), ("Influence", "Influência"), ("Speed", "Deslocamento")]
         cards = "".join(f"<div class='statcard'><div class='l'>{pt}</div><div class='v'>{d[en]}</div></div>"
                         for en, pt in order)
         st.markdown(f"<div class='grid'>{cards}</div>", unsafe_allow_html=True)
 
-        st.markdown("<div class='sectionttl'>Skills &nbsp;<small style='opacity:.6;letter-spacing:0'>Total = Skill + Attribute</small></div>", unsafe_allow_html=True)
-        rows = "<div class='skhead'><span>Skill</span><span>Rank</span><span>Attr</span><span>Total</span></div>"
+        st.markdown("<div class='sectionttl'>Perícias &nbsp;<small style='opacity:.6;letter-spacing:0'>Total = valor + atributo</small></div>", unsafe_allow_html=True)
+        rows = "<div class='skhead'><span>Perícia</span><span>Val</span><span>Atr</span><span>Total</span></div>"
         for s in SKILLS:
             r = ch["skills"][s]; av = ch["attributes"][SKILLS[s]]
             rows += (f"<div class='skrow'><span class='n'>{s}</span><span class='c'>{r}</span>"
@@ -935,35 +658,30 @@ def battle_view(cid):
     with right:
         package = species_package(ch["species"])
         if package.get("abilities"):
-            st.markdown("<div class='sectionttl'>Species Abilities</div>", unsafe_allow_html=True)
+            st.markdown("<div class='sectionttl'>Habilidades da Espécie</div>", unsafe_allow_html=True)
             for ability in package["abilities"]:
                 st.markdown(
                     f"<div class='tal'><span class='tn'>{ability}</span></div>",
                     unsafe_allow_html=True,
                 )
 
-        st.markdown("<div class='sectionttl'>Talents</div>", unsafe_allow_html=True)
+        st.markdown("<div class='sectionttl'>Talentos</div>", unsafe_allow_html=True)
         if ch["talents"]:
             for t in ch["talents"]:
-                name = html.escape(str(t.get("name", "")))
-                effect = html.escape(str(t.get("effect", "")))
-                cost = f"<span class='tc'>{int(t.get('cost') or 0)} XP</span>" if t.get("cost") else ""
-                effect_html = f"<div style='margin-top:5px;opacity:.75;line-height:1.35'>{effect}</div>" if effect else ""
-                st.markdown(f"<div class='tal'><span class='tn'>{name}</span>{cost}{effect_html}</div>", unsafe_allow_html=True)
+                cost = f"<span class='tc'>{t['cost']} XP</span>" if t.get("cost") else ""
+                st.markdown(f"<div class='tal'><span class='tn'>{t['name']}</span>{cost}</div>", unsafe_allow_html=True)
         else:
-            st.markdown("<div class='tal' style='opacity:.6'>No talents.</div>", unsafe_allow_html=True)
+            st.markdown("<div class='tal' style='opacity:.6'>Nenhum talento.</div>", unsafe_allow_html=True)
 
         st.markdown("<div class='sectionttl'>Wargear</div>", unsafe_allow_html=True)
-        if ch["wargear"]:
-            for w in ch["wargear"]:
-                name = html.escape(str(w.get("name", "")))
-                effect = html.escape(str(w.get("effect", "")))
-                effect_html = f"<div style='margin-top:5px;opacity:.75;line-height:1.35'>{effect}</div>" if effect else ""
-                st.markdown(f"<div class='wg'><b>{name}</b>{effect_html}</div>", unsafe_allow_html=True)
+        wl = [w for w in (ch["wargear"] or "").splitlines() if w.strip()]
+        if wl:
+            for w in wl:
+                st.markdown(f"<div class='wg'>{w}</div>", unsafe_allow_html=True)
         else:
-            st.markdown("<div class='wg' style='opacity:.6'>No wargear.</div>", unsafe_allow_html=True)
+            st.markdown("<div class='wg' style='opacity:.6'>Sem wargear.</div>", unsafe_allow_html=True)
 
-        st.markdown("<div class='sectionttl'>Vox Network</div>", unsafe_allow_html=True)
+        st.markdown("<div class='sectionttl'>Rede Vox</div>", unsafe_allow_html=True)
         vox_live(cid)
 
 
@@ -977,7 +695,7 @@ def _k(cid, sec, f):
 def edit_view(cid, gm_mode=False):
     ch = load_character(cid)
     if not ch:
-        st.error("Character sheet not found.")
+        st.error("Ficha não encontrada.")
         return
     camp = get_campaign()
     species_list = NPC_SPECIES if ch["kind"] == "npc" else PLAYER_SPECIES
@@ -993,10 +711,6 @@ def edit_view(cid, gm_mode=False):
     st.session_state.setdefault(_k(cid, "n", "tier"), int(ch["tier"]))
     st.session_state.setdefault(_k(cid, "n", "armour"), int(ch["armour"]))
     st.session_state.setdefault(_k(cid, "n", "other"), int(ch["other_xp"]))
-    st.session_state.setdefault(_k(cid, "sel", "mode"), "archetype" if ch.get("creation_mode") == "archetype" else "advanced")
-    ark = _k(cid, "sel", "arch")
-    if ark not in st.session_state:
-        st.session_state[ark] = ch.get("archetype") if ch.get("archetype") in ARCHETYPES else list(ARCHETYPES.keys())[0]
     spk = _k(cid, "sel", "sp")
     if spk not in st.session_state:
         st.session_state[spk] = ch["species"] if ch["species"] in species_list else species_list[-1]
@@ -1020,51 +734,35 @@ def edit_view(cid, gm_mode=False):
                 int(value),
             )
 
-        st.session_state[_k(cid, "meta", "previous_species")] = selected_species
         st.session_state[species_init_key] = True
 
-    mode = st.radio(T("creation_mode"), ["advanced", "archetype"], index=1 if st.session_state[_k(cid, "sel", "mode")] == "archetype" else 0, horizontal=True, key=_k(cid, "sel", "mode"), format_func=lambda x: T("archetype_mode") if x == "archetype" else T("advanced"))
-    if mode == "archetype":
-        arch_options = list(ARCHETYPES.keys())
-        st.selectbox(T("archetype"), arch_options, key=ark, on_change=cb_archetype_change, args=(cid,))
-        ad = ARCHETYPES[st.session_state[ark]]
-        st.caption(f"Tier {ad['tier']} · {ad['species']} · {ad['xp']} XP · {ad['faction']}")
-    else:
-        st.caption("Advanced Character Creation: build freely without an Archetype.")
-    if mode == "archetype" and ch.get("creation_mode") == "archetype":
-        cb_archetype_change(cid)
-
     c = st.columns([2, 2, 2])
-    c[0].text_input("Name", key=_k(cid, "t", "name"))
-    c[1].text_input("Chapter / Faction", key=_k(cid, "t", "chapter"))
+    c[0].text_input("Nome", key=_k(cid, "t", "name"))
+    c[1].text_input("Capítulo / Facção", key=_k(cid, "t", "chapter"))
     c[2].selectbox(
-        "Species",
+        "Espécie",
         species_list,
-        format_func=species_label,
         key=spk,
-        disabled=(mode == "archetype"),
         on_change=cb_species_change,
         args=(cid,),
     )
     c = st.columns([1, 1, 1, 2])
-    c[0].metric("Tier", int(st.session_state[_k(cid, "n", "tier")])) if (mode == "archetype" or not gm_mode) else c[0].number_input("Tier", 1, MAX_TIER, key=_k(cid, "n", "tier"))
-    c[1].number_input("Armour", 0, 30, key=_k(cid, "n", "armour"))
-    c[2].number_input("Other XP", 0, 100000, key=_k(cid, "n", "other"))
+    c[0].number_input("Tier", 1, 5, key=_k(cid, "n", "tier"))
+    c[1].number_input("Armadura", 0, 30, key=_k(cid, "n", "armour"))
+    c[2].number_input("Outro XP", 0, 100000, key=_k(cid, "n", "other"))
     if gm_mode:
-        exp = c[3].number_input("Earned XP", 0, 100000, int(ch["earned_xp"]), key=f"earn_{cid}")
+        exp = c[3].number_input("XP Ganho", 0, 100000, int(ch["earned_xp"]), key=f"earn_{cid}")
         if exp != ch["earned_xp"]:
             set_earned_xp(cid, exp)
-    else:
-        c[3].markdown(f"**Rank:** {rank_label(ch.get('rank', 1))}<br><small>Rank is controlled by the Magister.</small>", unsafe_allow_html=True)
 
-    st.markdown("#### Attributes")
+    st.markdown("#### Atributos")
     acol = st.columns(4)
     for i, a in enumerate(ATTRS):
         acol[i % 4].number_input(a, 1, 12, key=_k(cid, "a", a))
     cur_attr = {a: int(st.session_state[_k(cid, "a", a)]) for a in ATTRS}
     cur_skill = {s: int(st.session_state[_k(cid, "s", s)]) for s in SKILLS}
 
-    st.markdown("#### Skills")
+    st.markdown("#### Perícias")
     scol = st.columns(3)
     for i, s in enumerate(SKILLS):
         with scol[i % 3]:
@@ -1076,10 +774,10 @@ def edit_view(cid, gm_mode=False):
 
     package = species_package(st.session_state[spk])
     if package:
-        st.markdown("#### Species Package")
-        st.caption(f"Package: {package.get('xp', 0)} XP · "
+        st.markdown("#### Bônus da Espécie")
+        st.caption(f"Pacote da espécie: {package.get('xp', 0)} XP · "
                    f"Speed {package.get('speed', species_speed(st.session_state[spk]))} · "
-                   f"Size {package.get('size', 'Average')}")
+                   f"Tamanho {package.get('size', 'Average')}")
 
         abilities = package.get("abilities", [])
         if abilities:
@@ -1089,80 +787,39 @@ def edit_view(cid, gm_mode=False):
                     unsafe_allow_html=True,
                 )
 
-    st.markdown("#### Talents")
-    st.caption("Enter the name, effect, and XP cost. The effect will appear in Battle View.")
-    tdf = ch["talents"] if ch["talents"] else [{"name": "", "effect": "", "cost": 20}]
-    edited_talents = st.data_editor(
-        tdf, num_rows="dynamic", key=f"tal_{cid}", use_container_width=True,
-        column_config={
-            "name": st.column_config.TextColumn("Talent", width="medium"),
-            "effect": st.column_config.TextColumn("Effect", width="large"),
-            "cost": st.column_config.NumberColumn("XP", min_value=0, step=5),
-        },
-    )
-    talents = []
-    for r in edited_talents:
-        name = str(r.get("name", "") or "").strip()
-        if name:
-            talents.append({
-                "name": name,
-                "effect": str(r.get("effect", "") or "").strip(),
-                "cost": int(r.get("cost") or 0),
-            })
-
-    st.markdown("#### Wargear")
-    st.caption("Enter the name and effect. Both will appear in Battle View.")
-    wdf = ch["wargear"] if ch["wargear"] else [{"name": "", "effect": ""}]
-    edited_wargear = st.data_editor(
-        wdf, num_rows="dynamic", key=f"wg_{cid}", use_container_width=True,
-        column_config={
-            "name": st.column_config.TextColumn("Wargear", width="medium"),
-            "effect": st.column_config.TextColumn("Effect", width="large"),
-        },
-    )
-    wargear = []
-    for r in edited_wargear:
-        name = str(r.get("name", "") or "").strip()
-        if name:
-            wargear.append({"name": name, "effect": str(r.get("effect", "") or "").strip()})
+    st.markdown("#### Talentos")
+    tdf = ch["talents"] if ch["talents"] else [{"name": "", "cost": 20}]
+    edited = st.data_editor(tdf, num_rows="dynamic", key=f"tal_{cid}", use_container_width=True,
+                            column_config={"name": st.column_config.TextColumn("Talento"),
+                                           "cost": st.column_config.NumberColumn("XP", min_value=0, step=5)})
+    talents = [{"name": r.get("name", ""), "cost": int(r.get("cost") or 0)}
+               for r in edited if (r.get("name") or "").strip()]
 
     wc = st.columns(2)
-    wc[0].markdown("**Summary**")
-    wc[0].caption(f"{len(wargear)} wargear item(s) · {len(talents)} talent(s)")
-    wc[1].text_area("Notes", key=_k(cid, "t", "notes"), height=110)
+    wc[0].text_area("Wargear", key=_k(cid, "t", "wargear"), height=110)
+    wc[1].text_area("Anotações", key=_k(cid, "t", "notes"), height=110)
 
-    st.markdown(" ")
-    st.caption("Attribute, skill, talent, and wargear changes are recorded on the character sheet when confirmed below.")
-    if st.button("✠ Record Changes", key=f"save_build_{cid}", use_container_width=True):
-        save_build(
-            cid, st.session_state[_k(cid, "t", "name")], st.session_state[_k(cid, "t", "chapter")],
-            st.session_state[spk], int(st.session_state[_k(cid, "n", "tier")]), cur_attr, cur_skill,
-            talents, json.dumps(wargear, ensure_ascii=False), st.session_state[_k(cid, "n", "armour")],
-            st.session_state[_k(cid, "t", "notes")], st.session_state[_k(cid, "n", "other")],
-            st.session_state.get(ark, "") if mode == "archetype" else "",
-            mode
-        )
-        st.success("Character sheet recorded.")
-        st.rerun()
+    save_build(cid, st.session_state[_k(cid, "t", "name")], st.session_state[_k(cid, "t", "chapter")],
+               st.session_state[spk], st.session_state[_k(cid, "n", "tier")], cur_attr, cur_skill,
+               talents, st.session_state[_k(cid, "t", "wargear")], st.session_state[_k(cid, "n", "armour")],
+               st.session_state[_k(cid, "t", "notes")], st.session_state[_k(cid, "n", "other")])
 
     cur = dict(ch); cur.update({"attributes": cur_attr, "skills": cur_skill, "species": st.session_state[spk],
                                 "tier": int(st.session_state[_k(cid, "n", "tier")]), "talents": talents,
-                                "archetype": st.session_state.get(ark, "") if mode == "archetype" else "",
-                                "creation_mode": mode,
                                 "other_xp": int(st.session_state[_k(cid, "n", "other")])})
     spent = xp_spent(cur); start = starting_xp(camp["tier"]); avail = start + int(ch["earned_xp"]) - spent
     st.divider()
     x = st.columns(4)
-    x[0].metric("Starting XP", start); x[1].metric("Earned XP", ch["earned_xp"])
-    x[2].metric("XP Spent", spent); x[3].metric("XP Available", avail)
+    x[0].metric("XP Inicial", start); x[1].metric("XP Ganho", ch["earned_xp"])
+    x[2].metric("XP Gasto", spent); x[3].metric("XP Disponível", avail)
     if avail < 0:
-        st.error(f"Over budget by {-avail} XP.")
+        st.error(f"Acima do orçamento por {-avail} XP.")
 
-    with st.expander("Portrait"):
+    with st.expander("Retrato"):
         if ch.get("portrait"):
             st.image(ch["portrait"], width=170)
-        up = st.file_uploader("Upload", type=["png", "jpg", "jpeg"], key=f"port_{cid}")
-        if up is not None and st.button("Save Portrait", key=f"pb_{cid}"):
+        up = st.file_uploader("Enviar", type=["png", "jpg", "jpeg"], key=f"port_{cid}")
+        if up is not None and st.button("Salvar retrato", key=f"pb_{cid}"):
             set_portrait(cid, up.getvalue()); st.rerun()
 
 
@@ -1197,7 +854,7 @@ def folder_label(fid, folders):
 
 
 def char_row(ch, folders):
-    rank, _ = rank_from_xp(ch["earned_xp"], ch.get("rank", 1)); d = derived_traits(ch)
+    rank, _ = rank_from_xp(ch["earned_xp"]); d = derived_traits(ch)
     ncls = "npc" if ch["kind"] == "npc" else ""
     vs = ("<span class='vlive'>ATIVO</span>" if ch["comms_on"]
           else ("<span class='vdead'>CORTADO</span>" if secs_since(ch["comms_changed_at"]) < COMMS_FADE_S else ""))
@@ -1236,7 +893,7 @@ def gm_view():
     if st.session_state.get("editing"):
         cid = st.session_state.editing
         st.button("Voltar", on_click=cb_close)
-        t = st.tabs(["Battle View", "Edit"])
+        t = st.tabs(["Visão de Batalha", "Edição"])
         with t[0]:
             battle_view(cid)
         with t[1]:
@@ -1245,43 +902,31 @@ def gm_view():
 
     tabs = st.tabs(["Servos", "Vox", "Experiência", "Campanha", "Manutenção"])
 
-    # ---- Servos / Pastas ----
+    # ---- Servos ----
     with tabs[0]:
         folders = list_folders()
-        all_chars = list_characters()
-        folder_map = {f["id"]: f["name"] for f in folders}
-        folder_options = [None] + [f["id"] for f in folders]
-
-        st.markdown("#### Organização da mesa")
-        st.caption("Use as pastas como grupos da campanha. Elas também definem quais personagens compartilham o Rádio Vox.")
-
-        # Criar pasta rapidamente
-        fc = st.columns([4, 1])
-        newf = fc[0].text_input("Nova pasta", key="newfolder", placeholder="Ex.: Esquadrão Alfa, Nave, Inimigos...")
-        if fc[1].button("Criar pasta", use_container_width=True):
+        st.markdown("#### Pastas")
+        fc = st.columns([2, 1])
+        newf = fc[0].text_input("Nova pasta", key="newfolder", label_visibility="collapsed",
+                                placeholder="Nova pasta")
+        if fc[1].button("Criar"):
             if newf.strip():
                 create_folder(newf.strip()); st.rerun()
-
-        # Gerenciamento de pastas em uma linha, sem esconder a organização principal.
         if folders:
-            st.markdown("**Pastas existentes**")
-            for f in folders:
-                c = st.columns([3.8, 1, 1])
-                nm = c[0].text_input("Name", f["name"], key=f"fn_{f['id']}", label_visibility="collapsed")
-                if nm.strip() and nm != f["name"]:
-                    rename_folder(f["id"], nm.strip())
-                count = sum(1 for ch in all_chars if ch.get("folder_id") == f["id"])
-                c[1].markdown(f"**{count}** servo(s)")
-                if c[2].button("Excluir", key=f"fd_{f['id']}"):
-                    delete_folder(f["id"]); st.rerun()
-
+            fcols = st.columns(min(len(folders), 5))
+            for i, f in enumerate(folders):
+                with fcols[i % 5]:
+                    nm = st.text_input("f", f["name"], key=f"fn_{f['id']}", label_visibility="collapsed")
+                    if nm != f["name"]:
+                        rename_folder(f["id"], nm)
+                    st.button("Excluir", key=f"fd_{f['id']}", on_click=delete_folder, args=(f["id"],))
         st.divider()
+
         cre = st.columns(2)
         with cre[0]:
             st.markdown("#### Recrutar Jogador")
             with st.form("newp"):
-                nu = st.text_input("Usuário")
-                npw = st.text_input("Senha", type="password")
+                nu = st.text_input("Usuário"); npw = st.text_input("Senha", type="password")
                 if st.form_submit_button("Recrutar"):
                     if nu.strip() and npw:
                         ok, msg = create_player(nu.strip(), npw)
@@ -1291,185 +936,90 @@ def gm_view():
         with cre[1]:
             st.markdown("#### Criar NPC")
             with st.form("newn"):
-                nn = st.text_input("Name")
-                nsp = st.selectbox("Raça / Tipo", NPC_SPECIES)
-                nt = st.number_input("Tier", 1, MAX_TIER, 2)
+                nn = st.text_input("Nome"); nsp = st.selectbox("Raça / Tipo", NPC_SPECIES)
+                nt = st.number_input("Tier", 1, 5, 2)
                 if st.form_submit_button("Criar NPC"):
-                    create_npc(nn.strip(), nsp, nt)
-                    st.rerun()
-
+                    create_npc(nn.strip(), nsp, nt); st.rerun()
         st.divider()
-        view = st.radio("Visualização", ["Por pasta", "Todos", "Jogadores", "NPCs"], horizontal=True, key="gm_servo_view")
 
-        if view == "Por pasta":
-            groups = {None: []}
+        view = st.radio("Organização", ["Por Tipo", "Por Pastas"], horizontal=True)
+        if view == "Por Tipo":
+            colp, coln = st.columns(2)
+            with colp:
+                st.markdown("#### Jogadores")
+                for ch in list_characters("player"):
+                    char_row(ch, folders)
+            with coln:
+                st.markdown("#### NPCs")
+                for ch in list_characters("npc"):
+                    char_row(ch, folders)
+        else:
+            allc = list_characters(); groups = {None: []}
             for f in folders:
                 groups[f["id"]] = []
-            for ch in all_chars:
-                groups.setdefault(ch.get("folder_id"), []).append(ch)
-
+            for ch in allc:
+                groups.setdefault(ch["folder_id"], []).append(ch)
             for fid, items in groups.items():
-                label = folder_map.get(fid, "Sem pasta")
-                icon = "◈" if fid is not None else "◇"
-                st.markdown(f"#### {icon} {label}  ·  {len(items)} servo(s)")
+                st.markdown(f"#### {folder_label(fid, folders)}")
                 if not items:
-                    st.caption("Nenhum personagem nesta pasta.")
-                    continue
+                    st.caption("vazia")
                 for ch in items:
-                    a = st.columns([4.2, 1.7, 1.1, 1.1])
+                    a = st.columns([5, 1.4])
                     with a[0]:
                         char_row(ch, folders)
-                    opts = folder_options
-                    idx = opts.index(ch.get("folder_id")) if ch.get("folder_id") in opts else 0
+                    opts = [None] + [f["id"] for f in folders]
+                    idx = opts.index(ch["folder_id"]) if ch["folder_id"] in opts else 0
                     a[1].selectbox("Pasta", opts, index=idx, key=f"mv_{ch['id']}",
-                                   format_func=lambda x: folder_map.get(x, "Sem pasta") if x is not None else "Sem pasta",
-                                   label_visibility="collapsed",
+                                   format_func=lambda x: folder_label(x, folders), label_visibility="collapsed",
                                    on_change=lambda cid=ch["id"]: set_folder(cid, st.session_state[f"mv_{cid}"]))
-                    a[2].markdown("📡 **Vox**")
-                    if ch["comms_on"]:
-                        if a[3].button("Cortar", key=f"gmvc_{ch['id']}"):
-                            set_comms(ch["id"], 0); st.rerun()
-                    else:
-                        if a[3].button("Ativar", key=f"gmvc_{ch['id']}"):
-                            set_comms(ch["id"], 1); st.rerun()
-
-        else:
-            filtered = all_chars
-            if view == "Jogadores":
-                filtered = [c for c in all_chars if c["kind"] == "player"]
-            elif view == "NPCs":
-                filtered = [c for c in all_chars if c["kind"] == "npc"]
-            for ch in filtered:
-                a = st.columns([4.5, 2, 1.1])
-                with a[0]:
-                    char_row(ch, folders)
-                opts = folder_options
-                idx = opts.index(ch.get("folder_id")) if ch.get("folder_id") in opts else 0
-                a[1].selectbox("Pasta", opts, index=idx, key=f"mva_{ch['id']}",
-                               format_func=lambda x: folder_map.get(x, "Sem pasta") if x is not None else "Sem pasta",
-                               label_visibility="collapsed",
-                               on_change=lambda cid=ch["id"]: set_folder(cid, st.session_state[f"mva_{cid}"]))
-                a[2].markdown("📡" + (" ON" if ch["comms_on"] else " OFF"))
 
     # ---- Vox ----
     with tabs[1]:
-        folders = list_folders()
-        chars = list_characters()
-        folder_map = {f["id"]: f["name"] for f in folders}
-        groups = {None: []}
-        for f in folders:
-            groups[f["id"]] = []
-        for ch in chars:
-            groups.setdefault(ch.get("folder_id"), []).append(ch)
-
-        st.markdown("#### Rede Vox por pasta")
-        st.caption("Cada pasta é uma rede fechada. Um personagem só recebe sinais de outros personagens da mesma pasta.")
-
-        # Seleção rápida de rede
-        folder_choices = [None] + [f["id"] for f in folders]
-        selected_fid = st.selectbox(
-            "Rede / Pasta", folder_choices, key="vox_folder_select",
-            format_func=lambda x: "Sem pasta (isolados)" if x is None else folder_map.get(x, "Pasta"),
-        )
-
-        if selected_fid is None:
-            st.warning("Personagens sem pasta não compartilham Vox entre si.")
+        st.markdown("#### Rede Vox — controle de comunicação")
+        alvo = st.radio("Alvo", ["Jogadores", "NPCs"], horizontal=True)
+        if alvo == "Jogadores":
+            vox_toggle_list(list_characters("player"))
         else:
-            members = groups.get(selected_fid, [])
-            on_count = sum(1 for ch in members if ch["comms_on"])
-            c = st.columns([2, 2, 2])
-            c[0].metric("Membros", len(members))
-            c[1].metric("Vox ativo", on_count)
-            c[2].metric("Cortado", len(members) - on_count)
-            b = st.columns(2)
-            if b[0].button("Ativar Vox da pasta", use_container_width=True):
-                set_comms_for_folder(selected_fid, 1); st.rerun()
-            if b[1].button("Cortar Vox da pasta", use_container_width=True):
-                set_comms_for_folder(selected_fid, 0); st.rerun()
-
-            st.divider()
-            if not members:
-                st.info("Esta pasta está vazia.")
+            modo = st.radio("Organizar", ["Individual", "Por pasta"], horizontal=True)
+            npcs = list_characters("npc"); folders = list_folders()
+            if modo == "Individual":
+                vox_toggle_list(npcs)
             else:
-                vox_toggle_list(members)
-
+                groups = {None: []}
+                for f in folders:
+                    groups[f["id"]] = []
+                for ch in npcs:
+                    groups.setdefault(ch["folder_id"], []).append(ch)
+                for fid, items in groups.items():
+                    if items:
+                        st.markdown(f"**{folder_label(fid, folders)}**")
+                        vox_toggle_list(items)
         st.divider()
-        st.markdown("#### Todas as redes")
-        for fid, members in groups.items():
-            label = "Sem pasta" if fid is None else folder_map.get(fid, "Pasta")
-            on_count = sum(1 for ch in members if ch["comms_on"])
-            st.markdown(f"**{label}** · {len(members)} membro(s) · {on_count} ativo(s)")
-        st.markdown("#### Monitoramento do Magister")
+        st.markdown("#### Sinais ativos")
         vox_live()
 
-    # ---- Experience / Rank / Tier ----
+    # ---- Experiência ----
     with tabs[2]:
-        st.markdown("#### Grant Experience")
-        st.caption("Wrath & Glory 2e: Rank 1 = 0–39 XP, Rank 2 = 40–79 XP, Rank 3 = 80+ XP. At 100 earned XP, a character may Ascend to the next Tier.")
+        st.markdown("#### Conceder Experiência")
+        st.caption("Rank: 40 XP vira 2, 80 vira 3. A partir de 100, pode ascender de Tier.")
         chars = list_characters("player")
         if chars:
-            st.markdown("#### Rank & Tier Control")
-            st.caption("Only the Magister controls Rank and Tier. Rank cannot be increased before its XP threshold and cannot be reduced.")
-            control_names = {c["name"] or f"#{c['id']}": c["id"] for c in chars}
-            selected_name = st.selectbox("Character", list(control_names.keys()), key="rank_tier_character")
-            selected_cid = control_names[selected_name]
-            selected = next(c for c in chars if c["id"] == selected_cid)
-            current_rank, _ = rank_from_xp(selected["earned_xp"], selected.get("rank", 1))
-
-            rc = st.columns(4)
-            rc[0].metric("Earned XP", selected["earned_xp"])
-            rc[1].metric("Current Rank", f"{current_rank} — {RANKS[current_rank]['name']}")
-            rc[2].metric("Next Rank", "40 XP" if current_rank == 1 else ("80 XP" if current_rank == 2 else "Maximum"))
-            max_tier = min(MAX_TIER, int(selected.get("starting_tier", selected["tier"])) + int(selected["earned_xp"]) // 100)
-            rc[3].metric("Tier", f"{selected['tier']} / {max_tier}")
-
-            bc = st.columns(2)
-            next_rank = current_rank + 1
-            if next_rank <= 3:
-                req = RANKS[next_rank]["min_xp"]
-                if selected["earned_xp"] >= req:
-                    if bc[0].button(f"Promote to Rank {next_rank} — {RANKS[next_rank]['name']}", key=f"promote_rank_{selected_cid}", use_container_width=True):
-                        if set_rank(selected_cid, next_rank):
-                            add_log("Magister", f"{selected['name']} promoted to Rank {next_rank}.")
-                            st.rerun()
-                else:
-                    bc[0].button(f"Rank {next_rank} requires {req} earned XP", disabled=True, use_container_width=True)
-            else:
-                bc[0].button("Maximum Rank reached", disabled=True, use_container_width=True)
-
-            next_tier = int(selected["tier"]) + 1
-            max_tier = min(MAX_TIER, int(selected.get("starting_tier", selected["tier"])) + int(selected["earned_xp"]) // 100)
-            if next_tier <= MAX_TIER:
-                if next_tier <= max_tier:
-                    if bc[1].button(f"Ascend to Tier {next_tier}", key=f"ascend_tier_{selected_cid}", use_container_width=True):
-                        if set_tier(selected_cid, next_tier):
-                            add_log("Magister", f"{selected['name']} ascended to Tier {next_tier}.")
-                            st.rerun()
-                else:
-                    bc[1].button("Tier Ascension requires 100 earned XP", disabled=True, use_container_width=True)
-            else:
-                bc[1].button("Maximum Tier reached", disabled=True, use_container_width=True)
-
-            st.divider()
+            names = {c["name"] or f"#{c['id']}": c["id"] for c in chars}
             with st.form("xpf"):
                 cc = st.columns([2, 1, 2])
-                who = cc[0].selectbox("Character", ["Entire Party"] + list(control_names.keys()))
-                amt = cc[1].number_input("XP", -200, 500, 10)
-                why = cc[2].text_input("Reason")
-                if st.form_submit_button("Grant XP"):
-                    tgt = list(control_names.values()) if who == "Entire Party" else [control_names[who]]
+                who = cc[0].selectbox("Servo", ["Mesa inteira"] + list(names.keys()))
+                amt = cc[1].number_input("XP", -200, 500, 10); why = cc[2].text_input("Motivo")
+                if st.form_submit_button("Conceder"):
+                    tgt = list(names.values()) if who == "Mesa inteira" else [names[who]]
                     for cid in tgt:
                         award_xp(cid, amt)
-                    add_log("Magister", f"{amt:+} XP to {who}. {why}".strip())
-                    st.rerun()
-
+                    add_log("Magister", f"{amt:+} XP para {who}. {why}".strip()); st.rerun()
             st.divider()
             for c in chars:
-                rk, asc = rank_from_xp(c["earned_xp"], c.get("rank", 1))
-                status = " · Tier Ascension available" if asc and c["tier"] < MAX_TIER else ""
-                st.write(f"**{c['name']}** — {c['earned_xp']} XP · {rank_label(rk)} · Tier {c['tier']}{status}")
+                rk, asc = rank_from_xp(c["earned_xp"])
+                st.write(f"**{c['name']}** — {c['earned_xp']} XP · Rank {rk}" + ("  · pode ascender" if asc else ""))
         else:
-            st.info("No players.")
+            st.info("Nenhum jogador.")
 
     # ---- Campanha ----
     with tabs[3]:
@@ -1477,7 +1027,7 @@ def gm_view():
         with st.form("campf"):
             cc = st.columns([3, 1, 1])
             cname = cc[0].text_input("Nome da campanha", camp["name"])
-            ctier = cc[1].number_input("Campaign Tier", 1, MAX_TIER, int(camp["tier"]))
+            ctier = cc[1].number_input("Tier da campanha", 1, 5, int(camp["tier"]))
             sess = cc[2].number_input("Sessão", 1, 999, int(camp["session_no"]))
             if st.form_submit_button("Salvar"):
                 save_campaign(cname, ctier, camp["ruin"], sess); st.rerun()
@@ -1505,7 +1055,7 @@ def gm_view():
                    "Em hospedagem grátis o disco reinicia; baixe periodicamente e reenvie depois.")
         if os.path.exists(DB_PATH):
             size = os.path.getsize(DB_PATH) / (1024 * 1024)
-            st.write(f"Size do banco: {size:.2f} MB (SQLite aguenta ~281 TB; cresce sozinho).")
+            st.write(f"Tamanho do banco: {size:.2f} MB (SQLite aguenta ~281 TB; cresce sozinho).")
             with open(DB_PATH, "rb") as f:
                 st.download_button("Baixar backup (cogitador.db)", f.read(),
                                    file_name="cogitador.db", mime="application/octet-stream")
@@ -1518,13 +1068,13 @@ def gm_view():
 
 def player_view():
     camp = get_campaign()
-    st.markdown(f"<div class='banner'>✠ SERVICE RECORD ✠"
-                f"<span class='sub'>{camp['name']} · Session {camp['session_no']}</span></div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='banner'>✠ FICHA DE SERVIÇO ✠"
+                f"<span class='sub'>{camp['name']} · Sessão {camp['session_no']}</span></div>", unsafe_allow_html=True)
     cid = char_id_for_user(st.session_state.user["id"])
     if not cid:
-        st.error("No character sheet linked. Contact the Magister.")
+        st.error("Nenhuma ficha vinculada. Contate o Magister.")
         return
-    t = st.tabs(["Battle View", "Character Sheet"])
+    t = st.tabs(["Visão de Batalha", "Edição da Ficha"])
     with t[0]:
         battle_view(cid)
     with t[1]:
@@ -1544,9 +1094,6 @@ def main():
         login_page(); return
 
     with st.sidebar:
-        st.session_state.setdefault("lang", "en")
-        lang_choice = st.radio(T("language"), ["en", "pt"], index=0 if st.session_state["lang"] == "en" else 1, horizontal=True, format_func=lambda x: "English" if x == "en" else "Português", key="ui_language")
-        st.session_state["lang"] = lang_choice
         camp = get_campaign(); role = st.session_state.user["role"]
         st.markdown(f"### ✠ {camp['name']}")
         st.write(f"Servo: {st.session_state.user['username']}")

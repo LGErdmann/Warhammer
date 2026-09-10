@@ -29,7 +29,7 @@ SKILLS = {
     "Psychic Mastery": "Willpower", "Scholar": "Intellect", "Stealth": "Agility",
     "Survival": "Willpower", "Tech": "Intellect", "Weapon Skill": "Initiative",
 }
-PLAYER_SPECIES = ["Human", "Adeptus Astartes", "Primaris Astartes", "Aeldari", "Ork"]
+PLAYER_SPECIES = ["Human", "Abhuman", "Adeptus Astartes", "Primaris Astartes", "Aeldari", "Ork"]
 SPECIES_LABELS = {
     "Astra Militarum (Humano)": "Astra Militarum (Human)",
     "Adepta Sororitas": "Adepta Sororitas",
@@ -70,6 +70,7 @@ SKILL_COST = {0: 0, 1: 2, 2: 6, 3: 12, 4: 20, 5: 30, 6: 42, 7: 56, 8: 72}
 # Abilities are not charged again as talents.
 SPECIES_PACKAGES = {
     "Human": {"xp": 0, "attributes": {}, "skills": {}, "abilities": [], "speed": 6, "size": "Average"},
+    "Abhuman": {"xp": 0, "attributes": {}, "skills": {}, "abilities": [], "speed": 6, "size": "Average"},
     "Adeptus Astartes": {
         "xp": 160,
         "attributes": {"Agility": 4, "Initiative": 4, "Intellect": 3, "Strength": 4, "Toughness": 4, "Willpower": 3},
@@ -424,7 +425,7 @@ def init_db():
     conn.commit(); conn.close()
 
 
-def create_player(username, pw, creation_mode="archetype", tier=2, rank=1):
+def create_player(username, pw, creation_mode="archetype", tier=2, rank=1, species="Human", archetype=""):
     conn = get_conn(); c = conn.cursor()
     try:
         salt = secrets.token_hex(16)
@@ -433,13 +434,28 @@ def create_player(username, pw, creation_mode="archetype", tier=2, rank=1):
         uid = c.lastrowid
         tier = max(1, min(MAX_TIER, int(tier)))
         rank = max(1, min(3, int(rank)))
-        default_arch = default_archetype_for_species("Human", tier) if creation_mode == "archetype" else ""
+        species = species if species in PLAYER_SPECIES else "Human"
+        archetype = archetype if archetype in ARCHETYPES else ""
+
+        attrs = default_attributes()
+        skills = default_skills()
+        sp = SPECIES_PACKAGES.get(species, {})
+        for attr, value in sp.get("attributes", {}).items():
+            attrs[attr] = max(int(attrs.get(attr, 1)), int(value))
+        for skill, value in sp.get("skills", {}).items():
+            skills[skill] = max(int(skills.get(skill, 0)), int(value))
+        ap = ARCHETYPE_PACKAGES.get(archetype, {})
+        for attr, value in ap.get("attributes", {}).items():
+            attrs[attr] = max(int(attrs.get(attr, 1)), int(value))
+        for skill, value in ap.get("skills", {}).items():
+            skills[skill] = max(int(skills.get(skill, 0)), int(value))
+
         c.execute("""INSERT INTO characters(user_id,kind,name,chapter,species,archetype,creation_mode,tier,starting_tier,rank,earned_xp,other_xp,
                      attributes,skills,talents,wargear,armour,cur_wounds,cur_shock,cur_wrath,notes,
                      comms_on,comms_changed_at)
                      VALUES(?, 'player', ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                  (uid, username, "", "Human", default_arch, creation_mode, tier, tier, rank, 0, 0, json.dumps(default_attributes()),
-                   json.dumps(default_skills()), json.dumps([]), "", 0, 0, 0, 0, "", 1, now_iso()))
+                  (uid, username, "", species, archetype, creation_mode, tier, tier, rank, 0, 0, json.dumps(attrs),
+                   json.dumps(skills), json.dumps([]), "", 0, 0, 0, 0, "", 1, now_iso()))
         conn.commit(); return True, "Player recruited."
     except sqlite3.IntegrityError:
         return False, "That designation already exists."
@@ -1288,7 +1304,9 @@ def edit_view(cid, gm_mode=False):
         st.session_state[_k(cid, "meta", "previous_species")] = selected_species
         st.session_state[species_init_key] = True
 
-    # The Magister alone chooses Advanced Character Creation. Players never see the mode selector.
+    # Standard creation: the Magister defines Species + Archetype.
+    # Advanced creation: the Magister enables the mode, then the Player
+    # chooses Species + Archetype on the character sheet.
     mode = ch.get("creation_mode") or "archetype"
     if gm_mode:
         advanced_key = _k(cid, "sel", "advanced")
@@ -1296,59 +1314,58 @@ def edit_view(cid, gm_mode=False):
             st.session_state[advanced_key] = (mode == "advanced")
         advanced = st.checkbox("Advanced Character Creation", key=advanced_key)
         mode = "advanced" if advanced else "archetype"
+
         if mode == "archetype":
             arch_options = archetype_options()
             if st.session_state.get(ark) not in arch_options and arch_options:
                 st.session_state[ark] = arch_options[0]
             if arch_options:
                 st.selectbox(
-                    "Archetype",
-                    arch_options,
-                    key=ark,
-                    on_change=cb_archetype_change,
-                    args=(cid,),
+                    "Archetype", arch_options, key=ark,
+                    on_change=cb_archetype_change, args=(cid,),
                     format_func=lambda name: f"{name}  ·  T{ARCHETYPES[name]['tier']}  ·  {species_label(ARCHETYPES[name]['species'])}",
                 )
                 ad = ARCHETYPES[st.session_state[ark]]
                 st.caption(f"Tier {ad['tier']} · {ad['species']} · {ad['xp']} XP · {ad['faction']}")
-            else:
-                st.info("No Archetype is available.")
         else:
-            st.caption("Advanced Character Creation: no Archetype is selected. The character receives Tier ×10 bonus XP.")
+            st.info("Advanced Character Creation: the Player chooses Species. No Archetype is used.")
+            st.session_state[ark] = ""
     else:
-        if mode == "archetype":
-            arch_options = archetype_options()
-            if st.session_state.get(ark) not in arch_options and arch_options:
-                st.session_state[ark] = arch_options[0]
-            if arch_options:
-                st.selectbox(
-                    "Archetype",
-                    arch_options,
-                    key=ark,
-                    on_change=cb_archetype_change,
-                    args=(cid,),
-                    format_func=lambda name: f"{name}  ·  T{ARCHETYPES[name]['tier']}  ·  {species_label(ARCHETYPES[name]['species'])}",
-                )
-                ad = ARCHETYPES[st.session_state[ark]]
-                st.caption(f"Tier {ad['tier']} · {ad['species']} · {ad['xp']} XP · {ad['faction']}")
-            else:
-                st.info("No Archetype is available.")
-        # Advanced characters do not expose the creation mode to the player.
+        if mode == "advanced":
+            # Advanced Character Creation has no Archetype.
+            # The Player chooses only Species; Tier and Rank remain controlled by the Magister.
+            st.selectbox("Species", species_list, format_func=species_label,
+                         key=spk, on_change=cb_species_change, args=(cid,))
+            st.caption("Advanced Character Creation: you choose your Species. No Archetype is used.")
+            st.session_state[ark] = ""
+        else:
+            selected_arch = ch.get("archetype") or st.session_state.get(ark, "")
+            ad = ARCHETYPES.get(selected_arch)
+            st.text_input("Archetype", value=selected_arch or "None", disabled=True, key=f"player_arch_{cid}")
+            if ad:
+                st.caption(f"Tier {ad['tier']} · {ad['faction']}")
+
     if mode == "archetype" and ch.get("creation_mode") != "archetype":
-        # A newly-created character defaults to Archetype creation.
         cb_archetype_change(cid)
+    elif mode == "advanced":
+        st.session_state[ark] = ""
 
     c = st.columns([2, 2, 2])
     c[0].text_input("Name", key=_k(cid, "t", "name"))
     c[1].text_input("Chapter / Faction", key=_k(cid, "t", "chapter"))
-    c[2].selectbox(
-        "Species",
-        species_list,
-        format_func=species_label,
-        key=spk,
-        on_change=cb_species_change,
-        args=(cid,),
-    )
+    if gm_mode:
+        if mode == "archetype":
+            c[2].selectbox(
+                "Species", species_list, format_func=species_label, key=spk,
+                on_change=cb_species_change, args=(cid,),
+            )
+        else:
+            c[2].text_input("Species", value=species_label(ch.get("species") or "Unknown"), disabled=True, key=f"gm_species_{cid}")
+    elif mode != "advanced":
+        c[2].text_input("Species", value=species_label(ch.get("species") or "Unknown"), disabled=True, key=f"player_species_{cid}")
+    else:
+        c[2].markdown("**Species**")
+        c[2].caption(species_label(st.session_state[spk]))
     c = st.columns([1, 1, 1, 2])
     c[0].metric("Tier", int(st.session_state[_k(cid, "n", "tier")]))
     c[1].number_input("Armour", 0, 30, key=_k(cid, "n", "armour"))
@@ -1439,24 +1456,22 @@ def edit_view(cid, gm_mode=False):
     wc[1].text_area("Notes", key=_k(cid, "t", "notes"), height=110)
 
     if mode == "advanced":
-        previous_arch = st.session_state.get(_k(cid, "meta", "previous_archetype"), "")
-        if previous_arch:
-            strip_archetype_package(cid, previous_arch, st.session_state[spk])
-            cur_attr = {a: int(st.session_state[_k(cid, "a", a)]) for a in ATTRS}
-            cur_skill = {s: int(st.session_state[_k(cid, "s", s)]) for s in SKILLS}
+        # Advanced creation still records and applies the Player's selected
+        # Archetype. The Advanced flag adds the Tier ×10 XP allowance.
+        pass
 
     save_build(
         cid, st.session_state[_k(cid, "t", "name")], st.session_state[_k(cid, "t", "chapter")],
         st.session_state[spk], int(st.session_state[_k(cid, "n", "tier")]), cur_attr, cur_skill,
         talents, json.dumps(wargear, ensure_ascii=False), st.session_state[_k(cid, "n", "armour")],
         st.session_state[_k(cid, "t", "notes")], st.session_state[_k(cid, "n", "other")],
-        st.session_state.get(ark, "") if mode == "archetype" else "",
+        st.session_state.get(ark, ""),
         mode
     )
 
     cur = dict(ch); cur.update({"attributes": cur_attr, "skills": cur_skill, "species": st.session_state[spk],
                                 "tier": int(st.session_state[_k(cid, "n", "tier")]), "talents": talents,
-                                "archetype": st.session_state.get(ark, "") if mode == "archetype" else "",
+                                "archetype": st.session_state.get(ark, ""),
                                 "creation_mode": mode,
                                 "other_xp": int(st.session_state[_k(cid, "n", "other")])})
     spent = xp_spent(cur); start = starting_xp(camp["tier"], advanced=(mode == "advanced")); avail = start + int(ch["earned_xp"]) - spent
@@ -1592,14 +1607,27 @@ def gm_view():
             with st.form("newp"):
                 nu = st.text_input("Username")
                 npw = st.text_input("Password", type="password")
-                pc = st.columns([1, 1, 2])
-                ptier = pc[0].number_input("Tier", 1, MAX_TIER, int(get_campaign()["tier"]))
-                prank = pc[1].selectbox("Rank", [1, 2, 3], format_func=rank_label)
-                padvanced = pc[2].checkbox("Advanced Character Creation", value=False)
+                st.markdown("**Character Definition**")
+                pc2 = st.columns([1, 1, 2])
+                ptier = pc2[0].number_input("Tier", 1, MAX_TIER, int(get_campaign()["tier"]))
+                prank = pc2[1].selectbox("Rank", [1, 2, 3], format_func=rank_label)
+                padvanced = pc2[2].checkbox("Advanced Character Creation", value=False)
+                if not padvanced:
+                    pc1 = st.columns(2)
+                    pspecies = pc1[0].selectbox("Species", PLAYER_SPECIES, format_func=species_label)
+                    parch = pc1[1].selectbox(
+                        "Archetype", archetype_options(),
+                        format_func=lambda name: f"{name}  ·  T{ARCHETYPES[name]['tier']}  ·  {ARCHETYPES[name]['faction']}"
+                    )
+                    st.caption("The Magister defines Species, Archetype, Tier and Rank. The Player cannot edit them.")
+                else:
+                    pspecies = ""
+                    parch = ""
+                    st.caption("Advanced Character Creation: the Player chooses Species. No Archetype is used.")
                 if st.form_submit_button("Recruit"):
                     if nu.strip() and npw:
                         mode = "advanced" if padvanced else "archetype"
-                        ok, msg = create_player(nu.strip(), npw, mode, ptier, prank)
+                        ok, msg = create_player(nu.strip(), npw, mode, ptier, prank, pspecies, parch)
                         (st.success if ok else st.error)(msg)
                         if ok:
                             st.rerun()

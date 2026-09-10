@@ -754,6 +754,25 @@ OFFICIAL_SOURCE_BLOCKLIST = (
     "community", "fan made", "fan-made", "unofficial", "custom rules",
 )
 
+# These are Library category pages, not individual Wargear entries.
+# The old scraper accidentally treated them as single items, which produced
+# the giant "homeDoctors of Doom help" entry shown in the Craft screen.
+DOD_WARGEAR_CATEGORY_SLUGS = {
+    "weapons", "armour", "armor", "ammo", "tools", "equipment",
+    "augmetics", "upgrades", "weapon-upgrades", "armour-upgrades",
+}
+
+
+def _dod_is_detail_url(url, kind):
+    path = urlparse(url).path.rstrip("/")
+    prefix = "/library/talents/" if kind == "talent" else "/library/wargear/"
+    if not path.startswith(prefix):
+        return False
+    slug = path[len(prefix):].split("/", 1)[0].lower()
+    if not slug or slug in (DOD_WARGEAR_CATEGORY_SLUGS if kind == "wargear" else set()):
+        return False
+    return True
+
 
 def _dod_is_official_source(source):
     src = str(source or "").strip().lower()
@@ -774,13 +793,24 @@ def _dod_html(url):
 def _dod_links(kind):
     path = "/library/talents" if kind == "talent" else "/library/wargear"
     html_text = _dod_html("https://www.doctors-of-doom.com" + path)
-    links = re.findall(r'href=["\'](/library/%s/[^"\'#?]+)' % ("talents" if kind == "talent" else "wargear"), html_text, re.I)
+    prefix = "talents" if kind == "talent" else "wargear"
+    # The index contains links to category pages as well as individual entries.
+    # Only keep actual detail URLs.
+    patterns = [
+        rf'href=["\'](/library/{prefix}/[^"\'#?\s]+)',
+        rf'(?:(?:href|url|path)["\'\s:=]+)["\']?(/library/{prefix}/[^"\'#?\s]+)',
+    ]
+    candidates = []
+    for pattern in patterns:
+        candidates.extend(re.findall(pattern, html_text, re.I))
     out = []
     seen = set()
-    for href in links:
+    for href in candidates:
+        href = href.replace("&amp;", "&")
         url = "https://www.doctors-of-doom.com" + href
-        if url not in seen:
-            seen.add(url); out.append(url)
+        if _dod_is_detail_url(url, kind) and url not in seen:
+            seen.add(url)
+            out.append(url)
     return out
 
 
@@ -835,7 +865,13 @@ def _dod_parse_structured_modifiers(kind, text, details):
 
 
 def _dod_parse_entry(url, kind):
+    if not _dod_is_detail_url(url, kind):
+        raise ValueError("Skipped a Doctors of Doom category/index page.")
     text = _dod_fetch_text(url)
+    # A detail page contains one item. Category pages contain many repeated
+    # Name/Source fields; never turn those pages into a single catalog entry.
+    if text.count("Source") > 3 or text.count("Name") > 8:
+        raise ValueError("Skipped a Doctors of Doom category/index page.")
     if kind == "talent":
         m = re.search(r"Name\s+(.+?)\s+Effect\s+(.*?)\s+Tags\s+(.*?)\s+Cost\s+(\d+)\s+Source\s+(.+)$", text, re.I)
         if not m:
@@ -861,9 +897,41 @@ def _dod_parse_entry(url, kind):
     return item
 
 
+def _cleanup_invalid_craft_catalog_rows():
+    """Remove rows created by the old scraper when it parsed category pages."""
+    conn = get_conn()
+    rows = conn.execute("SELECT id,kind,name,source_url,effect,source FROM craft_items").fetchall()
+    removed = 0
+    for r in rows:
+        url = str(r["source_url"] or "")
+        path = urlparse(url).path.rstrip("/") if url else ""
+        bad_category = (
+            path in {
+                "/library/wargear/weapons", "/library/wargear/armour",
+                "/library/wargear/armor", "/library/wargear/ammo",
+                "/library/wargear/tools", "/library/wargear/equipment",
+                "/library/wargear/augmetics", "/library/wargear/upgrades",
+                "/library/wargear/weapon-upgrades", "/library/wargear/armour-upgrades",
+            }
+            or "homeDoctors of Doom help" in str(r["name"] or "")
+            or (len(str(r["effect"] or "")) > 1800 and str(r["kind"]) == "wargear")
+        )
+        if bad_category:
+            conn.execute("DELETE FROM craft_items WHERE id=?", (int(r["id"]),))
+            removed += 1
+    if removed:
+        conn.commit()
+    conn.close()
+    return removed
+
+
 def sync_official_craft_catalog(force=False):
     """Synchronize official Talent/Wargear references without a user import step."""
-    if not force and st.session_state.get("craft_sync_done"):
+    # Always perform the cheap cleanup so an older malformed catalog entry is
+    # removed even when the session has already synchronized once.
+    _cleanup_invalid_craft_catalog_rows()
+    sync_version = 2
+    if not force and st.session_state.get("craft_sync_done") and st.session_state.get("craft_sync_version") == sync_version:
         return
     errors = []
     for kind in ("talent", "wargear"):
@@ -884,6 +952,7 @@ def sync_official_craft_catalog(force=False):
                 except Exception as exc:
                     errors.append(f"{kind}: {exc}")
     st.session_state["craft_sync_done"] = True
+    st.session_state["craft_sync_version"] = sync_version
     st.session_state["craft_sync_errors"] = errors[:8]
 
 

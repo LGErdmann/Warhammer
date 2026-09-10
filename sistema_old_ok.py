@@ -12,7 +12,9 @@ import html
 import os
 import random
 import re
+import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from urllib.parse import urlparse
 from datetime import datetime, timezone
 
 DB_PATH = os.environ.get("WG_DB_PATH", "cogitador.db")
@@ -297,7 +299,7 @@ def rank_from_xp(xp, current_rank=1):
 
 
 def derived_traits(ch):
-    a, sk = effective_attributes(ch), effective_skills(ch)
+    a, sk = ch["attributes"], ch["skills"]
     tier = int(ch.get("tier", 1)); base_armour = int(ch.get("armour", 0)); sp = ch.get("species", "")
     gear = equipped_wargear_modifiers(ch)
     T = int(a.get("Toughness", 1)) + gear.get("toughness", 0)
@@ -642,10 +644,350 @@ def normalize_wargear(raw):
     return out
 
 
+def _dod_fetch_text(url):
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"} or parsed.netloc.lower() != "www.doctors-of-doom.com":
+        raise ValueError("Only doctors-of-doom.com URLs are accepted.")
+    req = urllib.request.Request(url, headers={"User-Agent": "WrathGloryCampaignTool/1.0"})
+    with urllib.request.urlopen(req, timeout=12) as resp:
+        raw = resp.read().decode("utf-8", errors="replace")
+    raw = re.sub(r"<script.*?</script>", " ", raw, flags=re.I | re.S)
+    raw = re.sub(r"<style.*?</style>", " ", raw, flags=re.I | re.S)
+    raw = re.sub(r"<[^>]+>", " ", raw)
+    raw = html.unescape(raw)
+    raw = re.sub(r"\s+", " ", raw).strip()
+    return raw
+
+
+def _dod_parse_legacy_entry(url, kind):
+    """Parse a single Doctors of Doom Library entry for automatic catalog synchronization."""
+    text = _dod_fetch_text(url)
+    if kind == "talent":
+        if "/library/talents/" not in url:
+            raise ValueError("Use a Doctors of Doom Talent page URL.")
+        m = re.search(r"Name\s+(.+?)\s+Effect\s+(.*?)\s+Tags\s+(.*?)\s+Cost\s+(\d+)\s+Source\s+(.+)$", text, re.I)
+        if not m:
+            m = re.search(r"Library\s+Name\s+(.+?)\s+Effect\s+(.*?)\s+Cost\s+(\d+)\s+Source\s+(.+)$", text, re.I)
+        if not m:
+            effect_match = re.search(r"Effect\s+(.+?)\s+(?:Tags|Cost|Source)\s+", text, re.I)
+            cost_match = re.search(r"Cost\s+(\d+)", text, re.I)
+            source_match = re.search(r"Source\s+(.+?)(?:©|$)", text, re.I)
+            if not effect_match or not cost_match:
+                raise ValueError("Could not read the Talent data from that page.")
+            slug = urlparse(url).path.rstrip("/").split("/")[-1]
+            name = re.sub(r"^[^-]+-", "", slug).replace("-", " ").title()
+            effect = effect_match.group(1).strip()
+            cost = int(cost_match.group(1))
+            source = source_match.group(1).strip() if source_match else ""
+            details = {"tags": ""}
+            tag_match = re.search(r"Tags\s+(.*?)\s+Cost\s+\d+", text, re.I)
+            if tag_match: details["tags"] = tag_match.group(1).strip()
+            return {"kind": kind, "name": name, "effect": effect, "cost": cost, "source": source, "source_url": url, "details": details}
+        name = m.group(1).strip()
+        effect = m.group(2).strip()
+        if "Tags" in effect:
+            effect = effect.split(" Tags", 1)[0].strip()
+        cost_match = re.search(r"Cost\s+(\d+)", m.group(0), re.I)
+        cost = int(cost_match.group(1)) if cost_match else 0
+        source_match = re.search(r"Source\s+(.+)$", m.group(0), re.I)
+        source = source_match.group(1).strip() if source_match else ""
+        details = {"tags": ""}
+        tag_match = re.search(r"Tags\s+(.*?)\s+Cost\s+\d+", m.group(0), re.I)
+        if tag_match:
+            details["tags"] = tag_match.group(1).strip()
+    elif kind == "wargear":
+        if "/library/wargear/" not in url:
+            raise ValueError("Use a Doctors of Doom Wargear page URL.")
+        title = re.search(r"Library\s+(.+?)\s+(?:Weapons\s+Armour|Tools|Ranged Weapon|Melee Weapon|Armour|Weapon Upgrade|Tools & Equipment)", text, re.I)
+        if not title:
+            title = re.search(r"Library\s+(.+?)\s+Rarity:", text, re.I)
+        if not title:
+            slug = urlparse(url).path.rstrip("/").split("/")[-1]
+            name = re.sub(r"^[^-]+-", "", slug).replace("-", " ").title()
+        else:
+            name = title.group(1).strip()
+        source_match = re.search(r"Source\s+(.+?)(?:©|$)", text, re.I)
+        source = source_match.group(1).strip() if source_match else ""
+        rarity = re.search(r"Rarity:\s*([^V]+?)\s+Value:\s*(\d+)", text, re.I)
+        effect = ""
+        details = {}
+        if rarity:
+            details["rarity"] = rarity.group(1).strip()
+            details["value"] = int(rarity.group(2))
+            effect += f"Rarity: {details['rarity']} · Value: {details['value']}. "
+        # Weapon pages expose a compact stat row. Keep these fields structured so
+        # the character sheet can display them without asking the GM to retype them.
+        for key, label in (("range", "Range"), ("damage", "Damage"), ("ap", "AP"), ("salvo", "Salvo"), ("traits", "Traits")):
+            mstat = re.search(rf"{label}\s+(.+?)(?=\s+(?:Damage|AP|Salvo|Traits|Source|Keywords):?\s|\s+Source\s|$)", text, re.I)
+            if mstat:
+                details[key] = mstat.group(1).strip(" |·")
+        # Preserve the rules-facing details in the imported entry.
+        start = text.find("Keywords:")
+        if start >= 0:
+            detail = text[start:]
+            if "©" in detail:
+                detail = detail.split("©", 1)[0]
+            effect += detail.strip()
+        else:
+            marker = text.find("Name ")
+            if marker >= 0:
+                detail = text[marker:]
+                if "Source" in detail:
+                    detail = detail[:detail.find("Source")]
+                effect += detail.strip()
+        details["raw"] = effect
+    else:
+        raise ValueError("Unsupported Craft entry type.")
+    return {"kind": kind, "name": name, "effect": effect, "cost": cost if kind == "talent" else 0,
+            "source": source, "source_url": url, "details": details}
+
+
+
+# ============================================================
+#  OFFICIAL CRAFT LIBRARY / DOCTORS OF DOOM
+# ============================================================
+# Doctors of Doom is used only as a structured reference source. The player
+# never imports individual entries. The catalog is synchronized automatically
+# and the Magister controls which entries remain enabled for the campaign.
+OFFICIAL_SOURCE_BLOCKLIST = (
+    "doctors of doom compendium", "homebrew", "house rule", "house rules",
+    "community", "fan made", "fan-made", "unofficial", "custom rules",
+)
+
+# These are Library category pages, not individual Wargear entries.
+# The old scraper accidentally treated them as single items, which produced
+# the giant "homeDoctors of Doom help" entry shown in the Craft screen.
+DOD_WARGEAR_CATEGORY_SLUGS = {
+    "weapons", "armour", "armor", "ammo", "tools", "equipment",
+    "augmetics", "upgrades", "weapon-upgrades", "armour-upgrades",
+}
+
+
+def _dod_is_detail_url(url, kind):
+    path = urlparse(url).path.rstrip("/")
+    prefix = "/library/talents/" if kind == "talent" else "/library/wargear/"
+    if not path.startswith(prefix):
+        return False
+    slug = path[len(prefix):].split("/", 1)[0].lower()
+    if not slug or slug in (DOD_WARGEAR_CATEGORY_SLUGS if kind == "wargear" else set()):
+        return False
+    return True
+
+
+def _dod_is_official_source(source):
+    src = str(source or "").strip().lower()
+    if not src:
+        return False
+    return not any(bad in src for bad in OFFICIAL_SOURCE_BLOCKLIST)
+
+
+def _dod_html(url):
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"} or parsed.netloc.lower() != "www.doctors-of-doom.com":
+        raise ValueError("Only doctors-of-doom.com URLs are accepted.")
+    req = urllib.request.Request(url, headers={"User-Agent": "WrathGloryCampaignTool/2.0"})
+    with urllib.request.urlopen(req, timeout=20) as resp:
+        return resp.read().decode("utf-8", errors="replace")
+
+
+def _dod_links(kind):
+    path = "/library/talents" if kind == "talent" else "/library/wargear"
+    html_text = _dod_html("https://www.doctors-of-doom.com" + path)
+    prefix = "talents" if kind == "talent" else "wargear"
+    # The index contains links to category pages as well as individual entries.
+    # Only keep actual detail URLs.
+    patterns = [
+        rf'href=["\'](/library/{prefix}/[^"\'#?\s]+)',
+        rf'(?:(?:href|url|path)["\'\s:=]+)["\']?(/library/{prefix}/[^"\'#?\s]+)',
+    ]
+    candidates = []
+    for pattern in patterns:
+        candidates.extend(re.findall(pattern, html_text, re.I))
+    out = []
+    seen = set()
+    for href in candidates:
+        href = href.replace("&amp;", "&")
+        url = "https://www.doctors-of-doom.com" + href
+        if _dod_is_detail_url(url, kind) and url not in seen:
+            seen.add(url)
+            out.append(url)
+    return out
+
+
+def _dod_parse_keywords(text):
+    m = re.search(r"Keywords?\s*:\s*(.+?)(?=\s+(?:Attributes|Skills|Effect|Wargear|Influence|Source|Cost|Rarity)\b|$)", text, re.I)
+    if not m:
+        return []
+    raw = m.group(1).strip(" .|")
+    raw = re.sub(r"[\[\]]", "", raw)
+    return [x.strip() for x in re.split(r",|;", raw) if x.strip()]
+
+
+def _dod_parse_prerequisites(text):
+    patterns = [
+        r"(?:Prerequisites?|Requirements?)\s*:\s*(.+?)(?=\s+(?:Keywords?|Effect|Cost|Source|Attributes|Skills)\b|$)",
+        r"(?:Prerequisites?|Requirements?)\s+(.+?)(?=\s+(?:Keywords?|Effect|Cost|Source|Attributes|Skills)\b|$)",
+    ]
+    for pattern in patterns:
+        m = re.search(pattern, text, re.I)
+        if m:
+            return m.group(1).strip(" .|")
+    return ""
+
+
+def _dod_parse_structured_modifiers(kind, text, details):
+    """Extract only mechanical values that can safely be applied automatically."""
+    details = dict(details or {})
+    if kind == "wargear":
+        # Armour rows expose their protection rating. This is enough to drive
+        # Resilience automatically when the armour is equipped.
+        armour_patterns = [
+            r"\b(?:Armour|Armor)\b\s+[^|\n]*?\s+(\d+)\s+(?:[-+]|\b(?:Bulk|Powered|Shield|Force)\b)",
+        ]
+        # More reliable for the dedicated armour listing format: Name | Type | Rating.
+        if "armour" in text.lower() or "armor" in text.lower():
+            m = re.search(r"(?:Armour|Armor)\s+(?:Rating\s*)?(\d+)", text, re.I)
+            if m:
+                details.setdefault("modifiers", {})["armour"] = int(m.group(1))
+        # Explicit modifier phrases in custom/official text.
+        mod = details.setdefault("modifiers", {})
+        for key, label in (("strength", "Strength"), ("toughness", "Toughness"),
+                           ("agility", "Agility"), ("initiative", "Initiative"),
+                           ("willpower", "Willpower"), ("intellect", "Intellect"),
+                           ("fellowship", "Fellowship"), ("speed", "Speed"),
+                           ("wounds", "Wounds"), ("shock", "Shock"),
+                           ("defence", "Defence"), ("resilience", "Resilience")):
+            mm = re.search(rf"(?:\+|−|-)\s*(\d+)\s+{re.escape(label)}\b", text, re.I)
+            if mm:
+                sign = -1 if re.search(rf"−\s*{mm.group(1)}\s+{re.escape(label)}| -\s*{mm.group(1)}\s+{re.escape(label)}", text, re.I) else 1
+                mod[key] = sign * int(mm.group(1))
+    return details
+
+
+def _dod_parse_entry(url, kind):
+    if not _dod_is_detail_url(url, kind):
+        raise ValueError("Skipped a Doctors of Doom category/index page.")
+    text = _dod_fetch_text(url)
+    # A detail page contains one item. Category pages contain many repeated
+    # Name/Source fields; never turn those pages into a single catalog entry.
+    if text.count("Source") > 3 or text.count("Name") > 8:
+        raise ValueError("Skipped a Doctors of Doom category/index page.")
+    if kind == "talent":
+        m = re.search(r"Name\s+(.+?)\s+Effect\s+(.*?)\s+Tags\s+(.*?)\s+Cost\s+(\d+)\s+Source\s+(.+)$", text, re.I)
+        if not m:
+            m = re.search(r"Library\s+Name\s+(.+?)\s+Effect\s+(.*?)\s+Cost\s+(\d+)\s+Source\s+(.+)$", text, re.I)
+        if not m:
+            raise ValueError("Talent page format not recognized")
+        name = m.group(1).strip(); effect = m.group(2).strip(); tags = m.group(3).strip()
+        cost = int(m.group(4)); source = m.group(5).strip()
+        details = {"tags": tags, "keywords": _dod_parse_keywords(text), "prerequisites": _dod_parse_prerequisites(text), "official": _dod_is_official_source(source)}
+        details = _dod_parse_structured_modifiers(kind, text, details)
+        return {"kind": kind, "name": name, "effect": effect, "cost": cost, "source": source,
+                "source_url": url, "details": details}
+
+    # Wargear: use the existing parser for the common stat fields, then enrich
+    # it with Keywords and structured modifiers.
+    item = _dod_parse_legacy_entry(url, "wargear")
+    details = item.get("details", {}) or {}
+    details["keywords"] = _dod_parse_keywords(text)
+    details["prerequisites"] = _dod_parse_prerequisites(text)
+    details["official"] = _dod_is_official_source(item.get("source", ""))
+    details = _dod_parse_structured_modifiers(kind, text, details)
+    item["details"] = details
+    return item
+
+
+def _cleanup_invalid_craft_catalog_rows():
+    """Remove rows created by the old scraper when it parsed category pages."""
+    conn = get_conn()
+    rows = conn.execute("SELECT id,kind,name,source_url,effect,source FROM craft_items").fetchall()
+    removed = 0
+    for r in rows:
+        url = str(r["source_url"] or "")
+        path = urlparse(url).path.rstrip("/") if url else ""
+        bad_category = (
+            path in {
+                "/library/wargear/weapons", "/library/wargear/armour",
+                "/library/wargear/armor", "/library/wargear/ammo",
+                "/library/wargear/tools", "/library/wargear/equipment",
+                "/library/wargear/augmetics", "/library/wargear/upgrades",
+                "/library/wargear/weapon-upgrades", "/library/wargear/armour-upgrades",
+            }
+            or "homeDoctors of Doom help" in str(r["name"] or "")
+            or (len(str(r["effect"] or "")) > 1800 and str(r["kind"]) == "wargear")
+        )
+        if bad_category:
+            conn.execute("DELETE FROM craft_items WHERE id=?", (int(r["id"]),))
+            removed += 1
+    if removed:
+        conn.commit()
+    conn.close()
+    return removed
+
+
+def _offline_official_craft_catalog():
+    """Verified official reference entries bundled locally; no network required."""
+    base = "https://www.doctors-of-doom.com/library/"
+    talents = [
+        ("Acute Sense [Sense]", 20, "Core Rules", "Skill", "Choose one sense; gain Rank bonus dice to related Awareness Tests.", ["Skill"]),
+        ("Absolute Incineration", 20, "Redacted Records I", "Combat, Melta, Damage", "At Short Range with a Melta weapon, increase ED and AP by Rank.", ["Combat","Melta","Damage"]),
+        ("A Taste for Death", 10, "An Abundance of Apocrypha", "", "Spend a Soul token to add Rank bonus dice to your next attack.", []),
+        ("Abhor The Witch", 20, "An Abundance of Apocrypha", "", "Psykers targeting you suffer +Rank to Psychic Mastery DN; Psykers are not treated as allies.", []),
+        ("Acolyte of Ynnead", 15, "An Abundance of Apocrypha", "", "Spend 1 Soul token to add Rank to Psychic Mastery Tests.", []),
+        ("A Feast in Famine", 10, "Redacted Records I", "", "During Regroup, other characters who eat food you cooked remove all Shock.", []),
+        ("Adaptive Strategy", 20, "Vow of Absolution", "", "Wrath spent on Narrative Declarations may be retained after rolling an Icon.", []),
+        ("Aegis of the Emperor", 20, "Redacted Records II", "Faith", "Gain 1 Faith and can protect a nearby target from Psychic powers for a limited duration.", ["Faith"]),
+        ("Ambush", 30, "An Abundance of Apocrypha", "", "Official talent entry. See the source reference for its full rules text.", []),
+        ("Ere We Go!", 20, "An Abundance of Apocrypha", "", "When you Charge, increase Speed by Rank and add 1 ED to attacks.", []),
+    ]
+    # Core-rule Wargear reference set. Mechanical fields are intentionally
+    # structured and concise so the app can apply them without online lookups.
+    gear = [
+        ("Aquila Mk VII Power Armour", "Armour", 8, "Very Rare", "Core Rules", {"armour":4,"keywords":["Imperium","Adeptus Astartes"]}),
+        ("Knife", "Melee Weapon", 2, "Common", "Core Rules", {"damage":2,"ed":2,"ap":0,"range":"Thrown Sx4","traits":[],"keywords":["Blade","Any"]}),
+        ("Astartes Combat Knife", "Melee Weapon", 3, "Uncommon", "Core Rules", {"damage":3,"ed":2,"ap":0,"traits":["Reliable"],"keywords":["Blade","Adeptus Astartes"]}),
+        ("Sword", "Melee Weapon", 3, "Common", "Core Rules", {"damage":3,"ed":3,"ap":0,"traits":["Reliable"],"keywords":["Blade","Any"]}),
+        ("Mono Knife", "Melee Weapon", 3, "Uncommon", "Core Rules", {"damage":3,"ed":2,"ap":-1,"traits":["Rending (1)"],"keywords":["Blade","Imperium","Scum"]}),
+        ("Industrial Bludgeon", "Melee Weapon", 3, "Uncommon", "Core Rules", {"damage":4,"ed":2,"ap":0,"traits":["Brutal","Unwieldy (1)"],"keywords":["Any"]}),
+        ("Chain Bayonet", "Melee Weapon", 3, "Rare", "Core Rules", {"damage":4,"ed":1,"ap":0,"traits":["Brutal"],"keywords":["Chain","Imperium","Chaos"]}),
+        ("Chainsword", "Melee Weapon", 4, "Rare", "Core Rules", {"damage":5,"ed":4,"ap":0,"traits":["Brutal","Parry"],"keywords":["Chain","Chaos"]}),
+        ("Chain Axe", "Melee Weapon", 3, "Rare", "Core Rules", {"damage":5,"ed":4,"ap":0,"traits":["Brutal","Rending (1)"],"keywords":["Blade","Any"]}),
+        ("Eviscerator", "Melee Weapon", 3, "Rare", "Core Rules", {"damage":6,"ed":6,"ap":-4,"range":2,"traits":["Brutal","Unwieldy (2)"],"keywords":["Chain","2-Handed","Adeptus Astartes","Ministorum","Adepta Sororitas"]}),
+        ("Chain Fist", "Melee Weapon", 10, "Very Rare", "Core Rules", {"damage":7,"ed":6,"ap":-4,"traits":["Brutal","Unwieldy (3)"],"keywords":["Chain","Power Field","Imperium","Chaos","Adeptus Astartes"]}),
+        ("Power Blade", "Melee Weapon", 6, "Very Rare", "Core Rules", {"damage":5,"ed":4,"ap":-2,"traits":["Parry"],"keywords":["Power Field","Imperium","Adeptus Ministorum"]}),
+        ("Power Sword", "Melee Weapon", 6, "Rare", "Core Rules", {"damage":5,"ed":4,"ap":-3,"traits":["Parry"],"keywords":["Power Field","Imperium","Aeldari"]}),
+        ("Power Axe", "Melee Weapon", 6, "Rare", "Core Rules", {"damage":5,"ed":5,"ap":-2,"traits":["Rending (1)"],"keywords":["Power Field","Imperium","Adeptus Astartes","Adeptus Mechanicus","Aeldari"]}),
+        ("Power Fist", "Melee Weapon", 8, "Very Rare", "Core Rules", {"damage":5,"ed":5,"ap":-3,"traits":["Brutal","Unwieldy (2)"],"keywords":["Power Field","Imperium","Adeptus Astartes"]}),
+        ("Thunder Hammer", "Melee Weapon", 8, "Very Rare", "Core Rules", {"damage":8,"ed":6,"ap":-3,"range":2,"traits":["Brutal","Unwieldy (2)"],"keywords":["Power Field","Adeptus Astartes"]}),
+        ("Data-Slate", "Tools & Equipment", 2, "Common", "Core Rules", {"keywords":["Any"]}),
+        ("Combi-Tool", "Tools & Equipment", 3, "Uncommon", "Core Rules", {"keywords":["Any"]}),
+    ]
+    out=[]
+    for name,cost,source,tags,effect,keywords in talents:
+        out.append({"kind":"talent","name":name,"effect":effect,"cost":cost,"source":source,
+                    "source_url":base+"talents","details":{"official":True,"custom":False,"tags":tags,"keywords":keywords,"prerequisites":""}})
+    for name,typ,value,rarity,source,details in gear:
+        details=dict(details); details.update({"official":True,"custom":False,"rarity":rarity,"value":value,"type":typ,"prerequisites":""})
+        out.append({"kind":"wargear","name":name,"effect":"Official reference entry. See source reference for full rules text.","cost":0,
+                    "source":source,"source_url":base+"wargear","details":details})
+    return out
+
+
 def sync_official_craft_catalog(force=False):
-    """Craft data is campaign-local. No network synchronization is used."""
+    """Load the bundled official Craft catalog. Runtime never contacts Doctors of Doom."""
+    _cleanup_invalid_craft_catalog_rows()
+    sync_version = 3
+    if not force and st.session_state.get("craft_sync_done") and st.session_state.get("craft_sync_version") == sync_version:
+        return
+    # Remove only previous bundled official rows so the seed is deterministic.
+    conn = get_conn()
+    conn.execute("DELETE FROM craft_items WHERE json_extract(details, '$.bundled_official') = 1")
+    conn.commit(); conn.close()
+    for item in _offline_official_craft_catalog():
+        item["details"]["bundled_official"] = True
+        save_craft_item(item)
     st.session_state["craft_sync_done"] = True
-    st.session_state["craft_sync_version"] = 5
+    st.session_state["craft_sync_version"] = sync_version
     st.session_state["craft_sync_errors"] = []
 
 
@@ -658,202 +1000,62 @@ def craft_details(row):
 
 
 def character_keywords(ch):
-    """Return the Keywords currently possessed by a character.
-
-    Wrath & Glory Keywords represent faction/nature, allegiance and specific
-    sub-groups. Species and Archetype provide the normal starting Keywords;
-    Chapter and explicit character choices can add more specific Keywords.
-    """
+    """Return the campaign Keywords available to a character."""
     keys = set()
-    species = str(ch.get("species", "") or "").strip()
-    arch = str(ch.get("archetype", "") or "").strip()
+    species = str(ch.get("species", "") or "")
+    if species == "Adeptus Astartes": keys.update({"Imperium", "Adeptus Astartes"})
+    elif species == "Primaris Astartes": keys.update({"Imperium", "Adeptus Astartes", "Primaris"})
+    elif species in {"Aeldari", "Aeldari (Asuryani)"}: keys.update({"Aeldari", "Asuryani"})
+    elif species == "Ork": keys.add("Ork")
+    elif species in {"Human", "Abhuman"}: keys.add("Imperium")
 
-    species_keywords = {
-        "Human": {"Imperium"},
-        "Abhuman": {"Imperium"},
-        "Adeptus Astartes": {"Imperium", "Adeptus Astartes"},
-        "Primaris Astartes": {"Imperium", "Adeptus Astartes", "Primaris"},
-        "Aeldari": {"Aeldari", "Asuryani"},
-        "Aeldari (Asuryani)": {"Aeldari", "Asuryani"},
-        "Ork": {"Ork"},
-        "Drukhari": {"Aeldari", "Drukhari"},
-        "T'au": {"T'au"},
-        "Necron": {"Necron"},
-        "Tyranid": {"Tyranid"},
-        "Genestealer": {"Genestealer"},
-        "Chaos Space Marine": {"Chaos", "Adeptus Astartes"},
-    }
-    keys.update(species_keywords.get(species, set()))
-
+    arch = str(ch.get("archetype", "") or "")
     faction = str(ARCHETYPES.get(arch, {}).get("faction", "") or "")
     faction_map = {
-        "Adeptus Astartes": "Adeptus Astartes",
-        "Adepta Sororitas": "Adepta Sororitas",
-        "Adeptus Ministorum": "Adeptus Ministorum",
-        "Astra Militarum": "Astra Militarum",
-        "Inquisition": "Inquisition",
-        "Adeptus Mechanicus": "Adeptus Mechanicus",
-        "Aeldari": "Aeldari",
-        "Orks": "Ork",
-        "Rogue Trader Dynasties": "Rogue Trader",
-        "Scum": "Scum",
-        "Adeptus Astra Telepathica": "Adeptus Astra Telepathica",
+        "Adeptus Astartes": "Adeptus Astartes", "Adepta Sororitas": "Sororitas",
+        "Adeptus Ministorum": "Ministorum", "Astra Militarum": "Astra Militarum",
+        "Inquisition": "Inquisition", "Adeptus Mechanicus": "Adeptus Mechanicus",
+        "Aeldari": "Aeldari", "Orks": "Ork", "Rogue Trader Dynasties": "Rogue Trader",
+        "Scum": "Scum", "Adeptus Astra Telepathica": "Psyker",
     }
-    if faction in faction_map:
-        keys.add(faction_map[faction])
-
-    # These are the normal Core Rulebook archetype-level Keywords represented
-    # by the archetype/faction data already present in this application.
-    archetype_keywords = {
-        "Sister Hospitaller": {"Adepta Sororitas"},
-        "Ministorum Priest": {"Adeptus Ministorum"},
-        "Imperial Guard": {"Astra Militarum"},
-        "Inquisitorial Acolyte": {"Inquisition"},
-        "Inquisitorial Sage": {"Inquisition", "Adeptus Administratum"},
-        "Ganger": {"Scum"},
-        "Corsair": {"Aeldari", "Anhrathe", "Outcast"},
-        "Boy": {"Ork"},
-        "Sister of Battle": {"Adepta Sororitas"},
-        "Sanctioned Psyker": {"Psyker", "Adeptus Astra Telepathica"},
-        "Skitarius": {"Adeptus Mechanicus"},
-        "Death Cult Assassin": {"Adeptus Ministorum"},
-        "Tempestus Scion": {"Astra Militarum"},
-        "Rogue Trader": {"Rogue Trader"},
-        "Scavvy": {"Scum"},
-        "Space Marine Scout": {"Adeptus Astartes"},
-        "Ranger": {"Aeldari", "Asuryani", "Outcast"},
-        "Kommando": {"Ork"},
-        "Tech-Priest": {"Adeptus Mechanicus"},
-        "Crusader": {"Adeptus Ministorum"},
-        "Imperial Commissar": {"Astra Militarum"},
-        "Desperado": {"Scum"},
-        "Tactical Space Marine": {"Adeptus Astartes"},
-        "Warlock": {"Aeldari", "Asuryani", "Psyker"},
-        "Nob": {"Ork"},
-        "Inquisitor": {"Inquisition"},
-        "Primaris Intercessor": {"Adeptus Astartes", "Primaris"},
-    }
-    keys.update(archetype_keywords.get(arch, set()))
-
+    if faction in faction_map: keys.add(faction_map[faction])
     chapter = str(ch.get("chapter", "") or "").strip()
-    if chapter and chapter != "Other / Successor Chapter":
-        keys.add(chapter)
-
-    # A custom list may be stored on a character by future campaign rules.
-    explicit = ch.get("keywords", [])
-    if isinstance(explicit, str):
-        try:
-            explicit = json.loads(explicit)
-        except Exception:
-            explicit = re.split(r",|;", explicit)
-    if isinstance(explicit, list):
-        keys.update(str(x).strip() for x in explicit if str(x).strip())
-
-    return {k.strip().lower() for k in keys if str(k).strip()}
+    if chapter and chapter != "Other / Successor Chapter": keys.add(chapter)
+    # Common archetype-specific keywords represented by the existing rules data.
+    if arch == "Sanctioned Psyker": keys.add("Psyker")
+    return {k.lower() for k in keys}
 
 
-def _split_requirement_tokens(value):
-    if value is None:
-        return []
-    if isinstance(value, (list, tuple, set)):
-        return [str(x).strip() for x in value if str(x).strip()]
-    return [x.strip() for x in re.split(r",|;", str(value)) if x.strip()]
-
-
-def _requirement_data(row):
-    details = craft_details(row)
-    req = details.get("requirements", {})
-    if not isinstance(req, dict):
-        req = {}
-    # Migrate the old free-text fields into the structured representation.
-    if not req.get("keywords_all") and details.get("keywords"):
-        req["keywords_all"] = _split_requirement_tokens(details.get("keywords"))
-    if not req.get("prerequisites") and details.get("prerequisites"):
-        req["prerequisites"] = str(details.get("prerequisites", ""))
-    return req
-
-
-def _attribute_values(ch):
-    vals = {str(k).lower(): int(v) for k, v in (ch.get("attributes", {}) or {}).items()}
-    vals.update({str(k).lower(): int(v) for k, v in (ch.get("skills", {}) or {}).items()})
-    return vals
-
-
-def _requirements_satisfied(ch, row):
-    req = _requirement_data(row)
-    available = character_keywords(ch)
-
-    # Keywords: Wrath & Glory prerequisites are normally conjunctive. An
-    # explicit OR expression remains available for talents with alternatives.
-    for raw in _split_requirement_tokens(req.get("keywords_all", [])):
-        token = raw.strip().lower().replace("<", "").replace(">", "")
-        if " or " in token:
-            if not any(_keyword_ok(part, available) for part in token.split(" or ")):
-                return False, f"Requires one of: {raw}"
-        elif not _keyword_ok(token, available):
-            return False, f"Requires Keyword: {raw}"
-    any_kw = _split_requirement_tokens(req.get("keywords_any", []))
-    if any_kw and not any(_keyword_ok(x, available) for x in any_kw):
-        return False, "Requires one of: " + ", ".join(any_kw)
-
-    rank = int(ch.get("rank", 1) or 1)
-    tier = int(ch.get("tier", 1) or 1)
-    if rank < int(req.get("rank_min", 0) or 0):
-        return False, f"Requires Rank {int(req['rank_min'])}+"
-    if tier < int(req.get("tier_min", 0) or 0):
-        return False, f"Requires Tier {int(req['tier_min'])}+"
-
-    vals = _attribute_values(ch)
-    for attr, minimum in (req.get("attributes", {}) or {}).items():
-        if vals.get(str(attr).lower(), 0) < int(minimum):
-            return False, f"Requires {attr} {int(minimum)}+"
-    for skill, minimum in (req.get("skills", {}) or {}).items():
-        if vals.get(str(skill).lower(), 0) < int(minimum):
-            return False, f"Requires {skill} {int(minimum)}+"
-
-    species = _split_requirement_tokens(req.get("species", []))
-    if species and str(ch.get("species", "")).lower() not in {x.lower() for x in species}:
-        return False, "Requires Species: " + ", ".join(species)
-    archetypes = _split_requirement_tokens(req.get("archetypes", []))
-    if archetypes and str(ch.get("archetype", "")).lower() not in {x.lower() for x in archetypes}:
-        return False, "Requires Archetype: " + ", ".join(archetypes)
-
-    owned = {str(t.get("name", "")).strip().lower() for t in normalize_talents(ch.get("talents", []))}
-    for talent in _split_requirement_tokens(req.get("talents", [])):
-        if talent.lower() not in owned:
-            return False, f"Requires Talent: {talent}"
-
-    return True, "Eligible"
-
-
-def talent_limit(ch):
-    """Wrath & Glory Talent limit: Tier + Rank."""
-    return max(0, int(ch.get("tier", 1) or 1) + int(ch.get("rank", 1) or 1))
+def _keyword_ok(required, available):
+    req = str(required or "").strip().lower().replace("[", "").replace("]", "")
+    if not req or req in {"any", "none", "-"}:
+        return True
+    # A requirement may contain alternatives, e.g. A OR B.
+    if " or " in req:
+        return any(_keyword_ok(part, available) for part in req.split(" or "))
+    return req in available
 
 
 def talent_is_available(ch, row):
-    owned = normalize_talents(ch.get("talents", []))
-    if len(owned) >= talent_limit(ch):
+    details = craft_details(row)
+    required = details.get("keywords", []) or []
+    if isinstance(required, str):
+        required = [x.strip() for x in re.split(r",|;", required) if x.strip()]
+    available = character_keywords(ch)
+    if required and not any(_keyword_ok(x, available) for x in required):
         return False
-    ok, _ = _requirements_satisfied(ch, row)
-    return ok
+    prereq = str(details.get("prerequisites", "") or "").lower()
+    rank = int(ch.get("rank", 1) or 1)
+    m = re.search(r"rank\s*([1-4])", prereq)
+    if m and rank < int(m.group(1)):
+        return False
+    return True
+
 
 def craft_modifiers(row):
     details = craft_details(row)
     mods = details.get("modifiers", {}) or {}
-    return {str(k).strip().lower(): int(v) for k, v in mods.items() if str(v).lstrip("-+").isdigit()}
-
-
-def effective_attributes(ch):
-    base = {str(k): int(v) for k, v in (ch.get("attributes", {}) or {}).items()}
-    mods = equipped_wargear_modifiers(ch)
-    return {k: int(v) + int(mods.get(k.lower(), 0)) for k, v in base.items()}
-
-
-def effective_skills(ch):
-    base = {str(k): int(v) for k, v in (ch.get("skills", {}) or {}).items()}
-    mods = equipped_wargear_modifiers(ch)
-    return {k: int(v) + int(mods.get(k.lower(), 0)) for k, v in base.items()}
+    return {str(k): int(v) for k, v in mods.items() if str(v).lstrip("-+").isdigit()}
 
 
 def equipped_wargear_modifiers(ch):
@@ -870,7 +1072,7 @@ def equipped_wargear_modifiers(ch):
             source_mods = craft_modifiers(row)
         else:
             details = w.get("details", {}) or {}
-            source_mods = {str(k).strip().lower(): int(v) for k, v in (details.get("modifiers", {}) or {}).items() if str(v).lstrip("-+").isdigit()}
+            source_mods = {str(k): int(v) for k, v in (details.get("modifiers", {}) or {}).items() if str(v).lstrip("-+").isdigit()}
         for k, v in source_mods.items():
             mods[k] = mods.get(k, 0) + int(v)
     return mods
@@ -1762,9 +1964,8 @@ def battle_view(cid):
 
         st.markdown("<div class='sectionttl'>Skills &nbsp;<small style='opacity:.6;letter-spacing:0'>Total = Skill + Attribute</small></div>", unsafe_allow_html=True)
         rows = "<div class='skhead'><span>Skill</span><span>Rank</span><span>Attr</span><span>Total</span></div>"
-        eff_sk = effective_skills(ch); eff_attr = effective_attributes(ch)
         for s in SKILLS:
-            r = eff_sk[s]; av = eff_attr[SKILLS[s]]
+            r = ch["skills"][s]; av = ch["attributes"][SKILLS[s]]
             rows += (f"<div class='skrow'><span class='n'>{s}</span><span class='c'>{r}</span>"
                      f"<span class='c'>+{av}</span><span class='t'>{r+av}</span></div>")
         st.markdown(rows, unsafe_allow_html=True)
@@ -2071,9 +2272,6 @@ def edit_view(cid, gm_mode=False):
     keys = sorted(character_keywords({**ch, "species": st.session_state[spk], "archetype": st.session_state.get(ark, "")}))
 
     st.markdown("#### Talents")
-    owned_count = len(normalize_talents(ch.get("talents", [])))
-    max_talents = talent_limit({**ch, "tier": int(st.session_state[_k(cid, "n", "tier")]), "rank": int(ch.get("rank", 1) or 1)})
-    st.caption(f"Talent limit: {owned_count} / {max_talents}. Purchase requires all registered prerequisites and sufficient XP.")
     st.caption("Purchase Talents unlocked by your Keywords and prerequisites. The XP cost is deducted from your available XP budget automatically.")
     if keys:
         st.caption("Keywords: " + ", ".join(k.title() for k in keys))
@@ -2090,43 +2288,21 @@ def edit_view(cid, gm_mode=False):
             if tid is not None:
                 selected = next(r for r in eligible if int(r["id"]) == int(tid))
                 st.caption(str(selected.get("effect", "")))
-                req = _requirement_data(selected)
-                req_lines = []
-                if req.get("keywords_all"): req_lines.append("Keywords: " + ", ".join(req["keywords_all"]))
-                if req.get("keywords_any"): req_lines.append("One of: " + ", ".join(req["keywords_any"]))
-                if req.get("rank_min"): req_lines.append(f"Rank {req['rank_min']}+")
-                if req.get("tier_min"): req_lines.append(f"Tier {req['tier_min']}+")
-                if req.get("attributes"): req_lines.append("Attributes: " + ", ".join(f"{k} {v}+" for k,v in req["attributes"].items()))
-                if req.get("skills"): req_lines.append("Skills: " + ", ".join(f"{k} {v}+" for k,v in req["skills"].items()))
-                if req.get("species"): req_lines.append("Species: " + ", ".join(req["species"]))
-                if req.get("archetypes"): req_lines.append("Archetype: " + ", ".join(req["archetypes"]))
-                if req.get("talents"): req_lines.append("Talents: " + ", ".join(req["talents"]))
-                if req_lines: st.caption("Requirements: " + " · ".join(req_lines))
+                if craft_details(selected).get("keywords"):
+                    st.caption("Requirement: " + ", ".join(craft_details(selected).get("keywords", [])))
                 cost = int(selected.get("cost", 0) or 0)
                 if st.button(f"Purchase Talent · {cost} XP", key=f"talent_buy_{cid}", disabled=available_xp < cost, type="primary", use_container_width=True):
-                    purchase_ch = {**ch, "species": st.session_state[spk], "archetype": st.session_state.get(ark, ""),
-                                  "attributes": cur_attr, "skills": cur_skill, "tier": int(st.session_state[_k(cid, "n", "tier")])}
-                    selected_ok, reason = _requirements_satisfied(purchase_ch, selected)
-                    cost = int(selected.get("cost", 0) or 0)
-                    live_available_xp = starting_xp(camp["tier"], advanced=(mode == "advanced")) + int(ch.get("earned_xp", 0)) - xp_spent(purchase_ch)
-                    if not selected_ok:
-                        st.error("Purchase blocked: " + reason)
-                    elif live_available_xp < cost:
-                        st.error(f"Purchase blocked: requires {cost} XP, but only {live_available_xp} XP is available.")
-                    else:
-                        current = normalize_talents(ch.get("talents", []))
-                        current = _craft_character_add(current, tid, "talent")
-                        result = save_build(
-                            cid, ch["name"], ch.get("chapter", ""), st.session_state[spk], int(st.session_state[_k(cid, "n", "tier")]),
-                            cur_attr, cur_skill, current, json.dumps(normalize_wargear(ch.get("wargear", [])), ensure_ascii=False),
-                            int(st.session_state[_k(cid, "n", "armour")]), ch.get("notes", ""), int(st.session_state[_k(cid, "n", "other")]),
-                            st.session_state.get(ark, ""), mode, actor_role="player",
-                            actor_user_id=(st.session_state.get("user") or {}).get("id"),
-                            actor_name=(st.session_state.get("user") or {}).get("username", ""), source="Talent Purchase",
-                            expected_revision=int(ch.get("revision", 0) or 0))
-                        if result[0]:
-                            st.rerun()
-                        st.error(result[1])
+                    current = normalize_talents(ch.get("talents", []))
+                    current = _craft_character_add(current, tid, "talent")
+                    result = save_build(cid, ch["name"], ch.get("chapter", ""), st.session_state[spk], int(st.session_state[_k(cid, "n", "tier")]),
+                                        cur_attr, cur_skill, current, json.dumps(normalize_wargear(ch.get("wargear", [])), ensure_ascii=False),
+                                        int(st.session_state[_k(cid, "n", "armour")]), ch.get("notes", ""), int(st.session_state[_k(cid, "n", "other")]),
+                                        st.session_state.get(ark, ""), mode, actor_role="player",
+                                        actor_user_id=(st.session_state.get("user") or {}).get("id"),
+                                        actor_name=(st.session_state.get("user") or {}).get("username", ""), source="Talent Purchase",
+                                        expected_revision=int(ch.get("revision", 0) or 0))
+                    if result[0]: st.rerun()
+                    st.error(result[1])
         else:
             st.info("No additional Talents are currently available for this character.")
     else:
@@ -2347,344 +2523,126 @@ def players_audit_view():
         st.divider()
 
 
-def _req_list(value):
-    return [x.strip() for x in re.split(r",|;", str(value or "")) if x.strip()]
-
-
-def _render_craft_requirements(prefix, details, kind):
-    details = dict(details or {})
-    req = details.get("requirements", {})
-    if not isinstance(req, dict):
-        req = {}
-    old_kw_all = ", ".join(req.get("keywords_all", details.get("keywords", [])) if isinstance(req.get("keywords_all", details.get("keywords", [])), list) else _req_list(req.get("keywords_all", details.get("keywords", ""))))
-    old_kw_any = ", ".join(req.get("keywords_any", []) if isinstance(req.get("keywords_any", []), list) else _req_list(req.get("keywords_any", "")))
-    kw_all = st.text_input("Required Keywords (all)", value=old_kw_all, key=f"{prefix}_req_kw_all", placeholder="Imperium, Adeptus Astartes")
-    kw_any = st.text_input("Required Keywords (one of)", value=old_kw_any, key=f"{prefix}_req_kw_any", placeholder="Aeldari, Ork")
-
-    rc = st.columns(2)
-    rank_min = rc[0].number_input("Minimum Rank", 0, 3, int(req.get("rank_min", 0) or 0), key=f"{prefix}_req_rank")
-    tier_min = rc[1].number_input("Minimum Tier", 0, MAX_TIER, int(req.get("tier_min", 0) or 0), key=f"{prefix}_req_tier")
-
-    species_options = PLAYER_SPECIES + [x for x in NPC_SPECIES if x not in PLAYER_SPECIES]
-    old_species = req.get("species", [])
-    if isinstance(old_species, str): old_species = _req_list(old_species)
-    species = st.multiselect("Required Species", species_options, default=[x for x in old_species if x in species_options], key=f"{prefix}_req_species")
-
-    arch_options = list(ARCHETYPES.keys())
-    old_arch = req.get("archetypes", [])
-    if isinstance(old_arch, str): old_arch = _req_list(old_arch)
-    archetypes = st.multiselect("Required Archetype", arch_options, default=[x for x in old_arch if x in arch_options], key=f"{prefix}_req_arch")
-
-    old_talents = req.get("talents", [])
-    if isinstance(old_talents, str): old_talents = _req_list(old_talents)
-    talents = st.text_input("Required Talents", value=", ".join(old_talents), key=f"{prefix}_req_talents", placeholder="Talent A, Talent B")
-
-    with st.expander("Attribute and Skill Requirements"):
-        attrs = {}
-        st.caption("Use 0 for no requirement. The value is a minimum rating.")
-        ac = st.columns(4)
-        for i, attr in enumerate(ATTRS):
-            val = int((req.get("attributes", {}) or {}).get(attr, 0) or 0)
-            n = ac[i % 4].number_input(attr, 0, 12, val, key=f"{prefix}_req_attr_{i}")
-            if n: attrs[attr] = int(n)
-        skills = {}
-        sc = st.columns(3)
-        for i, skill in enumerate(SKILLS):
-            val = int((req.get("skills", {}) or {}).get(skill, 0) or 0)
-            n = sc[i % 3].number_input(skill, 0, 8, val, key=f"{prefix}_req_skill_{i}")
-            if n: skills[skill] = int(n)
-
-    result = {
-        "keywords_all": _req_list(kw_all),
-        "keywords_any": _req_list(kw_any),
-        "rank_min": int(rank_min),
-        "tier_min": int(tier_min),
-        "species": species,
-        "archetypes": archetypes,
-        "talents": _req_list(talents),
-        "attributes": attrs,
-        "skills": skills,
-    }
-    return result
-
-
-def _render_wargear_details(prefix, details):
-    details = dict(details or {})
-    mods_old = details.get("modifiers", {}) or {}
-    with st.expander("Equipment Bonuses / Mechanical Data", expanded=True):
-        st.caption("Bonuses are applied automatically while this Wargear is equipped. Leave a value at 0 when it does not modify that statistic.")
-        mods = {}
-        for group in (ATTRS, list(SKILLS.keys()), ["armour", "defence", "resilience", "wounds", "shock", "speed", "willpower", "intellect", "fellowship", "strength", "toughness", "agility", "initiative"]):
-            cols = st.columns(4)
-            for i, key in enumerate(group):
-                if key in mods:
-                    continue
-                value = int(mods_old.get(key, 0) or 0)
-                mods[key] = int(cols[i % 4].number_input(key, -20, 20, value, key=f"{prefix}_mod_{key}"))
-        m = st.columns(4)
-        rarity = m[0].text_input("Rarity", str(details.get("rarity", "")), key=f"{prefix}_rarity")
-        value = m[1].number_input("Value", 0, 1000000, int(details.get("value", 0) or 0), key=f"{prefix}_value")
-        wtype = m[2].text_input("Type", str(details.get("type", "")), key=f"{prefix}_type")
-        traits = m[3].text_input("Traits", ", ".join(details.get("traits", []) if isinstance(details.get("traits", []), list) else _req_list(details.get("traits", ""))), key=f"{prefix}_traits")
-        dc = st.columns(4)
-        damage = dc[0].text_input("Damage", str(details.get("damage", "")), key=f"{prefix}_damage")
-        ed = dc[1].text_input("ED", str(details.get("ed", "")), key=f"{prefix}_ed")
-        ap = dc[2].text_input("AP", str(details.get("ap", "")), key=f"{prefix}_ap")
-        rng = dc[3].text_input("Range", str(details.get("range", "")), key=f"{prefix}_range")
-        salvo = st.text_input("Salvo", str(details.get("salvo", "")), key=f"{prefix}_salvo")
-    return mods, {"rarity": rarity, "value": int(value), "type": wtype, "traits": _req_list(traits), "damage": damage, "ed": ed, "ap": ap, "range": rng, "salvo": salvo}
-
-
-def _craft_keyword_options():
-    return [
-        "Imperium", "Adeptus Astartes", "Primaris", "Adepta Sororitas",
-        "Adeptus Ministorum", "Astra Militarum", "Inquisition",
-        "Adeptus Mechanicus", "Adeptus Astra Telepathica", "Psyker",
-        "Aeldari", "Asuryani", "Drukhari", "Anhrathe", "Outcast",
-        "Ork", "Chaos", "Rogue Trader", "Scum", "Genestealer",
-        "Tyranid", "Necron", "T'au", "Human", "Abhuman",
-    ]
-
-
-def _render_craft_requirements(prefix, details=None):
-    details = dict(details or {})
-    req = _requirement_data({"details": details})
-    st.markdown("**Prerequisites**")
-
-    c1, c2 = st.columns(2)
-    rank_min = c1.number_input("Minimum Rank", 0, 3, int(req.get("rank_min", 0) or 0), key=f"{prefix}_rank")
-    tier_min = c2.number_input("Minimum Tier", 0, MAX_TIER, int(req.get("tier_min", 0) or 0), key=f"{prefix}_tier")
-
-    old_kw = _req_list(req.get("keywords_all", []))
-    kw_options = _craft_keyword_options()
-    kw_default = [x for x in kw_options if x.lower() in {str(v).lower() for v in old_kw}]
-    keywords = st.multiselect("Required Keywords", kw_options, default=kw_default,
-                              key=f"{prefix}_keywords",
-                              help="Select every Keyword that the character must have.")
-    custom_kw_default = [x for x in old_kw if x.lower() not in {v.lower() for v in kw_options}]
-    custom_kw = st.text_input("Other Required Keywords", ", ".join(custom_kw_default),
-                              key=f"{prefix}_custom_keywords", placeholder="Custom keyword, another keyword")
-
-    species_options = PLAYER_SPECIES + [x for x in NPC_SPECIES if x not in PLAYER_SPECIES]
-    old_species = _req_list(req.get("species", []))
-    species = st.multiselect("Required Species", species_options,
-                             default=[x for x in old_species if x in species_options],
-                             key=f"{prefix}_species")
-
-    arch_options = list(ARCHETYPES.keys())
-    old_arch = _req_list(req.get("archetypes", []))
-    archetypes = st.multiselect("Required Archetype", arch_options,
-                                default=[x for x in old_arch if x in arch_options],
-                                key=f"{prefix}_archetypes")
-
-    talent_names = [r["name"] for r in list_craft_items("talent")]
-    old_talents = _req_list(req.get("talents", []))
-    required_talents = st.multiselect("Required Talents", talent_names,
-                                      default=[x for x in old_talents if x in talent_names],
-                                      key=f"{prefix}_talents")
-    extra_talents = [x for x in old_talents if x not in talent_names]
-    extra_required = st.text_input("Other Required Talents", ", ".join(extra_talents),
-                                   key=f"{prefix}_other_talents", placeholder="Talent name")
-
-    with st.expander("Attribute and Skill Requirements"):
-        attrs = {}
-        ac = st.columns(4)
-        old_attrs = req.get("attributes", {}) or {}
-        for i, attr in enumerate(ATTRS):
-            val = int(old_attrs.get(attr, 0) or 0)
-            n = ac[i % 4].number_input(f"{attr} minimum", 0, 12, val, key=f"{prefix}_attr_{i}")
-            if n:
-                attrs[attr] = int(n)
-        skills = {}
-        sc = st.columns(3)
-        old_skills = req.get("skills", {}) or {}
-        for i, skill in enumerate(SKILLS):
-            val = int(old_skills.get(skill, 0) or 0)
-            n = sc[i % 3].number_input(f"{skill} minimum", 0, 8, val, key=f"{prefix}_skill_{i}")
-            if n:
-                skills[skill] = int(n)
-
-    return {
-        "keywords_all": _req_list(keywords) + _req_list(custom_kw),
-        "keywords_any": [],
-        "rank_min": int(rank_min),
-        "tier_min": int(tier_min),
-        "species": species,
-        "archetypes": archetypes,
-        "talents": required_talents + _req_list(extra_required),
-        "attributes": attrs,
-        "skills": skills,
-    }
-
-
-def _render_craft_modifiers(prefix, details=None):
-    details = dict(details or {})
-    old = details.get("modifiers", {}) or {}
-    st.markdown("**Bonuses / Modifiers**")
-    st.caption("Leave a value at 0 when this item does not modify the statistic.")
-    mods = {}
-    all_stats = list(dict.fromkeys(list(ATTRS) + list(SKILLS.keys()) + [
-        "armour", "defence", "resilience", "wounds", "shock", "speed", "initiative"
-    ]))
-    cols = st.columns(4)
-    for i, stat in enumerate(all_stats):
-        old_value = int(old.get(stat, old.get(str(stat).lower(), 0)) or 0)
-        value = cols[i % 4].number_input(stat, -20, 20, old_value, key=f"{prefix}_mod_{i}")
-        if value:
-            mods[stat] = int(value)
-    return mods
-
-
-def _render_wargear_data(prefix, details=None):
-    details = dict(details or {})
-    st.markdown("**Wargear Data**")
-    a = st.columns(4)
-    rarity = a[0].text_input("Rarity", str(details.get("rarity", "")), key=f"{prefix}_rarity")
-    value = a[1].number_input("Value", 0, 1000000, int(details.get("value", 0) or 0), key=f"{prefix}_value")
-    wtype = a[2].text_input("Type", str(details.get("type", "")), key=f"{prefix}_type")
-    traits_old = details.get("traits", [])
-    traits = a[3].text_input("Traits", ", ".join(traits_old if isinstance(traits_old, list) else _req_list(traits_old)), key=f"{prefix}_traits")
-    b = st.columns(5)
-    damage = b[0].text_input("Damage", str(details.get("damage", "")), key=f"{prefix}_damage")
-    ed = b[1].number_input("ED", 0, 20, int(details.get("ed", 0) or 0), key=f"{prefix}_ed")
-    ap = b[2].number_input("AP", -20, 20, int(details.get("ap", 0) or 0), key=f"{prefix}_ap")
-    rng = b[3].text_input("Range", str(details.get("range", "")), key=f"{prefix}_range")
-    salvo = b[4].number_input("Salvo", 0, 20, int(details.get("salvo", 0) or 0), key=f"{prefix}_salvo")
-    return {
-        "rarity": rarity, "value": int(value), "type": wtype,
-        "traits": _req_list(traits), "damage": damage, "ed": int(ed),
-        "ap": int(ap), "range": rng, "salvo": int(salvo),
-    }
-
-
-def _render_power_data(prefix, details=None):
-    details = dict(details or {})
-    st.markdown("**Psychic Power Data**")
-    a = st.columns(4)
-    dn = a[0].number_input("DN", 0, 20, int(details.get("dn", 0) or 0), key=f"{prefix}_dn")
-    activation = a[1].text_input("Activation", str(details.get("activation", "")), key=f"{prefix}_activation")
-    potency = a[2].number_input("Potency", 0, 20, int(details.get("potency", 0) or 0), key=f"{prefix}_potency")
-    discipline = a[3].text_input("Discipline", str(details.get("discipline", "")), key=f"{prefix}_discipline")
-    return {"dn": int(dn), "activation": activation, "potency": int(potency), "discipline": discipline}
-
-
-def _craft_kind_label(kind):
-    return {"talent": "Talent", "wargear": "Wargear", "power": "Psychic Power"}.get(kind, kind.title())
-
-
 def craft_view():
     st.markdown("#### Craft")
-    st.caption("The campaign catalog is local. The Magister registers the rules explicitly using structured fields. Text is reserved for Name and Description / Effect.")
+    st.caption("The official reference catalog is bundled locally in the campaign database. No online request is required. The Magister decides which official entries are enabled and can create house-rule entries here.")
+
+    with st.spinner("Synchronizing official Talent and Wargear catalog..."):
+        sync_official_craft_catalog()
+    errors = st.session_state.get("craft_sync_errors", [])
+    if errors:
+        st.warning("Some library entries could not be synchronized. Existing catalog data remains available.")
+
     all_items = list_craft_items(active_only=False)
     enabled = [r for r in all_items if int(r.get("active", 1)) == 1]
     disabled = [r for r in all_items if int(r.get("active", 1)) == 0]
-    top = st.columns(4)
-    top[0].metric("Catalog Entries", len(all_items)); top[1].metric("Enabled", len(enabled))
-    top[2].metric("Disabled", len(disabled)); top[3].metric("Talents", sum(r["kind"] == "talent" and int(r.get("active",1)) for r in all_items))
+
+    top = st.columns(3)
+    top[0].metric("Bundled Official Entries", sum(1 for r in all_items if craft_details(r).get("official")))
+    top[1].metric("Enabled", len(enabled))
+    top[2].metric("Disabled", len(disabled))
 
     st.markdown("### Campaign Catalog")
-    search = st.text_input("Search", key="craft_search", placeholder="Name, keyword, source...")
-    kind_filter = st.selectbox("Type", ["All", "Talent", "Psychic Power", "Wargear"], key="craft_kind_filter")
+    search = st.text_input("Search", key="craft_search", placeholder="Talent, Wargear, keyword, source...")
+    kind_filter = st.selectbox("Type", ["All", "Talent", "Wargear", "Custom"], key="craft_kind_filter")
     show_disabled = st.checkbox("Show disabled entries", value=False, key="craft_show_disabled")
+
     rows = all_items if show_disabled else enabled
     if search.strip():
         q = search.lower()
-        rows = [r for r in rows if q in (str(r.get("name", "")) + " " + str(r.get("source", "")) + " " + json.dumps(craft_details(r), ensure_ascii=False)).lower()]
-    kind_map = {"Talent": "talent", "Psychic Power": "power", "Wargear": "wargear"}
-    if kind_filter != "All":
-        rows = [r for r in rows if r["kind"] == kind_map[kind_filter]]
+        rows = [r for r in rows if q in (str(r.get("name", "")) + " " + str(r.get("source", "")) + " " + str(craft_details(r).get("keywords", ""))).lower()]
+    if kind_filter == "Talent": rows = [r for r in rows if r["kind"] == "talent" and craft_details(r).get("official")]
+    elif kind_filter == "Wargear": rows = [r for r in rows if r["kind"] == "wargear" and craft_details(r).get("official")]
+    elif kind_filter == "Custom": rows = [r for r in rows if not craft_details(r).get("official")]
 
+    st.caption(f"{len(rows)} catalog entr{'y' if len(rows) == 1 else 'ies'}")
     for r in rows:
-        details = craft_details(r); req = _requirement_data(r)
+        details = craft_details(r)
         with st.container(border=True):
-            head = st.columns([3.5, 1.3, 1.1, 1.1])
+            head = st.columns([3.5, 1.4, 1.2, 1.1])
             head[0].markdown(f"**{html.escape(r['name'])}**")
-            head[1].caption(_craft_kind_label(r["kind"]))
-            head[2].caption(f"{int(r.get('cost', 0) or 0)} XP" if r["kind"] in ("talent", "power") else "Equipment")
+            head[1].caption("Talent" if r["kind"] == "talent" else "Wargear")
+            head[2].caption("Official" if details.get("official") else "Custom")
             head[3].caption("Enabled" if int(r.get("active", 1)) else "Disabled")
-            if r.get("source"): st.caption(f"Source: {r['source']}")
-            if r.get("effect"): st.write(r["effect"])
-            bits=[]
-            if req.get("keywords_all"): bits.append("Keywords: " + ", ".join(req["keywords_all"]))
-            if req.get("rank_min"): bits.append(f"Rank {req['rank_min']}+")
-            if req.get("tier_min"): bits.append(f"Tier {req['tier_min']}+")
-            if req.get("attributes"): bits.append("Attributes: " + ", ".join(f"{k} {v}+" for k,v in req["attributes"].items()))
-            if req.get("skills"): bits.append("Skills: " + ", ".join(f"{k} {v}+" for k,v in req["skills"].items()))
-            if req.get("species"): bits.append("Species: " + ", ".join(req["species"]))
-            if req.get("archetypes"): bits.append("Archetype: " + ", ".join(req["archetypes"]))
-            if req.get("talents"): bits.append("Talents: " + ", ".join(req["talents"]))
-            if bits: st.caption(" · ".join(bits))
-            if details.get("modifiers"):
-                st.caption("Bonuses: " + ", ".join(f"{k} {int(v):+d}" for k,v in details["modifiers"].items() if v))
-            buttons = st.columns([1,1,1,3])
-            if buttons[0].button("Disable" if int(r.get("active",1)) else "Enable", key=f"craft_toggle_{r['id']}"):
-                conn=get_conn(); conn.execute("UPDATE craft_items SET active=?,updated_at=? WHERE id=?", (0 if int(r.get("active",1)) else 1, now_iso(), int(r["id"]))); conn.commit(); conn.close(); st.rerun()
+            if r.get("source"):
+                st.caption(f"Source: {r['source']}")
+            if details.get("keywords"):
+                kws = details.get("keywords")
+                if isinstance(kws, str): kws = [kws]
+                st.caption("Keywords: " + ", ".join(kws))
+            if details.get("prerequisites"):
+                st.caption("Prerequisites: " + str(details["prerequisites"]))
+            if r.get("effect"):
+                st.write(r["effect"])
+            if r["kind"] == "wargear":
+                mods = details.get("modifiers", {}) or {}
+                if mods:
+                    st.caption("Automatic modifiers: " + ", ".join(f"{k} {v:+d}" for k, v in mods.items()))
+            buttons = st.columns([1, 1, 1, 3])
+            if buttons[0].button("Disable" if int(r.get("active", 1)) else "Enable", key=f"craft_toggle_{r['id']}"):
+                conn = get_conn(); conn.execute("UPDATE craft_items SET active=?,updated_at=? WHERE id=?", (0 if int(r.get("active", 1)) else 1, now_iso(), int(r["id"]))); conn.commit(); conn.close(); st.rerun()
             if buttons[1].button("Edit", key=f"craft_edit_{r['id']}"):
                 st.session_state["craft_edit_id"] = int(r["id"]); st.rerun()
-            if buttons[2].button("Delete", key=f"craft_delete_{r['id']}"):
-                conn=get_conn(); conn.execute("DELETE FROM craft_items WHERE id=?", (int(r["id"]),)); conn.commit(); conn.close(); st.rerun()
+            if buttons[2].button("Delete", key=f"craft_delete_{r['id']}") and not details.get("official"):
+                conn = get_conn(); conn.execute("DELETE FROM craft_items WHERE id=?", (int(r["id"]),)); conn.commit(); conn.close(); st.rerun()
 
-    st.divider(); st.markdown("### Register Campaign Entry")
-    ck = st.radio("Type", ["Talent", "Psychic Power", "Wargear"], horizontal=True, key="craft_custom_kind")
-    kind = {"Talent":"talent", "Psychic Power":"power", "Wargear":"wargear"}[ck]
-    cname = st.text_input("Name", key="craft_custom_name")
-    cdesc = st.text_area("Description / Effect", key="craft_custom_effect", height=150)
+    st.divider()
+    st.markdown("### Create Custom Entry")
+    st.caption("Custom entries use the same structured system: Keywords, prerequisites, automatic stat modifiers and equipment state.")
+    ck = st.radio("Type", ["Talent", "Wargear"], horizontal=True, key="craft_custom_kind")
+    kind = "talent" if ck == "Talent" else "wargear"
+    cc = st.columns([2, 1])
+    cname = cc[0].text_input("Name", key="craft_custom_name")
+    cost = cc[1].number_input("XP Cost", min_value=0, max_value=1000, value=20, step=5, key="craft_custom_cost") if kind == "talent" else 0
+    cdesc = st.text_area("Description / Rules", key="craft_custom_effect", height=110)
+    ckw = st.text_input("Keywords", key="craft_custom_keywords", placeholder="Imperium, Adeptus Astartes, Any")
+    cpre = st.text_input("Prerequisites", key="craft_custom_prereq", placeholder="Rank 2, Strength 4...")
+    source = st.text_input("Source", value="House Rule", key="craft_custom_source")
 
-    if cname.strip() and cdesc.strip():
-        st.markdown("### Mechanical Rules")
-        cost = st.number_input("XP Cost", 0, 10000, 0, key="craft_new_cost")
-        req = _render_craft_requirements("craft_new")
-        details = {"requirements": req}
-        if kind == "wargear":
-            details["modifiers"] = _render_craft_modifiers("craft_new", details)
-            details.update(_render_wargear_data("craft_new", details))
-        elif kind == "power":
-            details.update(_render_power_data("craft_new", details))
-            details["modifiers"] = _render_craft_modifiers("craft_new_power", details)
+    modifiers = {}
+    if kind == "wargear":
+        st.markdown("**Automatic modifiers when Equipped**")
+        mc = st.columns(4)
+        for i, key in enumerate(("armour", "strength", "toughness", "speed")):
+            modifiers[key] = int(mc[i].number_input(key.title(), min_value=-20, max_value=20, value=0, key=f"craft_mod_{key}"))
+        mc2 = st.columns(4)
+        for i, key in enumerate(("defence", "resilience", "wounds", "shock")):
+            modifiers[key] = int(mc2[i].number_input(key.title(), min_value=-20, max_value=20, value=0, key=f"craft_mod2_{key}"))
+        st.caption("Only non-zero modifiers are stored. Equipped Wargear updates derived character values automatically.")
+
+    if st.button("Create Campaign Entry", type="primary", use_container_width=True, key="craft_create_custom"):
+        if not cname.strip():
+            st.warning("Name is required.")
         else:
-            details["modifiers"] = _render_craft_modifiers("craft_new_talent", details)
-        source = st.text_input("Source / Book", key="craft_new_source", placeholder="Core Rules, supplement, campaign source...")
-
-        if st.button("Register Campaign Entry", type="primary", use_container_width=True, key="craft_create_custom"):
-            if not cname.strip():
-                st.warning("Name is required.")
-            elif not cdesc.strip():
-                st.warning("A description / effect is required.")
-            else:
-                details.update({"structured_rules": True, "official": False, "custom": True})
-                save_craft_item({"kind": kind, "name": cname.strip(), "effect": cdesc.strip(), "cost": int(cost), "source": source.strip(), "source_url": "", "details": details})
-                st.success("Catalog entry created.")
-                st.rerun()
+            details = {
+                "official": False,
+                "custom": True,
+                "keywords": [x.strip() for x in re.split(r",|;", ckw) if x.strip()],
+                "prerequisites": cpre.strip(),
+                "modifiers": {k: v for k, v in modifiers.items() if v},
+            }
+            save_craft_item({"kind": kind, "name": cname.strip(), "effect": cdesc.strip(), "cost": int(cost),
+                             "source": source.strip() or "House Rule", "source_url": "", "details": details})
+            st.success("Campaign entry created.")
+            st.rerun()
 
     edit_id = st.session_state.get("craft_edit_id")
     if edit_id:
         row = next((r for r in all_items if int(r["id"]) == int(edit_id)), None)
         if row:
-            st.divider(); st.markdown(f"### Edit: {html.escape(row['name'])}")
+            st.divider(); st.markdown(f"### Edit: {row['name']}")
             details = craft_details(row)
             ename = st.text_input("Name", row["name"], key=f"craft_edit_name_{edit_id}")
-            eeffect = st.text_area("Description / Effect", row.get("effect", ""), height=150, key=f"craft_edit_effect_{edit_id}")
-            ecost = st.number_input("XP Cost", 0, 10000, int(row.get("cost", 0) or 0), key=f"craft_edit_cost_{edit_id}")
-            ereq = _render_craft_requirements(f"craft_edit_{edit_id}", details)
-            newdetails = {"requirements": ereq}
-            if row["kind"] == "wargear":
-                newdetails["modifiers"] = _render_craft_modifiers(f"craft_edit_{edit_id}", details)
-                newdetails.update(_render_wargear_data(f"craft_edit_{edit_id}", details))
-            elif row["kind"] == "power":
-                newdetails.update(_render_power_data(f"craft_edit_{edit_id}", details))
-                newdetails["modifiers"] = _render_craft_modifiers(f"craft_edit_power_{edit_id}", details)
-            else:
-                newdetails["modifiers"] = _render_craft_modifiers(f"craft_edit_talent_{edit_id}", details)
-            esource = st.text_input("Source / Book", row.get("source", ""), key=f"craft_edit_source_{edit_id}")
+            eeffect = st.text_area("Description / Rules", row.get("effect", ""), height=120, key=f"craft_edit_effect_{edit_id}")
+            ecost = st.number_input("XP Cost", 0, 1000, int(row.get("cost", 0) or 0), 5, key=f"craft_edit_cost_{edit_id}") if row["kind"] == "talent" else 0
+            ekw = st.text_input("Keywords", ", ".join(details.get("keywords", []) if isinstance(details.get("keywords", []), list) else [str(details.get("keywords", ""))]), key=f"craft_edit_kw_{edit_id}")
+            epre = st.text_input("Prerequisites", str(details.get("prerequisites", "")), key=f"craft_edit_pre_{edit_id}")
             if st.button("Save Catalog Changes", key=f"craft_edit_save_{edit_id}", type="primary", use_container_width=True):
-                updated = dict(row)
-                updated.update({"name": ename.strip(), "effect": eeffect.strip(), "cost": int(ecost), "source": esource.strip(), "details": {**newdetails, "structured_rules": True, "official": False, "custom": True}})
-                if not updated["name"] or not updated["effect"]:
-                    st.warning("Name and description are required.")
-                else:
-                    save_craft_item(updated, int(edit_id))
-                    st.session_state.pop("craft_edit_id", None)
-                    st.rerun()
+                details["keywords"] = [x.strip() for x in re.split(r",|;", ekw) if x.strip()]
+                details["prerequisites"] = epre.strip()
+                updated = dict(row); updated.update({"name": ename.strip(), "effect": eeffect.strip(), "cost": int(ecost), "details": details})
+                save_craft_item(updated, int(edit_id)); st.session_state.pop("craft_edit_id", None); st.rerun()
+
 
 def gm_view():
     camp = get_campaign()

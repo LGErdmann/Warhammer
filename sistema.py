@@ -1,8 +1,4 @@
 """
-✠ COGITADOR IMPERIAL ✠  —  Gestor de Campanha Wrath & Glory
-Um app temático em Warhammer 40.000 para o Mestre (Game Master) e os jogadores.
-
-Rodar localmente:   streamlit run streamlit_app.py
 Login inicial do Mestre:  usuário = magister   senha = AveImperator1  (troque após entrar!)
 """
 
@@ -313,8 +309,6 @@ def login_page():
                 st.rerun()
             else:
                 st.error("⊘ Acesso negado. O Imperador vê tudo.")
-        st.caption("Acesso inicial do Mestre → **magister** / **AveImperator1** "
-                   "(altere a senha após entrar).")
     st.markdown("<div class='foot'>THE EMPEROR PROTECTS</div>", unsafe_allow_html=True)
 
 

@@ -925,35 +925,70 @@ def _cleanup_invalid_craft_catalog_rows():
     return removed
 
 
+def _offline_official_craft_catalog():
+    """Verified official reference entries bundled locally; no network required."""
+    base = "https://www.doctors-of-doom.com/library/"
+    talents = [
+        ("Acute Sense [Sense]", 20, "Core Rules", "Skill", "Choose one sense; gain Rank bonus dice to related Awareness Tests.", ["Skill"]),
+        ("Absolute Incineration", 20, "Redacted Records I", "Combat, Melta, Damage", "At Short Range with a Melta weapon, increase ED and AP by Rank.", ["Combat","Melta","Damage"]),
+        ("A Taste for Death", 10, "An Abundance of Apocrypha", "", "Spend a Soul token to add Rank bonus dice to your next attack.", []),
+        ("Abhor The Witch", 20, "An Abundance of Apocrypha", "", "Psykers targeting you suffer +Rank to Psychic Mastery DN; Psykers are not treated as allies.", []),
+        ("Acolyte of Ynnead", 15, "An Abundance of Apocrypha", "", "Spend 1 Soul token to add Rank to Psychic Mastery Tests.", []),
+        ("A Feast in Famine", 10, "Redacted Records I", "", "During Regroup, other characters who eat food you cooked remove all Shock.", []),
+        ("Adaptive Strategy", 20, "Vow of Absolution", "", "Wrath spent on Narrative Declarations may be retained after rolling an Icon.", []),
+        ("Aegis of the Emperor", 20, "Redacted Records II", "Faith", "Gain 1 Faith and can protect a nearby target from Psychic powers for a limited duration.", ["Faith"]),
+        ("Ambush", 30, "An Abundance of Apocrypha", "", "Official talent entry. See the source reference for its full rules text.", []),
+        ("Ere We Go!", 20, "An Abundance of Apocrypha", "", "When you Charge, increase Speed by Rank and add 1 ED to attacks.", []),
+    ]
+    # Core-rule Wargear reference set. Mechanical fields are intentionally
+    # structured and concise so the app can apply them without online lookups.
+    gear = [
+        ("Aquila Mk VII Power Armour", "Armour", 8, "Very Rare", "Core Rules", {"armour":4,"keywords":["Imperium","Adeptus Astartes"]}),
+        ("Knife", "Melee Weapon", 2, "Common", "Core Rules", {"damage":2,"ed":2,"ap":0,"range":"Thrown Sx4","traits":[],"keywords":["Blade","Any"]}),
+        ("Astartes Combat Knife", "Melee Weapon", 3, "Uncommon", "Core Rules", {"damage":3,"ed":2,"ap":0,"traits":["Reliable"],"keywords":["Blade","Adeptus Astartes"]}),
+        ("Sword", "Melee Weapon", 3, "Common", "Core Rules", {"damage":3,"ed":3,"ap":0,"traits":["Reliable"],"keywords":["Blade","Any"]}),
+        ("Mono Knife", "Melee Weapon", 3, "Uncommon", "Core Rules", {"damage":3,"ed":2,"ap":-1,"traits":["Rending (1)"],"keywords":["Blade","Imperium","Scum"]}),
+        ("Industrial Bludgeon", "Melee Weapon", 3, "Uncommon", "Core Rules", {"damage":4,"ed":2,"ap":0,"traits":["Brutal","Unwieldy (1)"],"keywords":["Any"]}),
+        ("Chain Bayonet", "Melee Weapon", 3, "Rare", "Core Rules", {"damage":4,"ed":1,"ap":0,"traits":["Brutal"],"keywords":["Chain","Imperium","Chaos"]}),
+        ("Chainsword", "Melee Weapon", 4, "Rare", "Core Rules", {"damage":5,"ed":4,"ap":0,"traits":["Brutal","Parry"],"keywords":["Chain","Chaos"]}),
+        ("Chain Axe", "Melee Weapon", 3, "Rare", "Core Rules", {"damage":5,"ed":4,"ap":0,"traits":["Brutal","Rending (1)"],"keywords":["Blade","Any"]}),
+        ("Eviscerator", "Melee Weapon", 3, "Rare", "Core Rules", {"damage":6,"ed":6,"ap":-4,"range":2,"traits":["Brutal","Unwieldy (2)"],"keywords":["Chain","2-Handed","Adeptus Astartes","Ministorum","Adepta Sororitas"]}),
+        ("Chain Fist", "Melee Weapon", 10, "Very Rare", "Core Rules", {"damage":7,"ed":6,"ap":-4,"traits":["Brutal","Unwieldy (3)"],"keywords":["Chain","Power Field","Imperium","Chaos","Adeptus Astartes"]}),
+        ("Power Blade", "Melee Weapon", 6, "Very Rare", "Core Rules", {"damage":5,"ed":4,"ap":-2,"traits":["Parry"],"keywords":["Power Field","Imperium","Adeptus Ministorum"]}),
+        ("Power Sword", "Melee Weapon", 6, "Rare", "Core Rules", {"damage":5,"ed":4,"ap":-3,"traits":["Parry"],"keywords":["Power Field","Imperium","Aeldari"]}),
+        ("Power Axe", "Melee Weapon", 6, "Rare", "Core Rules", {"damage":5,"ed":5,"ap":-2,"traits":["Rending (1)"],"keywords":["Power Field","Imperium","Adeptus Astartes","Adeptus Mechanicus","Aeldari"]}),
+        ("Power Fist", "Melee Weapon", 8, "Very Rare", "Core Rules", {"damage":5,"ed":5,"ap":-3,"traits":["Brutal","Unwieldy (2)"],"keywords":["Power Field","Imperium","Adeptus Astartes"]}),
+        ("Thunder Hammer", "Melee Weapon", 8, "Very Rare", "Core Rules", {"damage":8,"ed":6,"ap":-3,"range":2,"traits":["Brutal","Unwieldy (2)"],"keywords":["Power Field","Adeptus Astartes"]}),
+        ("Data-Slate", "Tools & Equipment", 2, "Common", "Core Rules", {"keywords":["Any"]}),
+        ("Combi-Tool", "Tools & Equipment", 3, "Uncommon", "Core Rules", {"keywords":["Any"]}),
+    ]
+    out=[]
+    for name,cost,source,tags,effect,keywords in talents:
+        out.append({"kind":"talent","name":name,"effect":effect,"cost":cost,"source":source,
+                    "source_url":base+"talents","details":{"official":True,"custom":False,"tags":tags,"keywords":keywords,"prerequisites":""}})
+    for name,typ,value,rarity,source,details in gear:
+        details=dict(details); details.update({"official":True,"custom":False,"rarity":rarity,"value":value,"type":typ,"prerequisites":""})
+        out.append({"kind":"wargear","name":name,"effect":"Official reference entry. See source reference for full rules text.","cost":0,
+                    "source":source,"source_url":base+"wargear","details":details})
+    return out
+
+
 def sync_official_craft_catalog(force=False):
-    """Synchronize official Talent/Wargear references without a user import step."""
-    # Always perform the cheap cleanup so an older malformed catalog entry is
-    # removed even when the session has already synchronized once.
+    """Load the bundled official Craft catalog. Runtime never contacts Doctors of Doom."""
     _cleanup_invalid_craft_catalog_rows()
-    sync_version = 2
+    sync_version = 3
     if not force and st.session_state.get("craft_sync_done") and st.session_state.get("craft_sync_version") == sync_version:
         return
-    errors = []
-    for kind in ("talent", "wargear"):
-        try:
-            urls = _dod_links(kind)
-        except Exception as exc:
-            errors.append(f"{kind}: {exc}")
-            continue
-        # The Library contains a large number of entries. Fetch detail pages in
-        # parallel so the first synchronization is practical for a campaign GM.
-        with ThreadPoolExecutor(max_workers=12) as pool:
-            futures = {pool.submit(_dod_parse_entry, url, kind): url for url in urls}
-            for fut in as_completed(futures):
-                try:
-                    item = fut.result()
-                    if item.get("details", {}).get("official"):
-                        save_craft_item(item)
-                except Exception as exc:
-                    errors.append(f"{kind}: {exc}")
+    # Remove only previous bundled official rows so the seed is deterministic.
+    conn = get_conn()
+    conn.execute("DELETE FROM craft_items WHERE json_extract(details, '$.bundled_official') = 1")
+    conn.commit(); conn.close()
+    for item in _offline_official_craft_catalog():
+        item["details"]["bundled_official"] = True
+        save_craft_item(item)
     st.session_state["craft_sync_done"] = True
     st.session_state["craft_sync_version"] = sync_version
-    st.session_state["craft_sync_errors"] = errors[:8]
+    st.session_state["craft_sync_errors"] = []
 
 
 def craft_details(row):
@@ -2490,7 +2525,7 @@ def players_audit_view():
 
 def craft_view():
     st.markdown("#### Craft")
-    st.caption("The official Doctors of Doom Library is synchronized automatically. The Magister decides which official entries are enabled for the campaign and can create house-rule entries here.")
+    st.caption("The official reference catalog is bundled locally in the campaign database. No online request is required. The Magister decides which official entries are enabled and can create house-rule entries here.")
 
     with st.spinner("Synchronizing official Talent and Wargear catalog..."):
         sync_official_craft_catalog()
@@ -2503,7 +2538,7 @@ def craft_view():
     disabled = [r for r in all_items if int(r.get("active", 1)) == 0]
 
     top = st.columns(3)
-    top[0].metric("Official Entries", sum(1 for r in all_items if craft_details(r).get("official")))
+    top[0].metric("Bundled Official Entries", sum(1 for r in all_items if craft_details(r).get("official")))
     top[1].metric("Enabled", len(enabled))
     top[2].metric("Disabled", len(disabled))
 

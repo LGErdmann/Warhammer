@@ -131,6 +131,33 @@ ARCHETYPE_PACKAGES = {
     "Primaris Intercessor": {"attributes":{}, "skills":{}},
 }
 
+
+# Core Rulebook 2e starting Wargear by Archetype.
+ARCHETYPE_STARTING_WARGEAR = {'Sister Hospitaller': ['Sororitas Power Armour', "Chirurgeon's Tools", 'Chain Bayonet (wrist mounted)', 'Laspistol', 'Sororitas Vestments', 'Copy of the Rule of the Sororitas'], 'Ministorum Priest': ['Chainsword', 'Laspistol', 'Rosarius', 'Knife', 'Ministorum Robes', 'Missionary Kit'], 'Imperial Guard': ['Flak Armour', 'Lasgun', 'Knife', 'Munitorum Issue Mess Kit', 'Grooming Kit', "Imperial Infantryman's Uplifting Primer", '3 Ration Packs'], 'Inquisitorial Acolyte': ['Flak Armour', 'Symbol of Authority'], 'Inquisitorial Sage': ['Administratum Robes', 'Laspistol', 'Knife', 'Auto Quill', 'Data-Slate', '3 Scrolls of Ancient Records'], 'Ganger': ['Knife', 'Bedroll', 'Canteen', 'Gang Colours', 'Laspistol'], 'Corsair': ['Corsair Armour', 'Shuriken Pistol', 'Lasblaster', 'Spirit Stone', '3 Plasma Grenades', 'Void Suit'], 'Boy': ['Shoota', 'Slugga', 'Choppa', 'Ripped Clothes'], 'Sister of Battle': ['Sororitas Power Armour', 'Chaplet Ecclesiasticus', 'Sororitas Vestments', 'Writing Kit', 'Copy of the Rule of the Sororitas', 'Boltgun'], 'Sanctioned Psyker': ['Laspistol', 'Force Stave', 'Psykana Mercy Blade', 'Munitorum Issue Mess Kit', 'Blanket', 'Grooming Kit', '2 Ration Packs'], 'Skitarius': ['Combi-Tool', 'Galvanic Rifle', 'Skitarii Auto-Cuirass'], 'Death Cult Assassin': ['Two Death Cult Power Blades', 'Bodyglove', 'Knife', 'Laspistol', '3 doses of Stimm'], 'Tempestus Scion': ['Tempestus Carapace', 'Hot-Shot Lasgun', 'Grav-Chute', 'Knife', 'Munitorum Issue Mess Kit', "Imperial Infantryman's Uplifting Primer", 'Slate Monitron', 'Monoscope', '3 Ration Packs'], 'Rogue Trader': ['Imperial Frigate', 'Flak Coat', 'Carapace Armour'], 'Scavvy': ['Laspistol', 'Knife', 'Bedroll', 'Canteen', 'Tattered Clothes'], 'Space Marine Scout': ['Scout Armour', 'Astartes Combat Knife', '3 Frag Grenades', 'Vox Bead', 'Boltgun'], 'Ranger': ['Cameleoline Cloak', 'Aeldari Mesh Armour', 'Ranger Long Rifle', 'Shuriken Pistol', 'Knife', 'Spirit Stone', 'Bedroll', 'Blanket', 'Magnocular Scope'], 'Kommando': ['Shoota', 'Slugga', 'Choppa', '3 Stikkbombs', 'Survival Kit'], 'Tech-Priest': ['Omnissian Axe', 'Laspistol', 'One Mechadendrite', '2 Augmetics', 'Combi-Tool', 'Light Power Armour', 'Omnissian Sigil'], 'Crusader': ['Power Sword', 'Storm Shield', 'Carapace Armour', 'Ministorum Robes'], 'Imperial Commissar': ['Bolt Pistol', 'Chainsword', 'Flak Coat', 'Munitorum Issue Mess Kit', 'Blanket', 'Grooming Kit', 'Uplifting Primer', '3 Ration Packs'], 'Desperado': ['Flak Coat', 'Preysense Goggles', 'Maps of the Heartworlds', 'Combi-Tool', 'Projectile Weapon', 'Uncommon Melee Weapon'], 'Tactical Space Marine': ['Aquila Mk VII Power Armour', 'Boltgun', 'Bolt Pistol', 'Astartes Combat Knife', '3 Frag Grenades', '3 Krak Grenades'], 'Warlock': ['Rune Armour', 'Witchblade', 'Shuriken Pistol', 'Set of Wraithbone Runes', 'Spirit Stone'], 'Nob': ["'Eavy Armour", 'Kustom Slugga', 'Kustom Choppa'], 'Inquisitor': ['Inquisitorial Rosette', 'Boltgun', 'Bolt Pistol', 'Flak Coat'], 'Primaris Intercessor': ['Mark X Tacticus Power Armour', 'Bolt Rifle', 'Heavy Bolt Pistol', 'Astartes Combat Knife', '3 Frag Grenades', '3 Krak Grenades', 'Ballistic Appeasement Autoreliquary']}
+
+def archetype_starting_wargear(archetype):
+    """Build starting gear from the Craft catalog, preserving stack quantities."""
+    out = []
+    try:
+        catalog = list_craft_items("wargear")
+    except Exception:
+        catalog = []
+    for raw in ARCHETYPE_STARTING_WARGEAR.get(archetype, []):
+        qty, base = _gear_quantity_name(raw)
+        row = next((r for r in catalog if str(r.get("name", "")).strip().lower() == base.lower()), None)
+        if row is None:
+            row = next((r for r in catalog if str(r.get("name", "")).strip().lower() == str(raw).strip().lower()), None)
+        if row is not None:
+            out = _craft_character_add(out, int(row["id"]), "wargear")
+            entry = next((x for x in out if int(x.get("craft_id", -1) or -1) == int(row["id"])), None)
+            if entry is not None:
+                entry["quantity"] = qty
+                entry["details"]["archetype_default"] = True
+        else:
+            out.append({"name": base if qty > 1 else raw, "effect": "", "equipped": True, "quantity": qty,
+                        "source": "Wrath & Glory Core Rulebook 2e", "details": {"archetype_default": True}})
+    return normalize_wargear(out)
+
 VITAL_FIELDS = {"cur_wounds", "cur_shock", "cur_wrath"}
 
 # Official First Founding Chapters from the Core Rulebook (2nd edition).
@@ -505,6 +532,53 @@ def init_db():
     conn.commit(); conn.close()
 
 
+STANDARD_AMMO_CATALOG = {
+    "PROJECTILE": "Projectile Ammo",
+    "LAS": "Las Ammo",
+    "FIRE": "Flame Ammo",
+    "FLAME": "Flame Ammo",
+    "BOLT": "Bolt Ammo",
+    "PLASMA": "Plasma Ammo",
+    "MELTA": "Melta Ammo",
+    "SHURIKEN": "Shuriken Ammo",
+}
+
+
+def _weapon_ammo_keyword(wargear):
+    """Pick the first standard Ammo type compatible with a ranged weapon."""
+    for w in normalize_wargear(wargear):
+        d = _gear_details_dict(w.get("details", {}))
+        if str(d.get("category", "")).lower() in {"ammo", "grenade", "missile", "reload"}:
+            continue
+        keys = [str(x).upper() for x in (d.get("keywords", []) or [])]
+        for key in keys:
+            if key in STANDARD_AMMO_CATALOG:
+                return key
+        name = str(w.get("name", "")).lower()
+        for key in STANDARD_AMMO_CATALOG:
+            if key.lower() in name:
+                return key
+    return "PROJECTILE"
+
+
+def starting_ammo_for_wargear(wargear, quantity=3):
+    """Create the Core Rulebook's 3 starting Ammo points, using a compatible type by default."""
+    keyword = _weapon_ammo_keyword(wargear)
+    ammo_name = STANDARD_AMMO_CATALOG[keyword]
+    try:
+        catalog = list_craft_items("wargear")
+        row = next((r for r in catalog if str(r.get("name", "")).strip().lower() == ammo_name.lower()), None)
+    except Exception:
+        row = None
+    if row is None:
+        return [{"name": ammo_name, "effect": "", "equipped": True, "quantity": int(quantity),
+                 "details": {"category": "ammo", "stackable": True, "stack_group": keyword, "keywords": [keyword], "official": True}}]
+    entry = _craft_character_add([], int(row["id"]), "wargear")
+    if entry:
+        entry[0]["quantity"] = int(quantity)
+        entry[0].setdefault("details", {})["starting_ammo"] = True
+    return normalize_wargear(entry)
+
 def create_player(username, pw, creation_mode="archetype", tier=2, rank=1, species="", archetype=""):
     conn = get_conn(); c = conn.cursor()
     try:
@@ -541,7 +615,7 @@ def create_player(username, pw, creation_mode="archetype", tier=2, rank=1, speci
                      comms_on,comms_changed_at)
                      VALUES(?, 'player', ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                   (uid, username, "", species, archetype, creation_mode, tier, tier, rank, 0, 0, json.dumps(attrs),
-                   json.dumps(skills), json.dumps([]), json.dumps([]), "", 0, 0, 0, 0, "", 1, now_iso()))
+                   json.dumps(skills), json.dumps([]), json.dumps([]), json.dumps(normalize_wargear((archetype_starting_wargear(archetype) if creation_mode == "archetype" else []) + starting_ammo_for_wargear(archetype_starting_wargear(archetype) if creation_mode == "archetype" else [])), ensure_ascii=False), 0, 0, 0, 0, "", 1, now_iso()))
         conn.commit(); return True, "Player recruited."
     except sqlite3.IntegrityError:
         return False, "That designation already exists."
@@ -554,12 +628,14 @@ def create_npc(name, species, tier, creation_mode="archetype", rank=1):
     tier = max(1, min(MAX_TIER, int(tier)))
     rank = max(1, min(3, int(rank)))
     default_arch = "" if creation_mode == "advanced" else default_archetype_for_species(species, tier)
+    starting_gear = archetype_starting_wargear(default_arch) if creation_mode != "advanced" else []
+    starting_gear = normalize_wargear(starting_gear + starting_ammo_for_wargear(starting_gear))
     conn.execute("""INSERT INTO characters(user_id,kind,name,chapter,species,archetype,creation_mode,tier,starting_tier,rank,earned_xp,other_xp,
                     attributes,skills,talents,powers,wargear,armour,cur_wounds,cur_shock,cur_wrath,notes,
                     comms_on,comms_changed_at)
                     VALUES(NULL,'npc',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                  (name or "NPC", "", species, default_arch, creation_mode, tier, tier, rank, 0, 0, json.dumps(default_attributes()),
-                  json.dumps(default_skills()), json.dumps([]), "", 0, 0, 0, 0, "", 1, now_iso()))
+                  json.dumps(default_skills()), json.dumps([]), json.dumps([]), json.dumps(starting_gear, ensure_ascii=False), 0, 0, 0, 0, "", 1, now_iso()))
     conn.commit(); conn.close()
 
 
@@ -612,8 +688,57 @@ def normalize_talents(raw):
     return out
 
 
+def _gear_quantity_name(name):
+    """Split legacy names such as '3 Frag Grenades' into quantity + base name."""
+    import re
+    m = re.match(r"^\s*(\d+)\s+(.+?)\s*$", str(name or ""))
+    if m:
+        base = m.group(2).strip()
+        # Starting gear sometimes uses plural resource names ("3 Frag Grenades").
+        if base.lower().endswith(" grenades"):
+            base = base[:-1]
+        elif base.lower().endswith(" missiles"):
+            base = base[:-1]
+        elif base.lower().endswith(" stikkbombs"):
+            base = base[:-1]
+        return int(m.group(1)), base
+    return 1, str(name or "").strip()
+
+
+def _gear_details_dict(value):
+    if isinstance(value, dict):
+        return dict(value)
+    if isinstance(value, str):
+        try:
+            obj = json.loads(value)
+            return obj if isinstance(obj, dict) else {}
+        except Exception:
+            return {}
+    return {}
+
+
+def _infer_stackable_gear(name, details=None):
+    """Ammo, grenades and missiles are stack resources in Wrath & Glory."""
+    d = _gear_details_dict(details)
+    category = str(d.get("category", d.get("type", ""))).strip().lower()
+    keywords = [str(x).strip().lower() for x in (d.get("keywords", []) or [])]
+    text = str(name or "").lower()
+    if d.get("stackable") is True:
+        return True, str(d.get("stack_group") or name).strip()
+    ammo_words = ("ammo", "ammunition", "bolt ammo", "las ammo", "flame ammo", "plasma ammo", "melta ammo", "shuriken ammo", "projectile ammo")
+    explosive = "explosive" in keywords
+    is_ammo = category in {"ammo", "ammunition", "reload"} or any(x in text for x in ammo_words)
+    is_grenade = category in {"grenade", "missile", "grenades", "missiles"} or "grenade" in text or "missile" in text or "stikkbomb" in text
+    if is_ammo:
+        group = str(d.get("stack_group") or text.replace(" ammo", "").strip())
+        return True, group
+    if is_grenade:
+        return True, str(d.get("stack_group") or text)
+    return False, ""
+
+
 def normalize_wargear(raw):
-    """Converts legacy wargear to name + effect."""
+    """Normalize Wargear and merge stackable Ammo/Grenades/Missiles."""
     if isinstance(raw, list):
         parsed = raw
     else:
@@ -627,18 +752,40 @@ def normalize_wargear(raw):
                       for ln in text.splitlines() if ln.strip()]
 
     out = []
+    stack_index = {}
     for w in parsed:
         if isinstance(w, dict):
-            name = str(w.get("name", "")).strip()
+            raw_name = str(w.get("name", "")).strip()
             effect = str(w.get("effect", "")).strip()
+            details = _gear_details_dict(w.get("details", {}))
+            quantity = max(1, int(w.get("quantity", 1) or 1))
         else:
-            name = str(w).strip()
-            effect = ""
-        if name:
-            entry = {"name": name, "effect": effect, "equipped": bool(w.get("equipped", True)) if isinstance(w, dict) else True}
-            for k in ("craft_id", "source", "source_url", "details"):
-                if k in w: entry[k] = w[k]
-            out.append(entry)
+            raw_name, effect, details, quantity = str(w).strip(), "", {}, 1
+        if not raw_name:
+            continue
+
+        legacy_qty, base_name = _gear_quantity_name(raw_name)
+        if quantity == 1 and legacy_qty > 1:
+            quantity = legacy_qty
+        name = base_name if legacy_qty > 1 else raw_name
+        stackable, group = _infer_stackable_gear(name, details)
+        if stackable:
+            details["stackable"] = True
+            details["stack_group"] = group
+            details["category"] = details.get("category") or ("ammo" if "ammo" in name.lower() else "grenade" if "grenade" in name.lower() or "stikkbomb" in name.lower() else "missile" if "missile" in name.lower() else details.get("category", ""))
+            key = (int(w.get("craft_id", -1)) if isinstance(w, dict) and w.get("craft_id") not in (None, "") else -1, group.lower())
+            if key in stack_index:
+                out[stack_index[key]]["quantity"] = int(out[stack_index[key]].get("quantity", 1)) + quantity
+                continue
+        entry = {"name": name, "effect": effect, "equipped": bool(w.get("equipped", True)) if isinstance(w, dict) else True}
+        entry["quantity"] = quantity
+        entry["details"] = details
+        for k in ("craft_id", "source", "source_url"):
+            if isinstance(w, dict) and k in w:
+                entry[k] = w[k]
+        if stackable:
+            stack_index[key] = len(out)
+        out.append(entry)
     return out
 
 
@@ -894,6 +1041,121 @@ def equipped_wargear_modifiers(ch):
             mods[k] = mods.get(k, 0) + int(v)
     return mods
 
+def assign_craft_to_character(cid, craft_id, kind, actor_name="", actor_user_id=None, source="Craft Assignment"):
+    """Add one catalog Talent, Psychic Power or Wargear atomically to a character."""
+    kind = str(kind).strip().lower()
+    if kind not in ("talent", "power", "wargear"):
+        return False, "Invalid catalog item type."
+    column = {"talent": "talents", "power": "powers", "wargear": "wargear"}[kind]
+    conn = get_conn()
+    try:
+        row = conn.execute("SELECT * FROM characters WHERE id=?", (int(cid),)).fetchone()
+        item = conn.execute("SELECT * FROM craft_items WHERE id=? AND kind=? AND active=1", (int(craft_id), kind)).fetchone()
+        if row is None:
+            return False, "Character not found."
+        if item is None:
+            return False, f"{kind.title()} item not found in the active campaign catalog."
+
+        ch = _decode(row)
+        current = normalize_talents(ch.get("talents", [])) if kind == "talent" else \
+                  normalize_powers(ch.get("powers", [])) if kind == "power" else \
+                  normalize_wargear(ch.get("wargear", []))
+        old_value = list(current)
+        updated = _craft_character_add(current, int(craft_id), kind)
+
+        if updated == current:
+            return True, f"{kind.title()} already assigned."
+
+        if kind == "wargear":
+            item_details = _gear_details_dict(item["details"] if "details" in item.keys() else {})
+            item_category = str(item_details.get("category", item_details.get("type", ""))).strip().lower()
+            item_name = str(item["name"] or "")
+            item_is_ammo = item_category in {"ammo", "ammunition", "reload"} or "ammo" in item_name.lower() or "cartridge" in item_name.lower() or "cartucho" in item_name.lower()
+            if item_is_ammo:
+                _, old_total = ammo_inventory(ch)
+                _, new_total = ammo_inventory({**ch, "wargear": updated})
+                if new_total > ammo_capacity(ch):
+                    return False, f"Ammo capacity reached ({ammo_capacity(ch)} total Ammo)."
+
+        new_revision = int(ch.get("revision", 0) or 0) + 1
+        encoded = json.dumps(updated, ensure_ascii=False)
+        cur = conn.execute(
+            f"UPDATE characters SET {column}=?, updated_at=?, revision=? WHERE id=? AND revision=?",
+            (encoded, now_iso(), new_revision, int(cid), int(ch.get("revision", 0) or 0))
+        )
+        if cur.rowcount != 1:
+            conn.rollback()
+            return False, "Concurrent change detected. The latest character version was not overwritten."
+        conn.commit()
+
+        if actor_user_id and actor_name:
+            record_player_audit(cid, actor_user_id, actor_name, source, [(column, old_value, updated)])
+        return True, f"{kind.title()} assigned."
+    except Exception as exc:
+        conn.rollback()
+        return False, f"Could not assign {kind.title()}: {exc}"
+    finally:
+        conn.close()
+
+
+def adjust_wargear_quantity(cid, craft_id, delta, actor_name="", actor_user_id=None, source="Wargear Quantity Change"):
+    """Atomically add/remove one stackable Wargear unit (Ammo/Grenade/Missile)."""
+    conn = get_conn()
+    try:
+        row = conn.execute("SELECT * FROM characters WHERE id=?", (int(cid),)).fetchone()
+        item = conn.execute("SELECT * FROM craft_items WHERE id=? AND kind='wargear'", (int(craft_id),)).fetchone()
+        if row is None or item is None:
+            return False, "Character or Wargear item not found."
+        ch = _decode(row)
+        current = normalize_wargear(ch.get("wargear", []))
+        # Standard and special Ammo share one carrying pool. Grenades/Missiles do not.
+        item_details = _gear_details_dict(item["details"] if "details" in item.keys() else {})
+        item_category = str(item_details.get("category", item_details.get("type", ""))).strip().lower()
+        item_name = str(item["name"] or "")
+        item_is_ammo = item_category in {"ammo", "ammunition", "reload"} or "ammo" in item_name.lower() or "cartridge" in item_name.lower() or "cartucho" in item_name.lower()
+        if item_is_ammo and int(delta) > 0:
+            _, ammo_total = ammo_inventory(ch)
+            if ammo_total + int(delta) > ammo_capacity(ch):
+                return False, f"Ammo capacity reached ({ammo_capacity(ch)} total Ammo). The Magister controls the character's maximum Ammo capacity."
+        target = None
+        for w in current:
+            if int(w.get("craft_id", -1) or -1) == int(craft_id):
+                target = w; break
+        if target is None:
+            if delta <= 0:
+                return False, "This stack is not assigned to the character."
+            current = _craft_character_add(current, int(craft_id), "wargear")
+            target = next((w for w in current if int(w.get("craft_id", -1) or -1) == int(craft_id)), None)
+            if target is None:
+                return False, "Could not create the Wargear stack."
+            if delta != 1:
+                target["quantity"] = max(0, int(target.get("quantity", 1)) + int(delta) - 1)
+        else:
+            target["quantity"] = int(target.get("quantity", 1)) + int(delta)
+        if int(target.get("quantity", 0)) <= 0:
+            current = [w for w in current if w is not target]
+        else:
+            current = normalize_wargear(current)
+        old = normalize_wargear(ch.get("wargear", []))
+        new_revision = int(ch.get("revision", 0) or 0) + 1
+        cur = conn.execute("UPDATE characters SET wargear=?,updated_at=?,revision=? WHERE id=? AND revision=?",
+                           (json.dumps(current, ensure_ascii=False), now_iso(), new_revision, int(cid), int(ch.get("revision", 0) or 0)))
+        if cur.rowcount != 1:
+            conn.rollback(); return False, "Concurrent change detected."
+        conn.commit()
+        if actor_user_id and actor_name:
+            record_player_audit(cid, actor_user_id, actor_name, source, [("wargear", old, current)])
+        return True, "Wargear quantity updated."
+    except Exception as exc:
+        conn.rollback(); return False, f"Could not update Wargear quantity: {exc}"
+    finally:
+        conn.close()
+
+
+def assign_wargear_to_character(cid, craft_id, actor_name="", actor_user_id=None):
+    return assign_craft_to_character(cid, craft_id, "wargear", actor_name, actor_user_id, "Magister Wargear Assignment")
+
+
 def list_craft_items(kind=None, active_only=True):
     conn = get_conn()
     if kind:
@@ -956,12 +1218,20 @@ def _craft_character_add(items, selected_id, kind):
                  "details": details}
     else:
         details = craft_details(r)
-        entry = {"name": r["name"], "effect": r.get("effect", ""), "equipped": True,
+        stackable, group = _infer_stackable_gear(r["name"], details)
+        if stackable:
+            details["stackable"] = True
+            details["stack_group"] = group
+            existing = next((x for x in items if int(x.get("craft_id", -1) or -1) == int(r["id"])), None)
+            if existing is not None:
+                existing["quantity"] = int(existing.get("quantity", 1)) + 1
+                return normalize_wargear(items)
+        entry = {"name": r["name"], "effect": r.get("effect", ""), "equipped": True, "quantity": 1,
                  "craft_id": int(r["id"]), "source": r.get("source", ""), "source_url": r.get("source_url", ""),
                  "details": details}
     if not any(str(x.get("name", "")).strip().lower() == str(entry["name"]).strip().lower() and int(x.get("craft_id", -1) or -1) == int(r["id"]) for x in items):
         items.append(entry)
-    return items
+    return normalize_wargear(items) if kind == "wargear" else items
 
 
 def _decode(row):
@@ -1754,6 +2024,122 @@ def vox_live(listener_cid=None):
 # ============================================================
 #  BATTLE VIEW (player themed)
 # ============================================================
+def stackable_wargear(ch):
+    result = []
+    for w in normalize_wargear(ch.get("wargear", [])):
+        d = _gear_details_dict(w.get("details", {}))
+        stackable, _ = _infer_stackable_gear(w.get("name", ""), d)
+        if stackable:
+            result.append(w)
+    return result
+
+
+def _is_ammo_resource(w):
+    d = _gear_details_dict(w.get("details", {}))
+    category = str(d.get("category", d.get("type", ""))).strip().lower()
+    text = str(w.get("name", "")).lower()
+    return category in {"ammo", "ammunition", "reload"} or " ammo" in text or text.endswith("ammo") or "cartridge" in text or "cartucho" in text
+
+
+def ammo_inventory(ch):
+    """Return the individual Ammo stacks and their combined current quantity."""
+    stacks = [w for w in stackable_wargear(ch) if _is_ammo_resource(w)]
+    total = sum(max(0, int(w.get("quantity", 0) or 0)) for w in stacks)
+    return stacks, total
+
+
+def ammo_capacity(ch):
+    """Core Rulebook Ammo carrying limit: max(3, half Strength), plus explicit container bonuses."""
+    attrs = effective_attributes(ch)
+    strength = max(0, int(attrs.get("Strength", 0) or 0))
+    # The rulebook gives a whole-number inventory resource. For odd Strength values,
+    # round the half-Strength value up so the character is never assigned a fractional slot.
+    base = max(3, (strength + 1) // 2)
+    bonus = 0
+    for w in normalize_wargear(ch.get("wargear", [])):
+        if not w.get("equipped", True):
+            continue
+        d = _gear_details_dict(w.get("details", {}))
+        try:
+            bonus += int(d.get("ammo_capacity_bonus", 0) or 0)
+        except Exception:
+            pass
+        name = str(w.get("name", "")).lower()
+        if "ammo backpack" in name:
+            bonus += 10
+        elif "bandolier" in name:
+            bonus += 2
+    return base + bonus
+
+
+def render_ammo_section(cid, ch, compact=False):
+    ammo, ammo_total = ammo_inventory(ch)
+    explosive = [w for w in stackable_wargear(ch) if not _is_ammo_resource(w)]
+    if not ammo and not explosive:
+        return
+
+    capacity = ammo_capacity(ch)
+    st.markdown("<div class='sectionttl'>Ammunition & Grenades</div>", unsafe_allow_html=True)
+    st.markdown(
+        f"<div class='wg'><b>Ammo Pool</b> <span style='float:right'><b>{ammo_total} / {capacity}</b></span>"
+        f"<div style='opacity:.68;font-size:.78rem'>Ammo is tracked by type. Normal firing does not spend Ammo. Spend 1 point when Reloading, after a Salvo option, or when a Complication requires it.</div></div>",
+        unsafe_allow_html=True,
+    )
+
+    if ammo:
+        st.markdown("**Ammo types**")
+        for idx, w in enumerate(ammo):
+            d = _gear_details_dict(w.get("details", {}))
+            qty = int(w.get("quantity", 1) or 1)
+            keywords = d.get("keywords", []) or []
+            label = str(w.get("name", "Ammo"))
+            meta = ", ".join(str(x) for x in keywords) if keywords else "Compatible with its matching weapon type"
+            if compact:
+                st.markdown(f"<div class='wg'><b>{html.escape(label)}</b> <span style='float:right'>× {qty}</span><div style='opacity:.65;font-size:.75rem'>{html.escape(meta)}</div></div>", unsafe_allow_html=True)
+                continue
+            cols = st.columns([3.6, 1.1, 1.1, 2])
+            cols[0].markdown(f"**{html.escape(label)}**  × **{qty}**<br><small>{html.escape(meta)}</small>", unsafe_allow_html=True)
+            if cols[1].button("Spend 1", key=f"battle_ammo_use_{cid}_{idx}"):
+                result = adjust_wargear_quantity(cid, int(w.get("craft_id", -1) or -1), -1,
+                                                 actor_name=(st.session_state.get("user") or {}).get("username", ""),
+                                                 actor_user_id=(st.session_state.get("user") or {}).get("id"),
+                                                 source="Player Ammo Used")
+                if result[0]: st.rerun()
+                else: st.error(result[1])
+            if cols[2].button("Add 1", key=f"battle_ammo_add_{cid}_{idx}"):
+                result = adjust_wargear_quantity(cid, int(w.get("craft_id", -1) or -1), 1,
+                                                 actor_name=(st.session_state.get("user") or {}).get("username", ""),
+                                                 actor_user_id=(st.session_state.get("user") or {}).get("id"),
+                                                 source="Player Ammo Added")
+                if result[0]: st.rerun()
+                else: st.error(result[1])
+            cols[3].caption("Special Ammo" if str(d.get("special", "")).lower() == "true" or "special" in label.lower() else "Ammo")
+
+    if explosive:
+        st.markdown("**Grenades & Missiles**")
+        for idx, w in enumerate(explosive):
+            d = _gear_details_dict(w.get("details", {}))
+            qty = int(w.get("quantity", 1) or 1)
+            category = str(d.get("category", "Resource")).title()
+            cols = st.columns([3.6, 1.1, 1.1, 2])
+            cols[0].markdown(f"**{html.escape(str(w.get('name','')))}**  × **{qty}**<br><small>{html.escape(category)}</small>", unsafe_allow_html=True)
+            if cols[1].button("Use 1", key=f"battle_expl_use_{cid}_{idx}"):
+                result = adjust_wargear_quantity(cid, int(w.get("craft_id", -1) or -1), -1,
+                                                 actor_name=(st.session_state.get("user") or {}).get("username", ""),
+                                                 actor_user_id=(st.session_state.get("user") or {}).get("id"),
+                                                 source="Player Explosive Used")
+                if result[0]: st.rerun()
+                else: st.error(result[1])
+            if cols[2].button("Add 1", key=f"battle_expl_add_{cid}_{idx}"):
+                result = adjust_wargear_quantity(cid, int(w.get("craft_id", -1) or -1), 1,
+                                                 actor_name=(st.session_state.get("user") or {}).get("username", ""),
+                                                 actor_user_id=(st.session_state.get("user") or {}).get("id"),
+                                                 source="Player Explosive Added")
+                if result[0]: st.rerun()
+                else: st.error(result[1])
+            cols[3].caption(category)
+
+
 @st.fragment(run_every=REFRESH_S)
 def battle_view(cid):
     ch = load_character(cid)
@@ -1853,6 +2239,8 @@ def battle_view(cid):
                 st.markdown(f"<div class='tal'><span class='tn'>{html.escape(str(pwr.get('name','')))}</span><div style='margin-top:5px;opacity:.75;line-height:1.35'>{html.escape(str(pwr.get('effect','')))}</div></div>", unsafe_allow_html=True)
         else:
             st.markdown("<div class='tal' style='opacity:.6'>No Psychic Powers.</div>", unsafe_allow_html=True)
+
+        render_ammo_section(cid, ch)
 
         st.markdown("<div class='sectionttl'>Wargear</div>", unsafe_allow_html=True)
         if ch["wargear"]:
@@ -2139,16 +2527,12 @@ def edit_view(cid, gm_mode=False):
                     elif live_available_xp < cost:
                         st.error(f"Purchase blocked: requires {cost} XP, but only {live_available_xp} XP is available.")
                     else:
-                        current = normalize_talents(ch.get("talents", []))
-                        current = _craft_character_add(current, tid, "talent")
-                        result = save_build(
-                            cid, ch["name"], ch.get("chapter", ""), st.session_state[spk], int(st.session_state[_k(cid, "n", "tier")]),
-                            cur_attr, cur_skill, current, json.dumps(normalize_wargear(ch.get("wargear", [])), ensure_ascii=False),
-                            int(st.session_state[_k(cid, "n", "armour")]), ch.get("notes", ""), int(st.session_state[_k(cid, "n", "other")]),
-                            st.session_state.get(ark, ""), mode, actor_role="player",
+                        result = assign_craft_to_character(
+                            cid, tid, "talent",
+                            actor_name=(st.session_state.get("user") or {}).get("username", ""),
                             actor_user_id=(st.session_state.get("user") or {}).get("id"),
-                            actor_name=(st.session_state.get("user") or {}).get("username", ""), source="Talent Purchase",
-                            expected_revision=int(ch.get("revision", 0) or 0))
+                            source="Talent Purchase",
+                        )
                         if result[0]:
                             st.rerun()
                         st.error(result[1])
@@ -2159,9 +2543,7 @@ def edit_view(cid, gm_mode=False):
             labels = {int(r["id"]): craft_item_label(r) for r in catalog_talents}
             npc_tid = st.selectbox("NPC Talent", [None] + [int(r["id"]) for r in catalog_talents], format_func=lambda x: "Select Talent..." if x is None else labels[x], key=f"gm_talent_{cid}")
             if npc_tid is not None and st.button("Assign Talent to NPC", key=f"gm_talent_add_{cid}", use_container_width=True):
-                current = normalize_talents(ch.get("talents", []))
-                current = _craft_character_add(current, npc_tid, "talent")
-                result = save_build(cid, ch["name"], ch.get("chapter", ""), st.session_state[spk], int(st.session_state[_k(cid,"n","tier")]), cur_attr, cur_skill, current, json.dumps(normalize_wargear(ch.get("wargear", [])), ensure_ascii=False), int(st.session_state[_k(cid,"n","armour")]), ch.get("notes", ""), int(st.session_state[_k(cid,"n","other")]), st.session_state.get(ark,""), mode, actor_role="gm", actor_user_id=(st.session_state.get("user") or {}).get("id"), actor_name=(st.session_state.get("user") or {}).get("username", ""), source="Magister NPC Talent Assignment", expected_revision=int(ch.get("revision",0) or 0), powers=normalize_powers(ch.get("powers", [])))
+                result = assign_craft_to_character(cid, npc_tid, "talent", source="Magister NPC Talent Assignment")
                 if result[0]: st.rerun()
                 st.error(result[1])
 
@@ -2184,14 +2566,7 @@ def edit_view(cid, gm_mode=False):
             pid = st.selectbox("Psychic Power", [None] + [int(r["id"]) for r in catalog_powers],
                                format_func=lambda x: "Select Psychic Power..." if x is None else labels[x], key=f"gm_power_{cid}")
             if pid is not None and st.button("Assign Psychic Power", key=f"gm_power_add_{cid}", use_container_width=True):
-                current = normalize_powers(ch.get("powers", []))
-                current = _craft_character_add(current, pid, "power")
-                result = save_build(cid, ch["name"], ch.get("chapter", ""), st.session_state[spk], int(st.session_state[_k(cid,"n","tier")]),
-                                    cur_attr, cur_skill, normalize_talents(ch.get("talents", [])), json.dumps(normalize_wargear(ch.get("wargear", [])), ensure_ascii=False),
-                                    int(st.session_state[_k(cid,"n","armour")]), ch.get("notes", ""), int(st.session_state[_k(cid,"n","other")]),
-                                    st.session_state.get(ark,""), mode, actor_role="gm", actor_user_id=(st.session_state.get("user") or {}).get("id"),
-                                    actor_name=(st.session_state.get("user") or {}).get("username", ""), source="Magister Psychic Power Assignment",
-                                    expected_revision=int(ch.get("revision",0) or 0), powers=current)
+                result = assign_craft_to_character(cid, pid, "power", source="Magister Psychic Power Assignment")
                 if result[0]: st.rerun()
                 st.error(result[1])
     if owned_powers:
@@ -2214,20 +2589,18 @@ def edit_view(cid, gm_mode=False):
 
     st.markdown("#### Wargear")
     if gm_mode:
+        _ammo_stacks_gm, _ammo_total_gm = ammo_inventory(ch)
+        st.markdown(f"<div class='wg'><b>Ammo Capacity</b> <span style='float:right'>{ammo_capacity(ch)} total Ammo</span><div style='opacity:.65;font-size:.76rem'>The Magister controls the maximum Ammo pool, not the quantity of each Ammo type.</div></div>", unsafe_allow_html=True)
         if catalog_wargear:
             labels = {int(r["id"]): craft_item_label(r) for r in catalog_wargear}
             gid = st.selectbox("Wargear", [None] + [int(r["id"]) for r in catalog_wargear],
                                format_func=lambda x: "Select Wargear..." if x is None else labels[x], key=f"gm_gear_{cid}")
             if gid is not None and st.button("Assign Wargear", key=f"gm_gear_add_{cid}", use_container_width=True):
-                current = normalize_wargear(ch.get("wargear", []))
-                current = _craft_character_add(current, gid, "wargear")
-                result = save_build(cid, ch["name"], ch.get("chapter", ""), st.session_state[spk], int(st.session_state[_k(cid, "n", "tier")]),
-                                    cur_attr, cur_skill, normalize_talents(ch.get("talents", [])), json.dumps(current, ensure_ascii=False),
-                                    int(st.session_state[_k(cid, "n", "armour")]), ch.get("notes", ""), int(st.session_state[_k(cid, "n", "other")]),
-                                    st.session_state.get(ark, ""), mode, actor_role="gm",
-                                    actor_user_id=(st.session_state.get("user") or {}).get("id"),
-                                    actor_name=(st.session_state.get("user") or {}).get("username", ""), source="Magister Wargear Assignment",
-                                    expected_revision=int(ch.get("revision", 0) or 0))
+                result = assign_wargear_to_character(
+                    cid, gid,
+                    actor_name=(st.session_state.get("user") or {}).get("username", ""),
+                    actor_user_id=(st.session_state.get("user") or {}).get("id"),
+                )
                 if result[0]: st.rerun()
                 st.error(result[1])
     else:
@@ -2238,9 +2611,30 @@ def edit_view(cid, gm_mode=False):
         catalog_all = list_craft_items("wargear", active_only=False)
         for idx, w in enumerate(wdf):
             wc2 = st.columns([2.1, 4.4, 1.1, 1])
-            wc2[0].markdown(f"**{html.escape(str(w.get('name', '')))}**")
+            qty = int(w.get("quantity", 1) or 1)
+            display_name = html.escape(str(w.get("name", "")))
+            details_w = _gear_details_dict(w.get("details", {}))
+            stackable_w = bool(details_w.get("stackable", False))
+            ammo_w = _is_ammo_resource(w)
+            if gm_mode and ammo_w:
+                # The Magister sees the capacity only; current Ammo type quantities are player-managed.
+                continue
+            else:
+                wc2[0].markdown(f"**{display_name}**" + (f" × {qty}" if qty > 1 or stackable_w else ""))
             wc2[1].caption(str(w.get("effect", "")))
             if gm_mode:
+                if stackable_w and not ammo_w:
+                    qcols = wc2[2].columns(2)
+                    if qcols[0].button("−", key=f"gear_qm_{cid}_{idx}"):
+                        result = adjust_wargear_quantity(cid, int(w.get("craft_id", -1) or -1), -1,
+                                                         actor_name=(st.session_state.get("user") or {}).get("username", ""),
+                                                         actor_user_id=(st.session_state.get("user") or {}).get("id"), source="Magister Wargear Stack -1")
+                        if result[0]: st.rerun()
+                    if qcols[1].button("+", key=f"gear_qp_{cid}_{idx}"):
+                        result = adjust_wargear_quantity(cid, int(w.get("craft_id", -1) or -1), 1,
+                                                         actor_name=(st.session_state.get("user") or {}).get("username", ""),
+                                                         actor_user_id=(st.session_state.get("user") or {}).get("id"), source="Magister Wargear Stack +1")
+                        if result[0]: st.rerun()
                 equipped = bool(w.get("equipped", True))
                 if wc2[2].button("Equipped" if equipped else "Stowed", key=f"gear_eq_{cid}_{idx}"):
                     wdf[idx]["equipped"] = not equipped
@@ -2360,8 +2754,10 @@ def char_row(ch, folders):
     c[0].markdown(f"<b class='{ncls}'>{ch['name'] or 'Unnamed'}{'*' if ch.get('creation_mode') == 'advanced' else ''}</b><br>"
                   f"<small style='opacity:.65'>{ch['species']} · T{ch['tier']} · Rank {rank}</small> {vs}",
                   unsafe_allow_html=True)
-    c[1].markdown(f"<small>Shock {ch['cur_shock']}/{d['Max Shock']}<br>Wrath {ch['cur_wrath']}/{d['Max Wrath']}</small>",
-                  unsafe_allow_html=True)
+    _ammo_stacks, _ammo_total = ammo_inventory(ch)
+    _is_gm_view = (st.session_state.get("user") or {}).get("role") == "gm"
+    ammo_text = str(ammo_capacity(ch)) if _is_gm_view else f"{_ammo_total}/{ammo_capacity(ch)}"
+    c[1].markdown(f"<small>Shock {ch['cur_shock']}/{d['Max Shock']}<br>Wrath {ch['cur_wrath']}/{d['Max Wrath']}<br>Ammo {ammo_text}</small>", unsafe_allow_html=True)
     c[2].button("Open", key=f"op_{ch['id']}", on_click=cb_open, args=(ch["id"],))
     if ch["comms_on"]:
         c[3].button("Cut Vox", key=f"vr_{ch['id']}", on_click=set_comms, args=(ch["id"], 0))
@@ -2607,20 +3003,40 @@ def _render_craft_modifiers(prefix, details=None):
 def _render_wargear_data(prefix, details=None):
     details = dict(details or {})
     st.markdown("**Wargear Data**")
-    a = st.columns(4)
-    rarity = a[0].text_input("Rarity", str(details.get("rarity", "")), key=f"{prefix}_rarity")
-    value = a[1].number_input("Value", 0, 1000000, int(details.get("value", 0) or 0), key=f"{prefix}_value")
-    wtype = a[2].text_input("Type", str(details.get("type", "")), key=f"{prefix}_type")
+    a = st.columns(5)
+    rarity = a[0].selectbox("Rarity", ["Common", "Uncommon", "Rare", "Very Rare", "Unique"],
+                            index=( ["Common", "Uncommon", "Rare", "Very Rare", "Unique"].index(str(details.get("rarity")))
+                                    if str(details.get("rarity")) in ["Common", "Uncommon", "Rare", "Very Rare", "Unique"] else 0),
+                            key=f"{prefix}_rarity")
+    value = a[1].number_input("Value", 0, 1000000, int(details.get("value", 0) or 0), key=f"{prefix}_value",
+                              help="Base Value used by Requisition/Influence tests.")
+    wtype = a[2].text_input("Type", str(details.get("type", "")), key=f"{prefix}_type", placeholder="Weapon, Armour, Ammo, Grenade...")
+    category_options = ["", "weapon", "armour", "gear", "ammo", "grenade", "missile", "reload", "upgrade"]
+    old_category = str(details.get("category", "")).lower()
+    category = a[3].selectbox("Category", category_options, index=(category_options.index(old_category) if old_category in category_options else 0), key=f"{prefix}_category")
+    stackable = a[4].checkbox("Stackable", value=bool(details.get("stackable", False)), key=f"{prefix}_stackable",
+                                help="Use a quantity stack instead of separate inventory entries.")
     traits_old = details.get("traits", [])
-    traits = a[3].text_input("Traits", ", ".join(traits_old if isinstance(traits_old, list) else _req_list(traits_old)), key=f"{prefix}_traits")
+    traits = st.text_input("Traits", ", ".join(traits_old if isinstance(traits_old, list) else _req_list(traits_old)), key=f"{prefix}_traits")
     b = st.columns(5)
     damage = b[0].text_input("Damage", str(details.get("damage", "")), key=f"{prefix}_damage")
     ed = b[1].number_input("ED", 0, 20, int(details.get("ed", 0) or 0), key=f"{prefix}_ed")
     ap = b[2].number_input("AP", -20, 20, int(details.get("ap", 0) or 0), key=f"{prefix}_ap")
     rng = b[3].text_input("Range", str(details.get("range", "")), key=f"{prefix}_range")
     salvo = b[4].number_input("Salvo", 0, 20, int(details.get("salvo", 0) or 0), key=f"{prefix}_salvo")
+    kw_options = _craft_keyword_options() + ["Explosive", "Bolt", "Las", "Flame", "Plasma", "Melta", "Shuriken", "Projectile", "Fire"]
+    old_kw = [str(x) for x in (details.get("keywords", []) or [])]
+    kw_default = [x for x in kw_options if x.lower() in {v.lower() for v in old_kw}]
+    keywords = st.multiselect("Wargear Keywords", sorted(set(kw_options)), default=kw_default, key=f"{prefix}_keywords")
+    custom_kw = st.text_input("Other Wargear Keywords", ", ".join(x for x in old_kw if x.lower() not in {v.lower() for v in kw_options}), key=f"{prefix}_custom_keywords")
+    stack_group = st.text_input("Stack Group", str(details.get("stack_group", "")), key=f"{prefix}_stack_group",
+                                help="Items with the same Craft ID already stack. This field is used for custom stackable resources.")
+    if category in {"ammo", "grenade", "missile", "reload"} and not stack_group.strip():
+        stack_group = str(details.get("stack_group") or "")
     return {
-        "rarity": rarity, "value": int(value), "type": wtype,
+        "rarity": rarity, "value": int(value), "type": wtype, "category": category,
+        "stackable": bool(stackable), "stack_group": stack_group.strip(),
+        "keywords": _req_list(keywords) + _req_list(custom_kw),
         "traits": _req_list(traits), "damage": damage, "ed": int(ed),
         "ap": int(ap), "range": rng, "salvo": int(salvo),
     }
@@ -2681,7 +3097,9 @@ def craft_view():
                 if bits: st.caption(" · ".join(bits))
                 if details.get("modifiers"): st.caption("Bonuses: " + ", ".join(f"{k} {int(v):+d}" for k,v in details["modifiers"].items() if v))
                 if kind == "wargear":
-                    extra = [f"{label}: {details.get(key)}" for key,label in (("damage","Damage"),("ed","ED"),("ap","AP"),("range","Range"),("salvo","Salvo"),("traits","Traits")) if details.get(key) not in (None,"")]
+                    extra = [f"{label}: {details.get(key)}" for key,label in (("value","Value"),("rarity","Rarity"),("category","Category"),("damage","Damage"),("ed","ED"),("ap","AP"),("range","Range"),("salvo","Salvo"),("traits","Traits")) if details.get(key) not in (None,"")]
+                    if details.get("keywords"): extra.append("Keywords: " + ", ".join(details.get("keywords", [])))
+                    if details.get("stackable"): extra.append("Stackable")
                     if extra: st.caption(" · ".join(extra))
                 if kind == "power":
                     extra = [f"{label}: {details.get(key)}" for key,label in (("dn","DN"),("activation","Activation"),("potency","Potency"),("discipline","Discipline")) if details.get(key) not in (None,"")]

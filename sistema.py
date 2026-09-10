@@ -10,6 +10,7 @@ import json
 import math
 import html
 import os
+import random
 from datetime import datetime, timezone
 
 DB_PATH = os.environ.get("WG_DB_PATH", "cogitador.db")
@@ -361,6 +362,23 @@ def init_db():
         name TEXT, tier INTEGER DEFAULT 2, ruin INTEGER DEFAULT 0, session_no INTEGER DEFAULT 1)""")
     c.execute("""CREATE TABLE IF NOT EXISTS log(id INTEGER PRIMARY KEY AUTOINCREMENT,
         ts TEXT, author TEXT, text TEXT)""")
+    c.execute("""CREATE TABLE IF NOT EXISTS session_record(id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_no INTEGER, title TEXT, notes TEXT, base_xp INTEGER DEFAULT 0, npc_ids TEXT DEFAULT '[]',
+        created_at TEXT, closed_at TEXT)""")
+    c.execute("""CREATE TABLE IF NOT EXISTS session_award(id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id INTEGER NOT NULL, character_id INTEGER NOT NULL, base_xp INTEGER DEFAULT 0, bonus_xp INTEGER DEFAULT 0,
+        total_xp INTEGER DEFAULT 0, UNIQUE(session_id, character_id))""")
+    c.execute("""CREATE TABLE IF NOT EXISTS combatant(character_id INTEGER PRIMARY KEY, added_at TEXT, initiative_order INTEGER DEFAULT 9999, initiative_modifier INTEGER DEFAULT 0)""")
+    _ensure_columns(conn, "combatant", {"added_at": "TEXT", "initiative_order": "INTEGER DEFAULT 9999", "initiative_modifier": "INTEGER DEFAULT 0"})
+    c.execute("""CREATE TABLE IF NOT EXISTS combat_encounter(
+        id INTEGER PRIMARY KEY AUTOINCREMENT, session_no INTEGER, title TEXT, notes TEXT,
+        started_at TEXT, ended_at TEXT, status TEXT DEFAULT 'active', round_no INTEGER DEFAULT 1,
+        current_turn INTEGER DEFAULT 0)""")
+    c.execute("""CREATE TABLE IF NOT EXISTS combat_participant(
+        id INTEGER PRIMARY KEY AUTOINCREMENT, encounter_id INTEGER NOT NULL, character_id INTEGER NOT NULL,
+        side TEXT DEFAULT 'npc', initiative_mod INTEGER DEFAULT 0, initiative_roll INTEGER DEFAULT 0,
+        initiative_icons INTEGER DEFAULT 0, initiative_total INTEGER DEFAULT 0, turn_order INTEGER DEFAULT 0,
+        ambushed INTEGER DEFAULT 0, added_at TEXT, UNIQUE(encounter_id, character_id))""")
     conn.commit()
     # migration: ensure columns exist in databases created by older versions
     _ensure_columns(conn, "campaign", {"name": "TEXT", "tier": "INTEGER DEFAULT 2",
@@ -389,6 +407,20 @@ def init_db():
         salt = secrets.token_hex(16)
         c.execute("INSERT INTO users(username,pw_hash,salt,role,created_at) VALUES(?,?,?,?,?)",
                   ("magister", hash_pw("AveImperator1", salt), salt, "gm", now_iso()))
+    # Migrate the previous simple combat roster into the new encounter log once.
+    legacy = conn.execute("SELECT character_id FROM combatant").fetchall()
+    if legacy and not conn.execute("SELECT 1 FROM combat_encounter WHERE status='active' LIMIT 1").fetchone():
+        camp = conn.execute("SELECT session_no FROM campaign WHERE id=1").fetchone()
+        session_no = int(camp[0] if camp else 1)
+        cur = conn.execute("INSERT INTO combat_encounter(session_no,title,notes,started_at,status,round_no,current_turn) VALUES(?,?,?,?, 'active',1,0)",
+                           (session_no, f"Combat - Session {session_no}", "Migrated from previous combat roster", now_iso()))
+        eid = cur.lastrowid
+        for r in legacy:
+            ch = conn.execute("SELECT kind FROM characters WHERE id=?", (r[0],)).fetchone()
+            if ch:
+                conn.execute("INSERT OR IGNORE INTO combat_participant(encounter_id,character_id,side,added_at) VALUES(?,?,?,?)",
+                             (eid, r[0], ch[0], now_iso()))
+        conn.execute("DELETE FROM combatant")
     conn.commit(); conn.close()
 
 
@@ -728,6 +760,138 @@ def add_log(author, text):
 def get_logs(limit=60):
     conn = get_conn(); rows = conn.execute("SELECT * FROM log ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
     conn.close(); return rows
+
+
+def create_session_record(session_no, title, notes, base_xp, npc_ids):
+    conn = get_conn()
+    cur = conn.execute(
+        "INSERT INTO session_record(session_no,title,notes,base_xp,npc_ids,created_at) VALUES(?,?,?,?,?,?)",
+        (int(session_no), title.strip(), notes.strip(), max(0, int(base_xp)), json.dumps([int(x) for x in npc_ids]), now_iso()),
+    )
+    sid = cur.lastrowid
+    conn.commit(); conn.close()
+    return sid
+
+
+def award_session_xp(session_id, awards, close_session=True, advance_campaign=False):
+    conn = get_conn()
+    for cid, base_xp, bonus_xp in awards:
+        total = max(0, int(base_xp)) + max(0, int(bonus_xp))
+        conn.execute(
+            "INSERT OR REPLACE INTO session_award(session_id,character_id,base_xp,bonus_xp,total_xp) VALUES(?,?,?,?,?)",
+            (int(session_id), int(cid), max(0, int(base_xp)), max(0, int(bonus_xp)), total),
+        )
+        conn.execute("UPDATE characters SET earned_xp=MAX(0,earned_xp+?) WHERE id=?", (total, int(cid)))
+    if close_session:
+        conn.execute("UPDATE session_record SET closed_at=? WHERE id=?", (now_iso(), int(session_id)))
+    if advance_campaign:
+        conn.execute("UPDATE campaign SET session_no=session_no+1 WHERE id=1")
+    conn.commit(); conn.close()
+
+
+def get_session_records(limit=30):
+    conn = get_conn()
+    rows = conn.execute("SELECT * FROM session_record ORDER BY id DESC LIMIT ?", (int(limit),)).fetchall()
+    conn.close(); return rows
+
+
+def get_session_awards(session_id):
+    conn = get_conn()
+    rows = conn.execute("""SELECT sa.*, c.name, c.kind FROM session_award sa
+                          JOIN characters c ON c.id=sa.character_id
+                          WHERE sa.session_id=? ORDER BY c.name""", (int(session_id),)).fetchall()
+    conn.close(); return rows
+
+
+def _current_combat_id(create=False):
+    conn = get_conn()
+    row = conn.execute("SELECT id FROM combat_encounter WHERE status='active' ORDER BY id DESC LIMIT 1").fetchone()
+    if row:
+        cid = int(row["id"])
+        conn.close(); return cid
+    if not create:
+        conn.close(); return None
+    camp = conn.execute("SELECT session_no FROM campaign WHERE id=1").fetchone()
+    session_no = int(camp[0] if camp else 1)
+    cur = conn.execute("INSERT INTO combat_encounter(session_no,title,notes,started_at,status,round_no,current_turn) VALUES(?,?,?,?, 'active',1,0)",
+                       (session_no, f"Combat - Session {session_no}", "", now_iso()))
+    cid = cur.lastrowid
+    conn.commit(); conn.close(); return int(cid)
+
+
+def start_combat(title="", notes=""):
+    conn = get_conn()
+    active = conn.execute("SELECT id FROM combat_encounter WHERE status='active' ORDER BY id DESC LIMIT 1").fetchone()
+    if active:
+        conn.close(); return int(active[0])
+    camp = conn.execute("SELECT session_no FROM campaign WHERE id=1").fetchone()
+    session_no = int(camp[0] if camp else 1)
+    cur = conn.execute("INSERT INTO combat_encounter(session_no,title,notes,started_at,status,round_no,current_turn) VALUES(?,?,?,?, 'active',1,0)",
+                       (session_no, title.strip() or f"Combat - Session {session_no}", notes.strip(), now_iso()))
+    cid = cur.lastrowid
+    conn.commit(); conn.close(); return int(cid)
+
+
+def add_combat_participant(character_id, initiative_mod=0, ambushed=False):
+    eid = _current_combat_id(create=True)
+    conn = get_conn()
+    ch = conn.execute("SELECT id,kind FROM characters WHERE id=?", (int(character_id),)).fetchone()
+    if not ch:
+        conn.close(); return False
+    conn.execute("""INSERT OR IGNORE INTO combat_participant(encounter_id,character_id,side,initiative_mod,ambushed,added_at)
+                    VALUES(?,?,?,?,?,?)""", (eid, int(character_id), ch["kind"], int(initiative_mod), 1 if ambushed else 0, now_iso()))
+    conn.commit(); conn.close(); return True
+
+
+def remove_combat_participant(character_id):
+    eid = _current_combat_id(False)
+    if not eid: return
+    conn = get_conn(); conn.execute("DELETE FROM combat_participant WHERE encounter_id=? AND character_id=?", (eid, int(character_id))); conn.commit(); conn.close()
+
+
+def get_combatants():
+    conn = get_conn()
+    rows = conn.execute("""SELECT c.*, cb.initiative_order, cb.initiative_modifier
+                          FROM characters c JOIN combatant cb ON cb.character_id=c.id
+                          ORDER BY cb.initiative_order ASC, c.name ASC, c.id ASC""").fetchall()
+    conn.close(); return [_decode(r) for r in rows]
+
+
+def set_combatant(cid, active=True):
+    conn = get_conn()
+    if active:
+        row = conn.execute("SELECT COALESCE(MAX(initiative_order), 0) + 1 FROM combatant").fetchone()
+        next_order = int(row[0] or 1)
+        conn.execute("INSERT OR REPLACE INTO combatant(character_id,added_at,initiative_order,initiative_modifier) VALUES(?,?,?,0)",
+                     (int(cid), now_iso(), next_order))
+    else:
+        conn.execute("DELETE FROM combatant WHERE character_id=?", (int(cid),))
+    conn.commit(); conn.close()
+
+
+def set_combat_modifier(cid, modifier):
+    conn = get_conn()
+    conn.execute("UPDATE combatant SET initiative_modifier=? WHERE character_id=?", (int(modifier), int(cid)))
+    conn.commit(); conn.close()
+
+
+def move_combatant(cid, direction):
+    current = get_combatants()
+    ids = [int(c["id"]) for c in current]
+    if int(cid) not in ids:
+        return
+    i = ids.index(int(cid)); j = i + int(direction)
+    if j < 0 or j >= len(ids):
+        return
+    ids[i], ids[j] = ids[j], ids[i]
+    conn = get_conn()
+    for order, char_id in enumerate(ids, 1):
+        conn.execute("UPDATE combatant SET initiative_order=? WHERE character_id=?", (order, char_id))
+    conn.commit(); conn.close()
+
+
+def clear_combat():
+    conn = get_conn(); conn.execute("DELETE FROM combatant"); conn.commit(); conn.close()
 
 
 # ============================================================
@@ -1354,7 +1518,7 @@ def gm_view():
             edit_view(cid, gm_mode=True)
         return
 
-    tabs = st.tabs(["Characters", "Vox", "Progression", "Campaign", "Maintenance"])
+    tabs = st.tabs(["Characters", "Vox", "Progression", "Session", "Combat", "Campaign", "Maintenance"])
 
     # ---- Characters / Folders ----
     with tabs[0]:
@@ -1596,8 +1760,150 @@ def gm_view():
         else:
             st.info("No character is currently eligible for Archetype Ascension.")
 
-    # ---- Campaign ----
+    # ---- Session ----
     with tabs[3]:
+        st.markdown("#### Session")
+        st.caption("Close the session, award table XP and individual bonuses, record notes, and mark the NPCs involved.")
+        current_session = int(camp.get("session_no", 1))
+        players = list_characters("player")
+        npcs = list_characters("npc")
+        old_records = get_session_records(20)
+
+        with st.form("session_record_form"):
+            sc = st.columns([1.2, 2.8, 1.2])
+            session_no = sc[0].number_input("Session", 1, 9999, current_session)
+            title = sc[1].text_input("Session Title", placeholder="e.g. The Fall of Gilead")
+            base_xp = sc[2].number_input("Table XP", 0, 10000, 20, step=5)
+            notes = st.text_area("Session Notes", placeholder="Events, rewards, consequences, rulings, loot, reminders...")
+
+            st.markdown("**NPCs involved**")
+            npc_ids = []
+            if npcs:
+                ncols = st.columns(3)
+                for i, npc in enumerate(npcs):
+                    if ncols[i % 3].checkbox(f"{npc['name'] or 'Unnamed NPC'} · T{npc['tier']}", key=f"session_npc_{npc['id']}"):
+                        npc_ids.append(npc["id"])
+            else:
+                st.caption("No NPCs available.")
+
+            st.markdown("**Player XP**")
+            award_rows = []
+            if players:
+                h = st.columns([3.5, 1.4, 1.4, 1.4])
+                h[0].markdown("**Character**")
+                h[1].markdown("**Present**")
+                h[2].markdown("**Base XP**")
+                h[3].markdown("**Bonus XP**")
+                for pl in players:
+                    cols = st.columns([3.5, 1.4, 1.4, 1.4])
+                    present = cols[1].checkbox("Present", value=True, key=f"session_present_{pl['id']}", label_visibility="collapsed")
+                    cols[0].markdown(f"**{pl['name'] or 'Unnamed'}** · T{pl['tier']} · {rank_label(pl['rank'])}")
+                    cols[2].number_input("Base", min_value=0, max_value=10000, value=int(base_xp), step=5, key=f"session_base_{pl['id']}", label_visibility="collapsed", disabled=not present)
+                    cols[3].number_input("Bonus", min_value=0, max_value=10000, value=0, step=5, key=f"session_bonus_{pl['id']}", label_visibility="collapsed", disabled=not present)
+                    if present:
+                        award_rows.append((pl["id"], st.session_state[f"session_base_{pl['id']}"], st.session_state[f"session_bonus_{pl['id']}"]))
+            else:
+                st.info("No players are registered.")
+
+            advance = st.checkbox("Advance campaign to the next session", value=True)
+            submit = st.form_submit_button("Close Session & Award XP", use_container_width=True)
+            if submit:
+                sid = create_session_record(session_no, title, notes, base_xp, npc_ids)
+                award_session_xp(sid, award_rows, close_session=True, advance_campaign=advance)
+                total_awarded = sum(int(a[1]) + int(a[2]) for a in award_rows)
+                add_log("Magister", f"Session {int(session_no)} closed. {total_awarded} XP awarded across {len(award_rows)} player(s).")
+                st.success("Session closed and XP awarded.")
+                st.rerun()
+
+        st.divider()
+        st.markdown("#### Session History")
+        if not old_records:
+            st.caption("No session records yet.")
+        for sr in old_records:
+            status = "Closed" if sr["closed_at"] else "Draft"
+            label = f"Session {sr['session_no']} · {sr['title'] or 'Untitled'} · {status}"
+            with st.expander(label):
+                st.write(sr["notes"] or "No notes.")
+                try:
+                    marked_ids = json.loads(sr["npc_ids"] or "[]")
+                except Exception:
+                    marked_ids = []
+                marked = [n["name"] for n in npcs if n["id"] in marked_ids]
+                st.write("NPCs involved: " + (", ".join(marked) if marked else "None"))
+                awards = get_session_awards(sr["id"])
+                if awards:
+                    for aw in awards:
+                        st.markdown(f"**{aw['name']}** · +{aw['total_xp']} XP (base {aw['base_xp']} + bonus {aw['bonus_xp']})")
+
+    # ---- Combat ----
+    with tabs[4]:
+        st.markdown("#### Combat")
+        st.caption("The Magister controls the combat order manually. Add Players and NPCs, apply initiative modifiers, and arrange the turn order.")
+        all_combat_chars = list_characters()
+        folders = list_folders()
+        folder_map = {f["id"]: f["name"] for f in folders}
+        active = {c["id"] for c in get_combatants()}
+
+        fc = st.columns([1.8, 2.5, 1])
+        folder_options = [None] + [f["id"] for f in folders]
+        selected_folder = fc[0].selectbox("Filter by Folder", folder_options,
+            format_func=lambda x: "All Folders" if x is None else folder_map.get(x, "Folder"), key="combat_folder")
+        search = fc[1].text_input("Search Character", placeholder="Search by name, species, archetype, or faction", key="combat_search")
+        if fc[2].button("Clear Combat", use_container_width=True, key="combat_clear"):
+            clear_combat(); st.rerun()
+
+        filtered = []
+        q = search.strip().lower()
+        for ch in all_combat_chars:
+            if selected_folder is not None and ch.get("folder_id") != selected_folder:
+                continue
+            hay = " ".join([str(ch.get("name") or ""), str(ch.get("species") or ""), str(ch.get("archetype") or ""), str(ch.get("chapter") or "")]).lower()
+            if q and q not in hay:
+                continue
+            filtered.append(ch)
+
+        st.markdown(f"**Available Characters:** {len(filtered)}")
+        for ch in filtered:
+            cols = st.columns([4, 1.2, 1.2, 1.2])
+            in_combat = ch["id"] in active
+            folder_name = folder_map.get(ch.get("folder_id"), "No folder")
+            kind_label = "NPC" if ch["kind"] == "npc" else "PLAYER"
+            ncls = "npc" if ch["kind"] == "npc" else ""
+            cols[0].markdown(f"**<span class='{ncls}'>{ch['name'] or 'Unnamed'}</span>** · {kind_label} · {species_label(ch['species'])} · T{ch['tier']} · {rank_label(ch['rank'])}<br><small>{folder_name}</small>", unsafe_allow_html=True)
+            if cols[1].button("Remove" if in_combat else "Add", key=f"combat_toggle_{ch['id']}", use_container_width=True):
+                set_combatant(ch["id"], not in_combat); st.rerun()
+            if cols[2].button("Open", key=f"combat_open_{ch['id']}", use_container_width=True):
+                st.session_state.editing = ch["id"]; st.rerun()
+            cols[3].markdown("**IN COMBAT**" if in_combat else "")
+
+        st.divider()
+        st.markdown("#### Current Combat Order")
+        st.caption("The Magister decides the order. Initiative modifiers are recorded for reference and never reorder combatants automatically.")
+        current = get_combatants()
+        if not current:
+            st.caption("No characters are currently in combat.")
+        else:
+            for idx, ch in enumerate(current):
+                c = st.columns([0.55, 3.1, 1.3, 1.0, 1.0, 1.0, 1.0])
+                c[0].markdown(f"### {idx + 1}")
+                kind_label = "NPC" if ch["kind"] == "npc" else "PLAYER"
+                ncls = "npc" if ch["kind"] == "npc" else ""
+                c[1].markdown(f"**<span class='{ncls}'>{ch['name'] or 'Unnamed'}</span>** · {kind_label}<br><small>{species_label(ch['species'])} · T{ch['tier']} · {rank_label(ch['rank'])}</small>", unsafe_allow_html=True)
+                modifier = c[2].number_input("Modifier", -100, 100, int(ch.get("initiative_modifier", 0)), step=1, key=f"combat_mod_{ch['id']}", label_visibility="collapsed")
+                if modifier != int(ch.get("initiative_modifier", 0)):
+                    set_combat_modifier(ch["id"], modifier)
+                if c[3].button("Up", key=f"combat_up_{ch['id']}", disabled=(idx == 0), use_container_width=True):
+                    move_combatant(ch["id"], -1); st.rerun()
+                if c[4].button("Down", key=f"combat_down_{ch['id']}", disabled=(idx == len(current) - 1), use_container_width=True):
+                    move_combatant(ch["id"], 1); st.rerun()
+                if c[5].button("Open", key=f"combat_current_open_{ch['id']}", use_container_width=True):
+                    st.session_state.editing = ch["id"]; st.rerun()
+                if c[6].button("Remove", key=f"combat_current_remove_{ch['id']}", use_container_width=True):
+                    set_combatant(ch["id"], False); st.rerun()
+
+    # ---- Campaign ----
+    # ---- Campaign ----
+    with tabs[5]:
         st.markdown("#### Campaign Configuration")
         with st.form("campf"):
             cc = st.columns([3, 1, 1])
@@ -1624,7 +1930,7 @@ def gm_view():
             st.markdown(f"<div class='row'><b>{lg['ts']}</b> - {lg['text']}</div>", unsafe_allow_html=True)
 
     # ---- Maintenance ----
-    with tabs[4]:
+    with tabs[6]:
         st.markdown("#### File Maintenance")
         st.caption("The .db backup contains everything: players, NPCs, folders, XP, Vox, portraits. "
                    "On free hosting the disk may reset; download backups regularly.")

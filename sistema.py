@@ -64,9 +64,9 @@ NPC_SPECIES = ["Adeptus Astartes", "Primaris Astartes", "Chaos Space Marine",
                "Daemon de Slaanesh", "Cultista do Caos", "Fera", "Servitor", "Outro"]
 ATTR_COST = {1: 0, 2: 4, 3: 10, 4: 20, 5: 35, 6: 55, 7: 80, 8: 110, 9: 145, 10: 185, 11: 230, 12: 280}
 SKILL_COST = {0: 0, 1: 2, 2: 6, 3: 12, 4: 20, 5: 30, 6: 42, 7: 56, 8: 72}
-# Pacotes de espécie.
-# O XP aqui é o custo TOTAL do pacote: atributos + perícias + habilidades.
-# As habilidades não são cobradas novamente como talentos.
+# Species packages.
+# XP here is the TOTAL package cost: attributes + skills + abilities.
+# Abilities are not charged again as talents.
 SPECIES_PACKAGES = {
     "Human": {"xp": 0, "attributes": {}, "skills": {}, "abilities": [], "speed": 6, "size": "Average"},
     "Adeptus Astartes": {
@@ -182,7 +182,7 @@ def rank_eligible_from_xp(xp):
 
 def rank_label(rank):
     r = max(1, min(3, int(rank or 1)))
-    return f"Rank {r} — {RANKS[r]['name']}"
+    return f"Rank {r} - {RANKS[r]['name']}"
 
 
 
@@ -211,7 +211,7 @@ def species_base_skill(sp, skill):
 
 
 def apply_species_package(sp, attributes, skills):
-    """Aplica os valores mínimos concedidos pela espécie."""
+    """Applies the minimum values granted by the species."""
     package = species_package(sp)
 
     for attr, value in package.get("attributes", {}).items():
@@ -275,8 +275,8 @@ def xp_spent(ch):
     species = ch.get("species", "")
     package = species_package(species)
 
-    # A espécie paga o pacote inteiro uma única vez.
-    # Atributos/perícias incluídos no pacote não são cobrados novamente.
+    # The species package is paid once.
+    # Attributes and skills included in the package are not charged again.
     if ch.get("creation_mode") == "archetype" and ch.get("archetype") in ARCHETYPES:
         total = int(ARCHETYPES[ch["archetype"]].get("xp", 0))
     else:
@@ -326,7 +326,7 @@ def secs_since(iso):
 
 
 # ============================================================
-#  BANCO DE DADOS (com migração automática de schema)
+#  DATABASE (with automatic schema migration)
 # ============================================================
 def get_conn():
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
@@ -362,7 +362,7 @@ def init_db():
     c.execute("""CREATE TABLE IF NOT EXISTS log(id INTEGER PRIMARY KEY AUTOINCREMENT,
         ts TEXT, author TEXT, text TEXT)""")
     conn.commit()
-    # migração: garante colunas em bancos criados por versões antigas
+    # migration: ensure columns exist in databases created by older versions
     _ensure_columns(conn, "campaign", {"name": "TEXT", "tier": "INTEGER DEFAULT 2",
                                        "ruin": "INTEGER DEFAULT 0", "session_no": "INTEGER DEFAULT 1"})
     _ensure_columns(conn, "characters", {
@@ -445,7 +445,7 @@ def set_password(uid, newpw):
 
 
 def normalize_talents(raw):
-    """Converte talentos antigos/novos para o formato nome + efeito + XP."""
+    """Converts legacy and current talents to name + effect + XP."""
     if isinstance(raw, list):
         parsed = raw
     else:
@@ -476,7 +476,7 @@ def normalize_talents(raw):
 
 
 def normalize_wargear(raw):
-    """Converte wargear antigo (linhas de texto) para nome + efeito."""
+    """Converts legacy wargear to name + effect."""
     if isinstance(raw, list):
         parsed = raw
     else:
@@ -620,7 +620,7 @@ def ascend_archetype(cid, new_archetype):
 def set_tier(cid, tier, force=False):
     tier = max(1, min(MAX_TIER, int(tier)))
     conn = get_conn()
-    row = conn.execute("SELECT tier, earned_xp FROM characters WHERE id=?", (cid,)).fetchone()
+    row = conn.execute("SELECT tier, starting_tier, earned_xp FROM characters WHERE id=?", (cid,)).fetchone()
     if row is None:
         conn.close(); return False
     current = int(row["tier"] or 1)
@@ -645,7 +645,7 @@ def set_comms(cid, on):
 
 
 def set_comms_for_folder(fid, on):
-    """Liga/desliga o Vox de todos os personagens de uma pasta."""
+    """Toggle Vox for all characters in a folder."""
     if fid is None:
         return
     conn = get_conn()
@@ -796,11 +796,10 @@ def inject_theme():
     """, unsafe_allow_html=True)
 
 
-def archetype_options(tier, species=None):
-    """Archetypes available at the character's current Tier and Species."""
-    tier = int(tier)
+def archetype_options(tier=None, species=None):
+    """Archetypes are not restricted by character Tier or Rank."""
     return [name for name, data in ARCHETYPES.items()
-            if int(data.get("tier", 0)) == tier and (species is None or data.get("species") == species)]
+            if species is None or data.get("species") == species]
 
 
 def default_archetype_for_species(species, tier=None):
@@ -855,7 +854,6 @@ def cb_archetype_change(cid):
     if previous and previous != archetype:
         strip_archetype_package(cid, previous, species_before)
     st.session_state[_k(cid, "sel", "sp")] = data["species"]
-    st.session_state[_k(cid, "n", "tier")] = int(data["tier"])
     package = species_package(data["species"])
     ap = ARCHETYPE_PACKAGES.get(archetype, {})
     for attr, value in package.get("attributes", {}).items():
@@ -913,16 +911,16 @@ def live_vitals(cid):
             b[2].button("+1", key=f"lv{field}{cid}c", on_click=adjust_vital, args=(cid, field, +1))
             b[3].button("+5", key=f"lv{field}{cid}d", on_click=adjust_vital, args=(cid, field, +5))
     if asc:
-        st.warning("100+ Earned XP — this character may ascend to the next Tier.")
+        st.warning("100+ Earned XP - this character may ascend to the next Tier.")
 
 
 @st.fragment(run_every=REFRESH_S)
 def vox_live(listener_cid=None):
-    """Mostra apenas os sinais Vox que chegam ao personagem receptor.
+    """Show only Vox signals reaching the receiving character.
 
-    Personagens só compartilham a rede Vox quando pertencem à mesma pasta.
-    Personagens sem pasta ficam isolados e não recebem sinais de outros.
-    No painel do Magister, sem listener_cid, a rede inteira é monitorada.
+    Characters share the Vox network only when they belong to the same folder.
+    Characters without a folder are isolated and receive no signals from others.
+    In the Magister panel, without listener_cid, the entire network is monitored.
     """
     chars = list_characters()
 
@@ -932,7 +930,7 @@ def vox_live(listener_cid=None):
         listener = load_character(listener_cid)
         if not listener or listener.get("folder_id") is None:
             st.markdown(
-                "<div class='wg' style='opacity:.6'>No Vox network — no communications available.</div>",
+                "<div class='wg' style='opacity:.6'>No Vox network - no communications available.</div>",
                 unsafe_allow_html=True,
             )
             return
@@ -941,10 +939,10 @@ def vox_live(listener_cid=None):
     shown = []
     for ch in chars:
         if restrict_folder:
-            # O Vox só atravessa personagens da mesma pasta.
+            # Vox only passes between characters in the same folder.
             if ch.get("folder_id") != listener_folder:
                 continue
-            # O próprio personagem não é um interlocutor da rede.
+            # The character itself is not a network participant.
             if ch.get("id") == listener_cid:
                 continue
 
@@ -966,7 +964,7 @@ def vox_live(listener_cid=None):
 
 
 # ============================================================
-#  VISÃO DE BATALHA (temática, do jogador)
+#  BATTLE VIEW (player themed)
 # ============================================================
 def battle_view(cid):
     ch = load_character(cid)
@@ -1054,7 +1052,7 @@ def battle_view(cid):
 
 
 # ============================================================
-#  EDIÇÃO DA FICHA (tudo editável)
+#  CHARACTER SHEET EDITOR (fully editable)
 # ============================================================
 def _k(cid, sec, f):
     return f"f_{cid}_{sec}_{f}"
@@ -1087,8 +1085,8 @@ def edit_view(cid, gm_mode=False):
     if spk not in st.session_state:
         st.session_state[spk] = ch["species"] if ch["species"] in species_list else species_list[-1]
 
-    # Na primeira abertura, aplica os bônus da espécie sem apagar valores
-    # que já existam na ficha.
+    # On first open, apply species bonuses without overwriting
+    # already present on the sheet.
     species_init_key = _k(cid, "meta", "species_init")
     if not st.session_state.get(species_init_key, False):
         selected_species = st.session_state[spk]
@@ -1172,9 +1170,6 @@ def edit_view(cid, gm_mode=False):
     acol = st.columns(4)
     for i, a in enumerate(ATTRS):
         acol[i % 4].number_input(a, 1, 12, key=_k(cid, "a", a))
-    cur_attr = {a: int(st.session_state[_k(cid, "a", a)]) for a in ATTRS}
-    cur_skill = {s: int(st.session_state[_k(cid, "s", s)]) for s in SKILLS}
-
     st.markdown("#### Skills")
     scol = st.columns(3)
     for i, s in enumerate(SKILLS):
@@ -1184,6 +1179,9 @@ def edit_view(cid, gm_mode=False):
             pool = cur_skill[s] + cur_attr[SKILLS[s]]
             cc[1].markdown(f"<div style='padding-top:30px;color:#e8c96a;font-family:Cinzel'>{pool}</div>",
                            unsafe_allow_html=True)
+
+    cur_attr = {a: int(st.session_state[_k(cid, "a", a)]) for a in ATTRS}
+    cur_skill = {s: int(st.session_state[_k(cid, "s", s)]) for s in SKILLS}
 
     package = species_package(st.session_state[spk])
     if package:
@@ -1249,19 +1247,14 @@ def edit_view(cid, gm_mode=False):
             cur_attr = {a: int(st.session_state[_k(cid, "a", a)]) for a in ATTRS}
             cur_skill = {s: int(st.session_state[_k(cid, "s", s)]) for s in SKILLS}
 
-    st.markdown(" ")
-    st.caption("Attribute, Skill, Talent, and Wargear changes are recorded on the character sheet when confirmed below.")
-    if st.button("✠ Record Changes", key=f"save_build_{cid}", use_container_width=True):
-        save_build(
-            cid, st.session_state[_k(cid, "t", "name")], st.session_state[_k(cid, "t", "chapter")],
-            st.session_state[spk], int(st.session_state[_k(cid, "n", "tier")]), cur_attr, cur_skill,
-            talents, json.dumps(wargear, ensure_ascii=False), st.session_state[_k(cid, "n", "armour")],
-            st.session_state[_k(cid, "t", "notes")], st.session_state[_k(cid, "n", "other")],
-            st.session_state.get(ark, "") if mode == "archetype" else "",
-            mode
-        )
-        st.success("Character sheet recorded.")
-        st.rerun()
+    save_build(
+        cid, st.session_state[_k(cid, "t", "name")], st.session_state[_k(cid, "t", "chapter")],
+        st.session_state[spk], int(st.session_state[_k(cid, "n", "tier")]), cur_attr, cur_skill,
+        talents, json.dumps(wargear, ensure_ascii=False), st.session_state[_k(cid, "n", "armour")],
+        st.session_state[_k(cid, "t", "notes")], st.session_state[_k(cid, "n", "other")],
+        st.session_state.get(ark, "") if mode == "archetype" else "",
+        mode
+    )
 
     cur = dict(ch); cur.update({"attributes": cur_attr, "skills": cur_skill, "species": st.session_state[spk],
                                 "tier": int(st.session_state[_k(cid, "n", "tier")]), "talents": talents,
@@ -1285,10 +1278,10 @@ def edit_view(cid, gm_mode=False):
 
 
 # ============================================================
-#  PÁGINAS
+#  PAGES
 # ============================================================
 def login_page():
-    st.markdown("<div class='banner'>✠ COGITADOR IMPERIAL ✠"
+    st.markdown("<div class='banner'>✠ IMPERIAL COGITATOR ✠"
                 "<span class='sub'>Adeptus Administratum · Campaign Record</span></div>", unsafe_allow_html=True)
     col = st.columns([1, 1.3, 1])[1]
     with col:
@@ -1348,7 +1341,7 @@ def vox_toggle_list(chars):
 
 def gm_view():
     camp = get_campaign()
-    st.markdown("<div class='banner'>✠ SANCTUM DO MAGISTER ✠<span class='sub'>Campaign Command</span></div>",
+    st.markdown("<div class='banner'>✠ MAGISTER SANCTUM ✠<span class='sub'>Campaign Command</span></div>",
                 unsafe_allow_html=True)
 
     if st.session_state.get("editing"):
@@ -1492,7 +1485,7 @@ def gm_view():
         st.markdown("#### Vox Network by Folder")
         st.caption("Each folder is a closed network. A character only receives signals from characters in the same folder.")
 
-        # Seleção rápida de rede
+        # Quick network selection
         folder_choices = [None] + [f["id"] for f in folders]
         selected_fid = st.selectbox(
             "Network / Folder", folder_choices, key="vox_folder_select",
@@ -1554,8 +1547,8 @@ def gm_view():
                     pc = st.columns(4)
                     pc[0].metric("Earned XP", earned)
                     pc[1].metric("Next Rank", "Maximum" if next_rank > 3 else f"{rank_label(next_rank)}")
-                    pc[2].metric("XP to Next Rank", "—" if next_rank > 3 else str(rank_missing))
-                    pc[3].metric("XP to Next Tier", "—" if next_tier > MAX_TIER else str(tier_missing))
+                    pc[2].metric("XP to Next Rank", "-" if next_rank > 3 else str(rank_missing))
+                    pc[3].metric("XP to Next Tier", "-" if next_tier > MAX_TIER else str(tier_missing))
                     ac = st.columns(2)
                     if next_rank <= 3:
                         ready = earned >= next_rank_xp
@@ -1565,7 +1558,7 @@ def gm_view():
                                 add_log("Magister", f"{c['name']} advanced to Rank {next_rank}{' early' if not ready else ''}.")
                                 st.rerun()
                     else:
-                        ac[0].button("Maximum Rank", disabled=True, key=f"prog_max_r_{c['id']}", use_container_width=True)
+                        ac[0].button("Maximum Rank", disabled=True, use_container_width=True)
                     if next_tier <= MAX_TIER:
                         ready = earned >= 100
                         label = f"Approve Tier {next_tier}" if ready else f"Approve Tier {next_tier} Early"
@@ -1574,7 +1567,7 @@ def gm_view():
                                 add_log("Magister", f"{c['name']} advanced to Tier {next_tier}{' early' if not ready else ''}.")
                                 st.rerun()
                     else:
-                        ac[1].button("Maximum Tier", disabled=True, key=f"prog_max_t_{c['id']}", use_container_width=True)
+                        ac[1].button("Maximum Tier", disabled=True, use_container_width=True)
 
         progression_section("Players", "player")
         st.divider()
@@ -1628,7 +1621,7 @@ def gm_view():
                 if msg.strip():
                     add_log("Magister", msg.strip()); st.rerun()
         for lg in get_logs():
-            st.markdown(f"<div class='row'><b>{lg['ts']}</b> — {lg['text']}</div>", unsafe_allow_html=True)
+            st.markdown(f"<div class='row'><b>{lg['ts']}</b> - {lg['text']}</div>", unsafe_allow_html=True)
 
     # ---- Maintenance ----
     with tabs[4]:

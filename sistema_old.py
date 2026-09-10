@@ -39,37 +39,7 @@ NPC_SPECIES = ["Adeptus Astartes", "Primaris Astartes", "Chaos Space Marine",
                "Daemon de Slaanesh", "Cultista do Caos", "Fera", "Servitor", "Outro"]
 ATTR_COST = {1: 0, 2: 4, 3: 10, 4: 20, 5: 35, 6: 55, 7: 80, 8: 110, 9: 145, 10: 185, 11: 230, 12: 280}
 SKILL_COST = {0: 0, 1: 2, 2: 6, 3: 12, 4: 20, 5: 30, 6: 42, 7: 56, 8: 72}
-# Pacotes de espécie.
-# O XP aqui é o custo TOTAL do pacote: atributos + perícias + habilidades.
-# As habilidades não são cobradas novamente como talentos.
-SPECIES_PACKAGES = {
-    "Adeptus Astartes": {
-        "xp": 160,
-        "attributes": {
-            "Agility": 4,
-            "Initiative": 4,
-            "Intellect": 3,
-            "Strength": 4,
-            "Toughness": 4,
-            "Willpower": 3,
-        },
-        "skills": {
-            "Athletics": 3,
-            "Awareness": 3,
-            "Ballistic Skill": 3,
-            "Stealth": 3,
-            "Weapon Skill": 3,
-        },
-        "abilities": [
-            "Defender of Humanity: Add +Rank Icons to any successful attack against a Mob.",
-            "Honour the Chapter: You are subject to the orders of your chapter master, and must honour the beliefs and traditions of your Chapter.",
-            "Space Marine Implants: You are immune to the Bleeding Condition. You gain +1 bonus die to any test related to one of the 19 implants.",
-        ],
-        "speed": 7,
-        "size": "Average",
-    },
-}
-
+SPECIES_COST = {"Adeptus Astartes": 0, "Primaris Astartes": 0}
 VITAL_FIELDS = {"cur_wounds", "cur_shock", "cur_wrath"}
 
 
@@ -83,31 +53,6 @@ def default_skills():
 
 def is_astartes(sp):
     return "Astartes" in sp or "Space Marine" in sp
-
-
-def species_package(sp):
-    return SPECIES_PACKAGES.get(sp, {})
-
-
-def species_base_attribute(sp, attr):
-    return int(species_package(sp).get("attributes", {}).get(attr, 1))
-
-
-def species_base_skill(sp, skill):
-    return int(species_package(sp).get("skills", {}).get(skill, 0))
-
-
-def apply_species_package(sp, attributes, skills):
-    """Aplica os valores mínimos concedidos pela espécie."""
-    package = species_package(sp)
-
-    for attr, value in package.get("attributes", {}).items():
-        attributes[attr] = int(value)
-
-    for skill, value in package.get("skills", {}).items():
-        skills[skill] = int(value)
-
-    return attributes, skills
 
 
 def is_loyal_astartes(sp):
@@ -141,33 +86,16 @@ def derived_traits(ch):
 
 
 def xp_spent(ch):
-    species = ch.get("species", "")
-    package = species_package(species)
-
-    # A espécie paga o pacote inteiro uma única vez.
-    # Atributos/perícias incluídos no pacote não são cobrados novamente.
-    total = int(package.get("xp", 0))
-
+    total = SPECIES_COST.get(ch.get("species", ""), 0)
     for a in ATTRS:
-        value = int(ch["attributes"].get(a, 1))
-        base = species_base_attribute(species, a)
-
-        if value > base:
-            total += ATTR_COST.get(value, 0) - ATTR_COST.get(base, 0)
-
+        total += ATTR_COST.get(int(ch["attributes"].get(a, 1)), 0)
     for s in SKILLS:
-        value = int(ch["skills"].get(s, 0))
-        base = species_base_skill(species, s)
-
-        if value > base:
-            total += SKILL_COST.get(value, 0) - SKILL_COST.get(base, 0)
-
+        total += SKILL_COST.get(int(ch["skills"].get(s, 0)), 0)
     for t in ch.get("talents", []):
         try:
             total += int(t.get("cost", 0))
         except Exception:
             pass
-
     total += int(ch.get("other_xp", 0))
     return total
 
@@ -529,21 +457,6 @@ def cb_close():
     st.session_state.editing = None
 
 
-def cb_species_change(cid):
-    """Quando a espécie muda, aplica o pacote de bônus da nova espécie."""
-    spk = _k(cid, "sel", "sp")
-    species = st.session_state.get(spk, "")
-
-    if species not in SPECIES_PACKAGES:
-        return
-
-    for attr, value in SPECIES_PACKAGES[species].get("attributes", {}).items():
-        st.session_state[_k(cid, "a", attr)] = int(value)
-
-    for skill, value in SPECIES_PACKAGES[species].get("skills", {}).items():
-        st.session_state[_k(cid, "s", skill)] = int(value)
-
-
 # ============================================================
 #  COMPONENTES AO VIVO
 # ============================================================
@@ -571,46 +484,17 @@ def live_vitals(cid):
 
 
 @st.fragment(run_every=REFRESH_S)
-def vox_live(listener_cid=None):
-    """Mostra apenas os sinais Vox que chegam ao personagem receptor.
-
-    Personagens só compartilham a rede Vox quando pertencem à mesma pasta.
-    Personagens sem pasta ficam isolados e não recebem sinais de outros.
-    No painel do Magister, sem listener_cid, a rede inteira é monitorada.
-    """
+def vox_live():
     chars = list_characters()
-
-    listener_folder = None
-    restrict_folder = listener_cid is not None
-    if restrict_folder:
-        listener = load_character(listener_cid)
-        if not listener or listener.get("folder_id") is None:
-            st.markdown(
-                "<div class='wg' style='opacity:.6'>Sem pasta Vox — nenhuma comunicação disponível.</div>",
-                unsafe_allow_html=True,
-            )
-            return
-        listener_folder = listener.get("folder_id")
-
     shown = []
     for ch in chars:
-        if restrict_folder:
-            # O Vox só atravessa personagens da mesma pasta.
-            if ch.get("folder_id") != listener_folder:
-                continue
-            # O próprio personagem não é um interlocutor da rede.
-            if ch.get("id") == listener_cid:
-                continue
-
         if ch["comms_on"]:
             shown.append((ch["name"] or "?", ch["kind"], True))
         elif secs_since(ch["comms_changed_at"]) < COMMS_FADE_S:
             shown.append((ch["name"] or "?", ch["kind"], False))
-
     if not shown:
-        st.markdown("<div class='wg' style='opacity:.6'>Sem sinal na rede Vox.</div>", unsafe_allow_html=True)
+        st.markdown("<div class='wg' style='opacity:.6'>Sem sinal na rede.</div>", unsafe_allow_html=True)
         return
-
     html = ""
     for name, kind, on in shown:
         ncls = "npc" if kind == "npc" else ""
@@ -656,15 +540,6 @@ def battle_view(cid):
         st.markdown(rows, unsafe_allow_html=True)
 
     with right:
-        package = species_package(ch["species"])
-        if package.get("abilities"):
-            st.markdown("<div class='sectionttl'>Habilidades da Espécie</div>", unsafe_allow_html=True)
-            for ability in package["abilities"]:
-                st.markdown(
-                    f"<div class='tal'><span class='tn'>{ability}</span></div>",
-                    unsafe_allow_html=True,
-                )
-
         st.markdown("<div class='sectionttl'>Talentos</div>", unsafe_allow_html=True)
         if ch["talents"]:
             for t in ch["talents"]:
@@ -682,7 +557,7 @@ def battle_view(cid):
             st.markdown("<div class='wg' style='opacity:.6'>Sem wargear.</div>", unsafe_allow_html=True)
 
         st.markdown("<div class='sectionttl'>Rede Vox</div>", unsafe_allow_html=True)
-        vox_live(cid)
+        vox_live()
 
 
 # ============================================================
@@ -715,37 +590,10 @@ def edit_view(cid, gm_mode=False):
     if spk not in st.session_state:
         st.session_state[spk] = ch["species"] if ch["species"] in species_list else species_list[-1]
 
-    # Na primeira abertura, aplica os bônus da espécie sem apagar valores
-    # que já existam na ficha.
-    species_init_key = _k(cid, "meta", "species_init")
-    if not st.session_state.get(species_init_key, False):
-        selected_species = st.session_state[spk]
-        package = species_package(selected_species)
-
-        for attr, value in package.get("attributes", {}).items():
-            st.session_state[_k(cid, "a", attr)] = max(
-                int(st.session_state[_k(cid, "a", attr)]),
-                int(value),
-            )
-
-        for skill, value in package.get("skills", {}).items():
-            st.session_state[_k(cid, "s", skill)] = max(
-                int(st.session_state[_k(cid, "s", skill)]),
-                int(value),
-            )
-
-        st.session_state[species_init_key] = True
-
     c = st.columns([2, 2, 2])
     c[0].text_input("Nome", key=_k(cid, "t", "name"))
     c[1].text_input("Capítulo / Facção", key=_k(cid, "t", "chapter"))
-    c[2].selectbox(
-        "Espécie",
-        species_list,
-        key=spk,
-        on_change=cb_species_change,
-        args=(cid,),
-    )
+    c[2].selectbox("Espécie", species_list, key=spk)
     c = st.columns([1, 1, 1, 2])
     c[0].number_input("Tier", 1, 5, key=_k(cid, "n", "tier"))
     c[1].number_input("Armadura", 0, 30, key=_k(cid, "n", "armour"))
@@ -771,21 +619,6 @@ def edit_view(cid, gm_mode=False):
             pool = cur_skill[s] + cur_attr[SKILLS[s]]
             cc[1].markdown(f"<div style='padding-top:30px;color:#e8c96a;font-family:Cinzel'>{pool}</div>",
                            unsafe_allow_html=True)
-
-    package = species_package(st.session_state[spk])
-    if package:
-        st.markdown("#### Bônus da Espécie")
-        st.caption(f"Pacote da espécie: {package.get('xp', 0)} XP · "
-                   f"Speed {package.get('speed', species_speed(st.session_state[spk]))} · "
-                   f"Tamanho {package.get('size', 'Average')}")
-
-        abilities = package.get("abilities", [])
-        if abilities:
-            for ability in abilities:
-                st.markdown(
-                    f"<div class='tal'><span class='tn'>{ability}</span></div>",
-                    unsafe_allow_html=True,
-                )
 
     st.markdown("#### Talentos")
     tdf = ch["talents"] if ch["talents"] else [{"name": "", "cost": 20}]

@@ -392,22 +392,20 @@ def init_db():
     conn.commit(); conn.close()
 
 
-def create_player(username, pw, creation_mode="archetype", tier=2, rank=1):
+def create_player(username, pw):
     conn = get_conn(); c = conn.cursor()
     try:
         salt = secrets.token_hex(16)
         c.execute("INSERT INTO users(username,pw_hash,salt,role,created_at) VALUES(?,?,?,?,?)",
                   (username, hash_pw(pw, salt), salt, "player", now_iso()))
         uid = c.lastrowid
-        tier = max(1, min(MAX_TIER, int(tier)))
-        rank = max(1, min(3, int(rank)))
-        default_arch = default_archetype_for_species("Human", tier) if creation_mode == "archetype" else ""
+        default_arch = "Imperial Guard"
         c.execute("""INSERT INTO characters(user_id,kind,name,chapter,species,archetype,creation_mode,tier,starting_tier,rank,earned_xp,other_xp,
                      attributes,skills,talents,wargear,armour,cur_wounds,cur_shock,cur_wrath,notes,
                      comms_on,comms_changed_at)
-                     VALUES(?, 'player', ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                  (uid, username, "", "Human", default_arch, creation_mode, tier, tier, rank, 0, 0, json.dumps(default_attributes()),
-                   json.dumps(default_skills()), json.dumps([]), "", 0, 0, 0, 0, "", 1, now_iso()))
+                     VALUES(?, 'player', ?,?,?,?,?,2,2,1,0,0,?,?,?,?,0,0,0,0,?,1,?)""",
+                  (uid, username, "", "Human", default_arch, "archetype", json.dumps(default_attributes()),
+                   json.dumps(default_skills()), json.dumps([]), "", "", now_iso()))
         conn.commit(); return True, "Player recruited."
     except sqlite3.IntegrityError:
         return False, "That designation already exists."
@@ -415,17 +413,15 @@ def create_player(username, pw, creation_mode="archetype", tier=2, rank=1):
         conn.close()
 
 
-def create_npc(name, species, tier, creation_mode="archetype", rank=1):
+def create_npc(name, species, tier, creation_mode="archetype"):
     conn = get_conn()
-    tier = max(1, min(MAX_TIER, int(tier)))
-    rank = max(1, min(3, int(rank)))
-    default_arch = "" if creation_mode == "advanced" else default_archetype_for_species(species, tier)
+    default_arch = "" if creation_mode == "advanced" else default_archetype_for_species(species)
     conn.execute("""INSERT INTO characters(user_id,kind,name,chapter,species,archetype,creation_mode,tier,starting_tier,rank,earned_xp,other_xp,
                     attributes,skills,talents,wargear,armour,cur_wounds,cur_shock,cur_wrath,notes,
                     comms_on,comms_changed_at)
-                    VALUES(NULL,'npc',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                 (name or "NPC", "", species, default_arch, creation_mode, tier, tier, rank, 0, 0, json.dumps(default_attributes()),
-                  json.dumps(default_skills()), json.dumps([]), "", 0, 0, 0, 0, "", 1, now_iso()))
+                    VALUES(NULL,'npc',?,?,?,?,?,?,?,1,0,0,?,?,?,?,0,0,0,0,?,1,?)""",
+                 (name or "NPC", "", species, default_arch, creation_mode, int(tier), int(tier), json.dumps(default_attributes()),
+                  json.dumps(default_skills()), json.dumps([]), "", "", now_iso()))
     conn.commit(); conn.close()
 
 
@@ -569,7 +565,7 @@ def set_earned_xp(cid, val):
     conn = get_conn(); conn.execute("UPDATE characters SET earned_xp=? WHERE id=?", (max(0, int(val)), cid))
     conn.commit(); conn.close()
 
-def set_rank(cid, rank, force=False):
+def set_rank(cid, rank):
     rank = max(1, min(3, int(rank)))
     conn = get_conn()
     row = conn.execute("SELECT earned_xp, rank FROM characters WHERE id=?", (cid,)).fetchone()
@@ -577,7 +573,8 @@ def set_rank(cid, rank, force=False):
         conn.close(); return False
     earned = int(row["earned_xp"] or 0)
     eligible = rank_eligible_from_xp(earned)
-    if rank < int(row["rank"] or 1) or (not force and rank > eligible):
+    # Rank can only increase when the XP threshold has been reached.
+    if rank < int(row["rank"] or 1) or rank > eligible:
         conn.close(); return False
     conn.execute("UPDATE characters SET rank=? WHERE id=?", (rank, cid))
     conn.commit(); conn.close(); return True
@@ -617,7 +614,7 @@ def ascend_archetype(cid, new_archetype):
     return True, f"Character ascended to {new_archetype}. Attribute and Skill bonuses from the new Archetype were not granted."
 
 
-def set_tier(cid, tier, force=False):
+def set_tier(cid, tier):
     tier = max(1, min(MAX_TIER, int(tier)))
     conn = get_conn()
     row = conn.execute("SELECT tier, earned_xp FROM characters WHERE id=?", (cid,)).fetchone()
@@ -627,7 +624,7 @@ def set_tier(cid, tier, force=False):
     starting = int(row["starting_tier"] or current or 1)
     earned = int(row["earned_xp"] or 0)
     max_allowed = min(MAX_TIER, starting + earned // 100)
-    if tier < current or (not force and tier > max_allowed):
+    if tier > max_allowed:
         conn.close(); return False
     conn.execute("UPDATE characters SET tier=? WHERE id=?", (tier, cid))
     conn.commit(); conn.close(); return True
@@ -796,24 +793,15 @@ def inject_theme():
     """, unsafe_allow_html=True)
 
 
-def archetype_options(tier, species=None):
-    """Archetypes available at the character's current Tier and Species."""
-    tier = int(tier)
-    return [name for name, data in ARCHETYPES.items()
-            if int(data.get("tier", 0)) == tier and (species is None or data.get("species") == species)]
-
-
-def default_archetype_for_species(species, tier=None):
-    preferred = {
-        "Human": {1: "Imperial Guard", 2: "Sister of Battle", 3: "Tech-Priest", 4: "Inquisitor"},
-        "Adeptus Astartes": {2: "Space Marine Scout", 3: "Tactical Space Marine"},
-        "Primaris Astartes": {4: "Primaris Intercessor"},
-        "Aeldari": {1: "Corsair", 2: "Ranger", 3: "Warlock"},
-        "Ork": {1: "Boy", 2: "Kommando", 3: "Nob"},
+def default_archetype_for_species(species):
+    mapping = {
+        "Human": "Imperial Guard",
+        "Adeptus Astartes": "Space Marine Scout",
+        "Primaris Astartes": "Primaris Intercessor",
+        "Aeldari": "Corsair",
+        "Ork": "Boy",
     }
-    if tier is not None:
-        return preferred.get(species, {}).get(int(tier), "")
-    return next(iter(preferred.get(species, {}).values()), "")
+    return mapping.get(species, "")
 
 
 def strip_archetype_package(cid, archetype, species):
@@ -1118,28 +1106,18 @@ def edit_view(cid, gm_mode=False):
         advanced = st.checkbox("Advanced Character Creation", key=advanced_key)
         mode = "advanced" if advanced else "archetype"
         if mode == "archetype":
-            arch_options = archetype_options(int(st.session_state[_k(cid, "n", "tier")]), st.session_state[spk])
-            if st.session_state.get(ark) not in arch_options and arch_options:
-                st.session_state[ark] = arch_options[0]
-            if arch_options:
-                st.selectbox("Archetype", arch_options, key=ark, on_change=cb_archetype_change, args=(cid,))
-                ad = ARCHETYPES[st.session_state[ark]]
-                st.caption(f"Tier {ad['tier']} · {ad['species']} · {ad['xp']} XP · {ad['faction']}")
-            else:
-                st.info("No Archetype is available for this Tier and Species. Use Advanced Character Creation or choose a compatible Tier.")
+            arch_options = list(ARCHETYPES.keys())
+            st.selectbox("Archetype", arch_options, key=ark, on_change=cb_archetype_change, args=(cid,))
+            ad = ARCHETYPES[st.session_state[ark]]
+            st.caption(f"Tier {ad['tier']} · {ad['species']} · {ad['xp']} XP · {ad['faction']}")
         else:
             st.caption("Advanced Character Creation: no Archetype is selected. The character receives Tier ×10 bonus XP.")
     else:
         if mode == "archetype":
-            arch_options = archetype_options(int(st.session_state[_k(cid, "n", "tier")]), st.session_state[spk])
-            if st.session_state.get(ark) not in arch_options and arch_options:
-                st.session_state[ark] = arch_options[0]
-            if arch_options:
-                st.selectbox("Archetype", arch_options, key=ark, on_change=cb_archetype_change, args=(cid,))
-                ad = ARCHETYPES[st.session_state[ark]]
-                st.caption(f"Tier {ad['tier']} · {ad['species']} · {ad['xp']} XP · {ad['faction']}")
-            else:
-                st.info("No Archetype is available for this Tier and Species. Use Advanced Character Creation or choose a compatible Tier.")
+            arch_options = list(ARCHETYPES.keys())
+            st.selectbox("Archetype", arch_options, key=ark, on_change=cb_archetype_change, args=(cid,))
+            ad = ARCHETYPES[st.session_state[ark]]
+            st.caption(f"Tier {ad['tier']} · {ad['species']} · {ad['xp']} XP · {ad['faction']}")
         # Advanced characters do not expose the creation mode to the player.
     if mode == "archetype" and ch.get("creation_mode") != "archetype":
         # A newly-created character defaults to Archetype creation.
@@ -1348,12 +1326,12 @@ def vox_toggle_list(chars):
 
 def gm_view():
     camp = get_campaign()
-    st.markdown("<div class='banner'>✠ SANCTUM DO MAGISTER ✠<span class='sub'>Campaign Command</span></div>",
+    st.markdown("<div class='banner'>✠ SANCTUM DO MAGISTER ✠<span class='sub'>Comando da Campanha</span></div>",
                 unsafe_allow_html=True)
 
     if st.session_state.get("editing"):
         cid = st.session_state.editing
-        st.button("Back", on_click=cb_close)
+        st.button("Voltar", on_click=cb_close)
         t = st.tabs(["Battle View", "Edit"])
         with t[0]:
             battle_view(cid)
@@ -1361,7 +1339,7 @@ def gm_view():
             edit_view(cid, gm_mode=True)
         return
 
-    tabs = st.tabs(["Characters", "Vox", "Progression", "Campaign", "Maintenance"])
+    tabs = st.tabs(["Characters", "Vox", "Experience", "Campaign", "Maintenance"])
 
     # ---- Characters / Folders ----
     with tabs[0]:
@@ -1401,14 +1379,9 @@ def gm_view():
             with st.form("newp"):
                 nu = st.text_input("Username")
                 npw = st.text_input("Password", type="password")
-                pc = st.columns([1, 1, 2])
-                ptier = pc[0].number_input("Tier", 1, MAX_TIER, int(get_campaign()["tier"]))
-                prank = pc[1].selectbox("Rank", [1, 2, 3], format_func=rank_label)
-                padvanced = pc[2].checkbox("Advanced Character Creation", value=False)
                 if st.form_submit_button("Recruit"):
                     if nu.strip() and npw:
-                        mode = "advanced" if padvanced else "archetype"
-                        ok, msg = create_player(nu.strip(), npw, mode, ptier, prank)
+                        ok, msg = create_player(nu.strip(), npw)
                         (st.success if ok else st.error)(msg)
                         if ok:
                             st.rerun()
@@ -1417,12 +1390,10 @@ def gm_view():
             with st.form("newn"):
                 nn = st.text_input("Name")
                 nsp = st.selectbox("Species / Type", NPC_SPECIES)
-                nc = st.columns([1, 1, 2])
-                nt = nc[0].number_input("Tier", 1, MAX_TIER, int(get_campaign()["tier"]))
-                nrank = nc[1].selectbox("Rank", [1, 2, 3], format_func=rank_label)
-                nadvanced = nc[2].checkbox("Advanced Character Creation", value=False)
+                nt = st.number_input("Tier", 1, MAX_TIER, int(get_campaign()["tier"]))
+                nadvanced = st.checkbox("Advanced Character Creation", value=False)
                 if st.form_submit_button("Create NPC"):
-                    create_npc(nn.strip(), nsp, nt, "advanced" if nadvanced else "archetype", nrank)
+                    create_npc(nn.strip(), nsp, nt, "advanced" if nadvanced else "archetype")
                     st.rerun()
 
         st.divider()
@@ -1489,8 +1460,8 @@ def gm_view():
         for ch in chars:
             groups.setdefault(ch.get("folder_id"), []).append(ch)
 
-        st.markdown("#### Vox Network by Folder")
-        st.caption("Each folder is a closed network. A character only receives signals from characters in the same folder.")
+        st.markdown("#### Rede Vox por pasta")
+        st.caption("Cada pasta é uma rede fechada. Um personagem só recebe sinais de outros personagens da mesma pasta.")
 
         # Seleção rápida de rede
         folder_choices = [None] + [f["id"] for f in folders]
@@ -1505,9 +1476,9 @@ def gm_view():
             members = groups.get(selected_fid, [])
             on_count = sum(1 for ch in members if ch["comms_on"])
             c = st.columns([2, 2, 2])
-            c[0].metric("Members", len(members))
-            c[1].metric("Vox Active", on_count)
-            c[2].metric("Cut", len(members) - on_count)
+            c[0].metric("Membros", len(members))
+            c[1].metric("Vox ativo", on_count)
+            c[2].metric("Cortado", len(members) - on_count)
             b = st.columns(2)
             if b[0].button("Activate Folder Vox", use_container_width=True):
                 set_comms_for_folder(selected_fid, 1); st.rerun()
@@ -1516,96 +1487,114 @@ def gm_view():
 
             st.divider()
             if not members:
-                st.info("This folder is empty.")
+                st.info("Esta pasta está vazia.")
             else:
                 vox_toggle_list(members)
 
         st.divider()
-        st.markdown("#### All Networks")
+        st.markdown("#### Todas as redes")
         for fid, members in groups.items():
             label = "No folder" if fid is None else folder_map.get(fid, "Folder")
             on_count = sum(1 for ch in members if ch["comms_on"])
-            st.markdown(f"**{label}** · {len(members)} member(s) · {on_count} active")
-        st.markdown("#### Magister Monitor")
+            st.markdown(f"**{label}** · {len(members)} membro(s) · {on_count} ativo(s)")
+        st.markdown("#### Monitoramento do Magister")
         vox_live()
 
-    # ---- Progression ----
+    # ---- Experience / Rank / Tier ----
     with tabs[2]:
-        st.markdown("#### Progression")
-        st.caption("Rank and Tier are controlled by the Magister. XP thresholds unlock normal advancement; the Magister may also approve an early advancement.")
+        st.markdown("#### Grant Experience")
+        st.caption("Wrath & Glory 2e: Rank 1 = 0–39 XP, Rank 2 = 40–79 XP, Rank 3 = 80+ XP. At 100 earned XP, a character may Ascend to the next Tier.")
+        chars = list_characters("player")
+        if chars:
+            st.markdown("#### Rank & Tier Control")
+            st.caption("Only the Magister controls Rank and Tier. Rank cannot be increased before its XP threshold and cannot be reduced.")
+            control_names = {c["name"] or f"#{c['id']}": c["id"] for c in chars}
+            selected_name = st.selectbox("Character", list(control_names.keys()), key="rank_tier_character")
+            selected_cid = control_names[selected_name]
+            selected = next(c for c in chars if c["id"] == selected_cid)
+            current_rank, _ = rank_from_xp(selected["earned_xp"], selected.get("rank", 1))
 
-        def progression_section(title, kind):
-            st.markdown(f"#### {title}")
-            chars = list_characters(kind)
-            if not chars:
-                st.info(f"No {title.lower()}.")
-                return
-            for c in chars:
-                earned = int(c.get("earned_xp", 0))
-                rank = int(c.get("rank", 1))
-                tier = int(c.get("tier", 1))
-                next_rank = rank + 1
-                next_rank_xp = RANKS[next_rank]["min_xp"] if next_rank <= 3 else None
-                rank_missing = max(0, next_rank_xp - earned) if next_rank_xp is not None else 0
-                next_tier = tier + 1
-                tier_missing = max(0, 100 - earned) if next_tier <= MAX_TIER else 0
-                with st.container(border=True):
-                    st.markdown(f"**{c['name'] or 'Unnamed'}** · Tier {tier} · {rank_label(rank)}")
-                    pc = st.columns(4)
-                    pc[0].metric("Earned XP", earned)
-                    pc[1].metric("Next Rank", "Maximum" if next_rank > 3 else f"{rank_label(next_rank)}")
-                    pc[2].metric("XP to Next Rank", "—" if next_rank > 3 else str(rank_missing))
-                    pc[3].metric("XP to Next Tier", "—" if next_tier > MAX_TIER else str(tier_missing))
-                    ac = st.columns(2)
-                    if next_rank <= 3:
-                        ready = earned >= next_rank_xp
-                        label = f"Approve Rank {next_rank}" if ready else f"Approve Rank {next_rank} Early"
-                        if ac[0].button(label, key=f"prog_r_{c['id']}", use_container_width=True):
-                            if set_rank(c["id"], next_rank, force=not ready):
-                                add_log("Magister", f"{c['name']} advanced to Rank {next_rank}{' early' if not ready else ''}.")
-                                st.rerun()
-                    else:
-                        ac[0].button("Maximum Rank", disabled=True, use_container_width=True)
-                    if next_tier <= MAX_TIER:
-                        ready = earned >= 100
-                        label = f"Approve Tier {next_tier}" if ready else f"Approve Tier {next_tier} Early"
-                        if ac[1].button(label, key=f"prog_t_{c['id']}", use_container_width=True):
-                            if set_tier(c["id"], next_tier, force=not ready):
-                                add_log("Magister", f"{c['name']} advanced to Tier {next_tier}{' early' if not ready else ''}.")
-                                st.rerun()
-                    else:
-                        ac[1].button("Maximum Tier", disabled=True, use_container_width=True)
+            rc = st.columns(4)
+            rc[0].metric("Earned XP", selected["earned_xp"])
+            rc[1].metric("Current Rank", f"{current_rank} — {RANKS[current_rank]['name']}")
+            rc[2].metric("Next Rank", "40 XP" if current_rank == 1 else ("80 XP" if current_rank == 2 else "Maximum"))
+            max_tier = min(MAX_TIER, int(selected.get("starting_tier", selected["tier"])) + int(selected["earned_xp"]) // 100)
+            rc[3].metric("Tier", f"{selected['tier']} / {max_tier}")
 
-        progression_section("Players", "player")
-        st.divider()
-        progression_section("NPCs", "npc")
+            bc = st.columns(2)
+            next_rank = current_rank + 1
+            if next_rank <= 3:
+                req = RANKS[next_rank]["min_xp"]
+                if selected["earned_xp"] >= req:
+                    if bc[0].button(f"Promote to Rank {next_rank} — {RANKS[next_rank]['name']}", key=f"promote_rank_{selected_cid}", use_container_width=True):
+                        if set_rank(selected_cid, next_rank):
+                            add_log("Magister", f"{selected['name']} promoted to Rank {next_rank}.")
+                            st.rerun()
+                else:
+                    bc[0].button(f"Rank {next_rank} requires {req} earned XP", disabled=True, use_container_width=True)
+            else:
+                bc[0].button("Maximum Rank reached", disabled=True, use_container_width=True)
 
-        st.divider()
-        st.markdown("#### Archetype Ascension")
-        st.caption("Archetype Ascension requires Rank 3 and moves to the next Tier within the same Faction. The new Archetype does not grant new Attribute or Skill bonuses.")
-        eligible_arch = [c for c in list_characters() if c.get("creation_mode") == "archetype" and int(c.get("rank", 1)) >= 3 and int(c.get("tier", 1)) < MAX_TIER]
-        if eligible_arch:
-            for ac in eligible_arch:
+            next_tier = int(selected["tier"]) + 1
+            max_tier = min(MAX_TIER, int(selected.get("starting_tier", selected["tier"])) + int(selected["earned_xp"]) // 100)
+            if next_tier <= MAX_TIER:
+                if next_tier <= max_tier:
+                    if bc[1].button(f"Ascend to Tier {next_tier}", key=f"ascend_tier_{selected_cid}", use_container_width=True):
+                        if set_tier(selected_cid, next_tier):
+                            add_log("Magister", f"{selected['name']} ascended to Tier {next_tier}.")
+                            st.rerun()
+                else:
+                    bc[1].button("Tier Ascension requires 100 earned XP", disabled=True, use_container_width=True)
+            else:
+                bc[1].button("Maximum Tier reached", disabled=True, use_container_width=True)
+
+            st.divider()
+            st.markdown("#### Archetype Ascension")
+            st.caption("At Rank 3, you may ascend to a Tier +1 Archetype from your current Faction. The new Archetype grants its non-Attribute/Skill benefits; your existing Attribute and Skill ratings are retained.")
+            eligible_arch = [c for c in chars if c.get("creation_mode") == "archetype" and int(c.get("rank", 1)) >= 3 and int(c.get("tier", 1)) < MAX_TIER]
+            if eligible_arch:
+                ac_names = {c["name"] or f"#{c['id']}": c["id"] for c in eligible_arch}
+                ac_name = st.selectbox("Character", list(ac_names.keys()), key="arch_asc_character")
+                ac = next(c for c in eligible_arch if c["id"] == ac_names[ac_name])
                 current_arch = ARCHETYPES.get(ac.get("archetype"), {})
-                choices = [name for name, data in ARCHETYPES.items()
-                           if int(data.get("tier", 0)) == int(ac["tier"]) + 1
-                           and (not current_arch.get("faction") or data.get("faction") == current_arch.get("faction"))]
-                if not choices:
-                    continue
-                st.markdown(f"**{ac['name']}** · Tier {ac['tier']} · {rank_label(ac['rank'])}")
-                new_arch = st.selectbox("Next Archetype", choices, key=f"prog_arch_{ac['id']}")
-                if st.button("Approve Archetype Ascension", key=f"prog_arch_btn_{ac['id']}", use_container_width=True):
-                    ok, msg = ascend_archetype(ac["id"], new_arch)
-                    (st.success if ok else st.error)(msg)
-                    if ok:
-                        add_log("Magister", f"{ac['name']} ascended to {new_arch}.")
-                        st.rerun()
-        else:
-            st.info("No character is currently eligible for Archetype Ascension.")
+                choices = [name for name, data in ARCHETYPES.items() if data.get("tier") == int(ac["tier"]) + 1 and (not current_arch.get("faction") or data.get("faction") == current_arch.get("faction"))]
+                if choices:
+                    new_arch = st.selectbox("New Archetype", choices, key="arch_asc_new")
+                    if st.button("Ascend Archetype", key=f"arch_asc_{ac['id']}", use_container_width=True):
+                        ok, msg = ascend_archetype(ac["id"], new_arch)
+                        (st.success if ok else st.error)(msg)
+                        if ok:
+                            add_log("Magister", f"{ac['name']} ascended to {new_arch}.")
+                            st.rerun()
+                else:
+                    st.info("No valid next-Tier Archetype from the current Faction.")
+            else:
+                st.info("No character is currently eligible for Archetype Ascension.")
 
-    # ---- Campaign ----
+            st.divider()
+            with st.form("xpf"):
+                cc = st.columns([2, 1, 2])
+                who = cc[0].selectbox("Character", ["Entire Party"] + list(control_names.keys()))
+                amt = cc[1].number_input("XP", -200, 500, 10)
+                why = cc[2].text_input("Reason")
+                if st.form_submit_button("Grant XP"):
+                    tgt = list(control_names.values()) if who == "Entire Party" else [control_names[who]]
+                    for cid in tgt:
+                        award_xp(cid, amt)
+                    add_log("Magister", f"{amt:+} XP to {who}. {why}".strip())
+                    st.rerun()
+
+            st.divider()
+            for c in chars:
+                rk, asc = rank_from_xp(c["earned_xp"], c.get("rank", 1))
+                status = " · Tier Ascension available" if asc and c["tier"] < MAX_TIER else ""
+                st.write(f"**{c['name']}** — {c['earned_xp']} XP · {rank_label(rk)} · Tier {c['tier']}{status}")
+        else:
+            st.info("No players.")
+
+    # ---- Campanha ----
     with tabs[3]:
-        st.markdown("#### Campaign Configuration")
+        st.markdown("#### Configuração da Campanha")
         with st.form("campf"):
             cc = st.columns([3, 1, 1])
             cname = cc[0].text_input("Campaign Name", camp["name"])

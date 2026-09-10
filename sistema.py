@@ -2062,15 +2062,18 @@ def ammo_capacity(ch):
         if not w.get("equipped", True):
             continue
         d = _gear_details_dict(w.get("details", {}))
-        try:
-            bonus += int(d.get("ammo_capacity_bonus", 0) or 0)
-        except Exception:
-            pass
-        name = str(w.get("name", "")).lower()
-        if "ammo backpack" in name:
-            bonus += 10
-        elif "bandolier" in name:
-            bonus += 2
+        explicit_bonus = d.get("ammo_capacity_bonus", None)
+        if explicit_bonus is not None:
+            try:
+                bonus += int(explicit_bonus or 0)
+            except Exception:
+                pass
+        else:
+            name = str(w.get("name", "")).lower()
+            if "ammo backpack" in name:
+                bonus += 10
+            elif "bandolier" in name:
+                bonus += 2
     return base + bonus
 
 
@@ -3164,16 +3167,16 @@ def craft_view():
             ename = st.text_input("Name", row["name"], key=f"edit_name_{edit_id}")
             eeffect = st.text_area("Description / Effect", row.get("effect", ""), height=130, key=f"edit_effect_{edit_id}")
             ecost = st.number_input("XP Cost", 0, 10000, int(row.get("cost",0) or 0), key=f"edit_cost_{edit_id}")
-            ereq = _render_craft_requirements(f"edit_{edit_id}", details)
+            ereq = _render_craft_requirements(f"edit_req_{edit_id}", details)
             newdetails = {"requirements": ereq}
             if row["kind"] == "wargear":
-                newdetails["modifiers"] = _render_craft_modifiers(f"edit_{edit_id}", details)
-                newdetails.update(_render_wargear_data(f"edit_{edit_id}", details))
+                newdetails["modifiers"] = _render_craft_modifiers(f"edit_wargear_mod_{edit_id}", details)
+                newdetails.update(_render_wargear_data(f"edit_wargear_{edit_id}", details))
             elif row["kind"] == "power":
                 newdetails.update(_render_power_data(f"edit_{edit_id}", details))
                 newdetails["modifiers"] = _render_craft_modifiers(f"edit_power_{edit_id}", details)
             else:
-                newdetails["modifiers"] = _render_craft_modifiers(f"edit_talent_{edit_id}", details)
+                newdetails["modifiers"] = _render_craft_modifiers(f"edit_talent_mod_{edit_id}", details)
             esource = st.text_input("Source / Book", row.get("source", ""), key=f"edit_source_{edit_id}")
             b1,b2=st.columns(2)
             if b1.button("Save Changes", type="primary", use_container_width=True, key=f"edit_save_{edit_id}"):

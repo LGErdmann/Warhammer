@@ -425,7 +425,7 @@ def init_db():
     c.execute("""CREATE TABLE IF NOT EXISTS characters(id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER, kind TEXT DEFAULT 'player', name TEXT, chapter TEXT, species TEXT, archetype TEXT, creation_mode TEXT DEFAULT 'archetype', archetype_history TEXT DEFAULT '[]',
         tier INTEGER DEFAULT 2, starting_tier INTEGER DEFAULT 2, rank INTEGER DEFAULT 1, earned_xp INTEGER DEFAULT 0, other_xp INTEGER DEFAULT 0,
-        attributes TEXT, skills TEXT, talents TEXT, powers TEXT, wargear TEXT, armour INTEGER DEFAULT 0,
+        attributes TEXT, skills TEXT, talents TEXT, wargear TEXT, armour INTEGER DEFAULT 0,
         cur_wounds INTEGER DEFAULT 0, cur_shock INTEGER DEFAULT 0, cur_wrath INTEGER DEFAULT 0,
         notes TEXT, folder_id INTEGER, portrait BLOB, comms_on INTEGER DEFAULT 1, comms_changed_at TEXT, updated_at TEXT, revision INTEGER DEFAULT 0)""")
     c.execute("""CREATE TABLE IF NOT EXISTS campaign(id INTEGER PRIMARY KEY CHECK (id=1),
@@ -467,7 +467,7 @@ def init_db():
     _ensure_columns(conn, "characters", {
         "user_id": "INTEGER", "kind": "TEXT DEFAULT 'player'", "name": "TEXT", "chapter": "TEXT",
         "species": "TEXT", "archetype": "TEXT", "creation_mode": "TEXT DEFAULT 'archetype'", "archetype_history": "TEXT DEFAULT '[]'", "tier": "INTEGER DEFAULT 2", "starting_tier": "INTEGER DEFAULT 2", "rank": "INTEGER DEFAULT 1", "earned_xp": "INTEGER DEFAULT 0",
-        "other_xp": "INTEGER DEFAULT 0", "attributes": "TEXT", "skills": "TEXT", "talents": "TEXT", "powers": "TEXT",
+        "other_xp": "INTEGER DEFAULT 0", "attributes": "TEXT", "skills": "TEXT", "talents": "TEXT",
         "wargear": "TEXT", "armour": "INTEGER DEFAULT 0", "cur_wounds": "INTEGER DEFAULT 0",
         "cur_shock": "INTEGER DEFAULT 0", "cur_wrath": "INTEGER DEFAULT 0", "notes": "TEXT",
         "folder_id": "INTEGER", "portrait": "BLOB", "comms_on": "INTEGER DEFAULT 1",
@@ -537,11 +537,11 @@ def create_player(username, pw, creation_mode="archetype", tier=2, rank=1, speci
             skills[skill] = max(int(skills.get(skill, 0)), int(value))
 
         c.execute("""INSERT INTO characters(user_id,kind,name,chapter,species,archetype,creation_mode,tier,starting_tier,rank,earned_xp,other_xp,
-                     attributes,skills,talents,powers,wargear,armour,cur_wounds,cur_shock,cur_wrath,notes,
+                     attributes,skills,talents,wargear,armour,cur_wounds,cur_shock,cur_wrath,notes,
                      comms_on,comms_changed_at)
                      VALUES(?, 'player', ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                   (uid, username, "", species, archetype, creation_mode, tier, tier, rank, 0, 0, json.dumps(attrs),
-                   json.dumps(skills), json.dumps([]), json.dumps([]), "", 0, 0, 0, 0, "", 1, now_iso()))
+                   json.dumps(skills), json.dumps([]), "", 0, 0, 0, 0, "", 1, now_iso()))
         conn.commit(); return True, "Player recruited."
     except sqlite3.IntegrityError:
         return False, "That designation already exists."
@@ -555,7 +555,7 @@ def create_npc(name, species, tier, creation_mode="archetype", rank=1):
     rank = max(1, min(3, int(rank)))
     default_arch = "" if creation_mode == "advanced" else default_archetype_for_species(species, tier)
     conn.execute("""INSERT INTO characters(user_id,kind,name,chapter,species,archetype,creation_mode,tier,starting_tier,rank,earned_xp,other_xp,
-                    attributes,skills,talents,powers,wargear,armour,cur_wounds,cur_shock,cur_wrath,notes,
+                    attributes,skills,talents,wargear,armour,cur_wounds,cur_shock,cur_wrath,notes,
                     comms_on,comms_changed_at)
                     VALUES(NULL,'npc',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                  (name or "NPC", "", species, default_arch, creation_mode, tier, tier, rank, 0, 0, json.dumps(default_attributes()),
@@ -638,33 +638,6 @@ def normalize_wargear(raw):
             entry = {"name": name, "effect": effect, "equipped": bool(w.get("equipped", True)) if isinstance(w, dict) else True}
             for k in ("craft_id", "source", "source_url", "details"):
                 if k in w: entry[k] = w[k]
-            out.append(entry)
-    return out
-
-
-def normalize_powers(raw):
-    """Normalize Psychic Powers stored on characters."""
-    if isinstance(raw, list):
-        parsed = raw
-    else:
-        text = raw or "[]"
-        try:
-            parsed = json.loads(text)
-        except Exception:
-            parsed = []
-    out = []
-    for p in parsed:
-        if isinstance(p, dict):
-            name = str(p.get("name", "")).strip()
-            effect = str(p.get("effect", "")).strip()
-            cost = int(p.get("cost", 0) or 0)
-        else:
-            name, effect, cost = str(p).strip(), "", 0
-        if name:
-            entry = {"name": name, "effect": effect, "cost": cost}
-            for k in ("craft_id", "source", "source_url", "details"):
-                if isinstance(p, dict) and k in p:
-                    entry[k] = p[k]
             out.append(entry)
     return out
 
@@ -957,7 +930,7 @@ def _craft_character_add(items, selected_id, kind):
     if not rows:
         return items
     r = rows[0]
-    if kind in ("talent", "power"):
+    if kind == "talent":
         details = craft_details(r)
         entry = {"name": r["name"], "effect": r.get("effect", ""), "cost": int(r.get("cost", 0) or 0),
                  "craft_id": int(r["id"]), "source": r.get("source", ""), "source_url": r.get("source_url", ""),
@@ -983,7 +956,6 @@ def _decode(row):
     except Exception:
         ch["skills"] = {}
     ch["talents"] = normalize_talents(ch.get("talents"))
-    ch["powers"] = normalize_powers(ch.get("powers"))
     ch["wargear"] = normalize_wargear(ch.get("wargear"))
     for a in ATTRS:
         ch["attributes"].setdefault(a, 1)
@@ -991,7 +963,7 @@ def _decode(row):
         ch["skills"].setdefault(s, 0)
     for k, dv in {"tier": 2, "starting_tier": 2, "rank": 1, "earned_xp": 0, "other_xp": 0, "armour": 0, "cur_wounds": 0,
                   "cur_shock": 0, "cur_wrath": 0, "comms_on": 1, "kind": "player",
-                  "name": "", "chapter": "", "species": "", "archetype": "", "creation_mode": "archetype", "archetype_history": "[]", "powers": "", "wargear": "", "notes": "", "updated_at": "", "revision": 0}.items():
+                  "name": "", "chapter": "", "species": "", "archetype": "", "creation_mode": "archetype", "archetype_history": "[]", "wargear": "", "notes": "", "updated_at": "", "revision": 0}.items():
         if ch.get(k) is None:
             ch[k] = dv
     return ch
@@ -1060,7 +1032,7 @@ def get_player_registry():
 
 def save_build(cid, name, chapter, species, tier, attributes, skills, talents, wargear, armour, notes, other_xp,
                archetype="", creation_mode="advanced", actor_role="gm", actor_user_id=None, actor_name="",
-               source="Character Sheet", expected_revision=None, powers=None):
+               source="Character Sheet", expected_revision=None):
     conn = get_conn()
     row = conn.execute("SELECT * FROM characters WHERE id=?", (int(cid),)).fetchone()
     if row is None:
@@ -1071,20 +1043,20 @@ def save_build(cid, name, chapter, species, tier, attributes, skills, talents, w
         conn.close(); return False, "This character sheet changed in another session. The latest version was loaded; review your edits before saving again."
     new_values = {"name": name, "chapter": chapter, "species": species, "archetype": archetype,
                   "creation_mode": creation_mode, "tier": int(tier), "attributes": attributes, "skills": skills,
-                  "talents": talents, "powers": normalize_powers(powers) if powers is not None else old.get("powers", []), "wargear": wargear, "armour": int(armour), "notes": notes, "other_xp": int(other_xp)}
+                  "talents": talents, "wargear": wargear, "armour": int(armour), "notes": notes, "other_xp": int(other_xp)}
     old_values = {"name": old.get("name", ""), "chapter": old.get("chapter", ""), "species": old.get("species", ""),
                   "archetype": old.get("archetype", ""), "creation_mode": old.get("creation_mode", "advanced"),
                   "tier": int(old.get("tier", 1)), "attributes": old.get("attributes", {}), "skills": old.get("skills", {}),
-                  "talents": old.get("talents", []), "powers": old.get("powers", []), "wargear": old.get("wargear", []), "armour": int(old.get("armour", 0)),
+                  "talents": old.get("talents", []), "wargear": old.get("wargear", []), "armour": int(old.get("armour", 0)),
                   "notes": old.get("notes", ""), "other_xp": int(old.get("other_xp", 0))}
     changes = [(f, old_values[f], new_values[f]) for f in new_values]
     if not any(_audit_value(a) != _audit_value(b) for _, a, b in changes):
         conn.close(); return True, "No changes."
     new_revision = current_revision + 1
     cur = conn.execute("""UPDATE characters SET name=?,chapter=?,species=?,archetype=?,creation_mode=?,tier=?,attributes=?,skills=?,
-                    talents=?,powers=?,wargear=?,armour=?,notes=?,other_xp=?,updated_at=?,revision=? WHERE id=? AND revision=?""",
+                    talents=?,wargear=?,armour=?,notes=?,other_xp=?,updated_at=?,revision=? WHERE id=? AND revision=?""",
                  (name, chapter, species, archetype, creation_mode, int(tier), json.dumps(attributes), json.dumps(skills),
-                  json.dumps(talents), json.dumps(new_values["powers"], ensure_ascii=False), wargear, int(armour), notes, int(other_xp), now_iso(), new_revision, int(cid), current_revision))
+                  json.dumps(talents), wargear, int(armour), notes, int(other_xp), now_iso(), new_revision, int(cid), current_revision))
     if cur.rowcount != 1:
         conn.rollback(); conn.close(); return False, "Concurrent change detected. The latest version was not overwritten."
     conn.commit(); conn.close()
@@ -1113,11 +1085,11 @@ def _progression_snapshot(ch):
     """Fields that can be restored when the Magister needs to undo a progression mistake."""
     fields = ["name", "chapter", "species", "archetype", "creation_mode", "archetype_history",
               "tier", "starting_tier", "rank", "earned_xp", "other_xp", "attributes", "skills",
-              "talents", "powers", "wargear", "armour", "notes"]
+              "talents", "wargear", "armour", "notes"]
     snap = {}
     for field in fields:
         value = ch.get(field)
-        if field in {"attributes", "skills", "talents", "powers", "wargear"}:
+        if field in {"attributes", "skills", "talents", "wargear"}:
             snap[field] = value
         else:
             snap[field] = value
@@ -1854,14 +1826,6 @@ def battle_view(cid):
         else:
             st.markdown("<div class='tal' style='opacity:.6'>No talents.</div>", unsafe_allow_html=True)
 
-        st.markdown("<div class='sectionttl'>Psychic Powers</div>", unsafe_allow_html=True)
-        powers = normalize_powers(ch.get("powers", []))
-        if powers:
-            for pwr in powers:
-                st.markdown(f"<div class='tal'><span class='tn'>{html.escape(str(pwr.get('name','')))}</span><div style='margin-top:5px;opacity:.75;line-height:1.35'>{html.escape(str(pwr.get('effect','')))}</div></div>", unsafe_allow_html=True)
-        else:
-            st.markdown("<div class='tal' style='opacity:.6'>No Psychic Powers.</div>", unsafe_allow_html=True)
-
         st.markdown("<div class='sectionttl'>Wargear</div>", unsafe_allow_html=True)
         if ch["wargear"]:
             for w in ch["wargear"]:
@@ -2166,16 +2130,7 @@ def edit_view(cid, gm_mode=False):
         else:
             st.info("No additional Talents are currently available for this character.")
     else:
-        st.caption("The Magister can assign Talents directly to NPCs. Players purchase Talents through XP.")
-        if ch["kind"] == "npc" and catalog_talents:
-            labels = {int(r["id"]): craft_item_label(r) for r in catalog_talents}
-            npc_tid = st.selectbox("NPC Talent", [None] + [int(r["id"]) for r in catalog_talents], format_func=lambda x: "Select Talent..." if x is None else labels[x], key=f"gm_talent_{cid}")
-            if npc_tid is not None and st.button("Assign Talent to NPC", key=f"gm_talent_add_{cid}", use_container_width=True):
-                current = normalize_talents(ch.get("talents", []))
-                current = _craft_character_add(current, npc_tid, "talent")
-                result = save_build(cid, ch["name"], ch.get("chapter", ""), st.session_state[spk], int(st.session_state[_k(cid,"n","tier")]), cur_attr, cur_skill, current, json.dumps(normalize_wargear(ch.get("wargear", [])), ensure_ascii=False), int(st.session_state[_k(cid,"n","armour")]), ch.get("notes", ""), int(st.session_state[_k(cid,"n","other")]), st.session_state.get(ark,""), mode, actor_role="gm", actor_user_id=(st.session_state.get("user") or {}).get("id"), actor_name=(st.session_state.get("user") or {}).get("username", ""), source="Magister NPC Talent Assignment", expected_revision=int(ch.get("revision",0) or 0), powers=normalize_powers(ch.get("powers", [])))
-                if result[0]: st.rerun()
-                st.error(result[1])
+        st.caption("Talents are purchased by Players. The Magister can disable or modify catalog entries in Craft.")
 
     owned_talents = normalize_talents(ch.get("talents", []))
     if owned_talents:
@@ -2186,43 +2141,6 @@ def edit_view(cid, gm_mode=False):
             tc[2].caption(f"{int(t.get('cost', 0) or 0)} XP")
     else:
         st.caption("No talents purchased.")
-
-    st.markdown("#### Psychic Powers")
-    owned_powers = normalize_powers(ch.get("powers", []))
-    if gm_mode:
-        catalog_powers = list_craft_items("power")
-        if catalog_powers:
-            labels = {int(r["id"]): craft_item_label(r) for r in catalog_powers}
-            pid = st.selectbox("Psychic Power", [None] + [int(r["id"]) for r in catalog_powers],
-                               format_func=lambda x: "Select Psychic Power..." if x is None else labels[x], key=f"gm_power_{cid}")
-            if pid is not None and st.button("Assign Psychic Power", key=f"gm_power_add_{cid}", use_container_width=True):
-                current = normalize_powers(ch.get("powers", []))
-                current = _craft_character_add(current, pid, "power")
-                result = save_build(cid, ch["name"], ch.get("chapter", ""), st.session_state[spk], int(st.session_state[_k(cid,"n","tier")]),
-                                    cur_attr, cur_skill, normalize_talents(ch.get("talents", [])), json.dumps(normalize_wargear(ch.get("wargear", [])), ensure_ascii=False),
-                                    int(st.session_state[_k(cid,"n","armour")]), ch.get("notes", ""), int(st.session_state[_k(cid,"n","other")]),
-                                    st.session_state.get(ark,""), mode, actor_role="gm", actor_user_id=(st.session_state.get("user") or {}).get("id"),
-                                    actor_name=(st.session_state.get("user") or {}).get("username", ""), source="Magister Psychic Power Assignment",
-                                    expected_revision=int(ch.get("revision",0) or 0), powers=current)
-                if result[0]: st.rerun()
-                st.error(result[1])
-    if owned_powers:
-        for pwr in owned_powers:
-            pc = st.columns([2.2, 5.2, 1])
-            pc[0].markdown(f"**{html.escape(str(pwr.get('name','')))}**")
-            pc[1].caption(str(pwr.get("effect", "")))
-            pc[2].caption(f"{int(pwr.get('cost',0) or 0)} XP")
-            if gm_mode and pc[2].button("Remove", key=f"power_rm_{cid}_{pwr.get('craft_id',pwr.get('name'))}"):
-                owned_powers = [x for x in owned_powers if x is not pwr]
-                result = save_build(cid, ch["name"], ch.get("chapter",""), st.session_state[spk], int(st.session_state[_k(cid,"n","tier")]),
-                                    cur_attr, cur_skill, normalize_talents(ch.get("talents",[])), json.dumps(normalize_wargear(ch.get("wargear",[])), ensure_ascii=False),
-                                    int(st.session_state[_k(cid,"n","armour")]), ch.get("notes",""), int(st.session_state[_k(cid,"n","other")]),
-                                    st.session_state.get(ark,""), mode, actor_role="gm", actor_user_id=(st.session_state.get("user") or {}).get("id"),
-                                    actor_name=(st.session_state.get("user") or {}).get("username", ""), source="Magister Psychic Power Removal",
-                                    expected_revision=int(ch.get("revision",0) or 0), powers=owned_powers)
-                if result[0]: st.rerun()
-    else:
-        st.caption("No Psychic Powers assigned.")
 
     st.markdown("#### Wargear")
     if gm_mode:
@@ -2656,87 +2574,87 @@ def _craft_kind_label(kind):
 
 def craft_view():
     st.markdown("#### Craft")
-    st.caption("Campaign rules are entered manually. Name and Description are text; mechanical rules use structured controls.")
+    st.caption("The campaign catalog is local. The Magister registers the rules explicitly using structured fields. Text is reserved for Name and Description / Effect.")
     all_items = list_craft_items(active_only=False)
+    enabled = [r for r in all_items if int(r.get("active", 1)) == 1]
+    disabled = [r for r in all_items if int(r.get("active", 1)) == 0]
+    top = st.columns(4)
+    top[0].metric("Catalog Entries", len(all_items)); top[1].metric("Enabled", len(enabled))
+    top[2].metric("Disabled", len(disabled)); top[3].metric("Talents", sum(r["kind"] == "talent" and int(r.get("active",1)) for r in all_items))
 
-    talent_items = [r for r in all_items if r["kind"] == "talent"]
-    power_items = [r for r in all_items if r["kind"] == "power"]
-    wargear_items = [r for r in all_items if r["kind"] == "wargear"]
+    st.markdown("### Campaign Catalog")
+    search = st.text_input("Search", key="craft_search", placeholder="Name, keyword, source...")
+    kind_filter = st.selectbox("Type", ["All", "Talent", "Psychic Power", "Wargear"], key="craft_kind_filter")
+    show_disabled = st.checkbox("Show disabled entries", value=False, key="craft_show_disabled")
+    rows = all_items if show_disabled else enabled
+    if search.strip():
+        q = search.lower()
+        rows = [r for r in rows if q in (str(r.get("name", "")) + " " + str(r.get("source", "")) + " " + json.dumps(craft_details(r), ensure_ascii=False)).lower()]
+    kind_map = {"Talent": "talent", "Psychic Power": "power", "Wargear": "wargear"}
+    if kind_filter != "All":
+        rows = [r for r in rows if r["kind"] == kind_map[kind_filter]]
 
-    tabs = st.tabs([f"Talents ({len(talent_items)})", f"Psychic Powers ({len(power_items)})", f"Wargear ({len(wargear_items)})"])
+    for r in rows:
+        details = craft_details(r); req = _requirement_data(r)
+        with st.container(border=True):
+            head = st.columns([3.5, 1.3, 1.1, 1.1])
+            head[0].markdown(f"**{html.escape(r['name'])}**")
+            head[1].caption(_craft_kind_label(r["kind"]))
+            head[2].caption(f"{int(r.get('cost', 0) or 0)} XP" if r["kind"] in ("talent", "power") else "Equipment")
+            head[3].caption("Enabled" if int(r.get("active", 1)) else "Disabled")
+            if r.get("source"): st.caption(f"Source: {r['source']}")
+            if r.get("effect"): st.write(r["effect"])
+            bits=[]
+            if req.get("keywords_all"): bits.append("Keywords: " + ", ".join(req["keywords_all"]))
+            if req.get("rank_min"): bits.append(f"Rank {req['rank_min']}+")
+            if req.get("tier_min"): bits.append(f"Tier {req['tier_min']}+")
+            if req.get("attributes"): bits.append("Attributes: " + ", ".join(f"{k} {v}+" for k,v in req["attributes"].items()))
+            if req.get("skills"): bits.append("Skills: " + ", ".join(f"{k} {v}+" for k,v in req["skills"].items()))
+            if req.get("species"): bits.append("Species: " + ", ".join(req["species"]))
+            if req.get("archetypes"): bits.append("Archetype: " + ", ".join(req["archetypes"]))
+            if req.get("talents"): bits.append("Talents: " + ", ".join(req["talents"]))
+            if bits: st.caption(" · ".join(bits))
+            if details.get("modifiers"):
+                st.caption("Bonuses: " + ", ".join(f"{k} {int(v):+d}" for k,v in details["modifiers"].items() if v))
+            buttons = st.columns([1,1,1,3])
+            if buttons[0].button("Disable" if int(r.get("active",1)) else "Enable", key=f"craft_toggle_{r['id']}"):
+                conn=get_conn(); conn.execute("UPDATE craft_items SET active=?,updated_at=? WHERE id=?", (0 if int(r.get("active",1)) else 1, now_iso(), int(r["id"]))); conn.commit(); conn.close(); st.rerun()
+            if buttons[1].button("Edit", key=f"craft_edit_{r['id']}"):
+                st.session_state["craft_edit_id"] = int(r["id"]); st.rerun()
+            if buttons[2].button("Delete", key=f"craft_delete_{r['id']}"):
+                conn=get_conn(); conn.execute("DELETE FROM craft_items WHERE id=?", (int(r["id"]),)); conn.commit(); conn.close(); st.rerun()
 
-    def render_catalog(kind, rows, title):
-        st.markdown(f"### {title}")
-        search = st.text_input("Search", key=f"craft_search_{kind}", placeholder="Search by name...")
-        show_disabled = st.checkbox("Show disabled entries", value=False, key=f"craft_disabled_{kind}")
-        visible = rows if show_disabled else [r for r in rows if int(r.get("active", 1))]
-        if search.strip():
-            q = search.lower()
-            visible = [r for r in visible if q in str(r.get("name", "")).lower() or q in str(r.get("effect", "")).lower()]
-        for r in visible:
-            details = craft_details(r); req = _requirement_data(r)
-            with st.container(border=True):
-                h = st.columns([4, 1.2, 1.2, 1])
-                h[0].markdown(f"**{html.escape(r['name'])}**")
-                h[1].caption(_craft_kind_label(r["kind"]))
-                h[2].caption(f"{int(r.get('cost',0) or 0)} XP" if r["kind"] in ("talent","power") else "Equipment")
-                h[3].caption("Enabled" if int(r.get("active",1)) else "Disabled")
-                if r.get("effect"): st.write(r["effect"])
-                bits=[]
-                if req.get("keywords_all"): bits.append("Keywords: " + ", ".join(req["keywords_all"]))
-                if req.get("rank_min"): bits.append(f"Rank {req['rank_min']}+")
-                if req.get("tier_min"): bits.append(f"Tier {req['tier_min']}+")
-                if req.get("attributes"): bits.append("Attributes: " + ", ".join(f"{k} {v}+" for k,v in req["attributes"].items()))
-                if req.get("skills"): bits.append("Skills: " + ", ".join(f"{k} {v}+" for k,v in req["skills"].items()))
-                if req.get("species"): bits.append("Species: " + ", ".join(req["species"]))
-                if req.get("archetypes"): bits.append("Archetype: " + ", ".join(req["archetypes"]))
-                if req.get("talents"): bits.append("Talents: " + ", ".join(req["talents"]))
-                if bits: st.caption(" · ".join(bits))
-                if details.get("modifiers"): st.caption("Bonuses: " + ", ".join(f"{k} {int(v):+d}" for k,v in details["modifiers"].items() if v))
-                if kind == "wargear":
-                    extra = [f"{label}: {details.get(key)}" for key,label in (("damage","Damage"),("ed","ED"),("ap","AP"),("range","Range"),("salvo","Salvo"),("traits","Traits")) if details.get(key) not in (None,"")]
-                    if extra: st.caption(" · ".join(extra))
-                if kind == "power":
-                    extra = [f"{label}: {details.get(key)}" for key,label in (("dn","DN"),("activation","Activation"),("potency","Potency"),("discipline","Discipline")) if details.get(key) not in (None,"")]
-                    if extra: st.caption(" · ".join(extra))
-                b = st.columns(3)
-                if b[0].button("Disable" if int(r.get("active",1)) else "Enable", key=f"ct_{kind}_{r['id']}"):
-                    conn=get_conn(); conn.execute("UPDATE craft_items SET active=?,updated_at=? WHERE id=?", (0 if int(r.get("active",1)) else 1, now_iso(), int(r["id"]))); conn.commit(); conn.close(); st.rerun()
-                if b[1].button("Edit", key=f"ce_{kind}_{r['id']}"):
-                    st.session_state["craft_edit_id"] = int(r["id"]); st.rerun()
-                if b[2].button("Delete", key=f"cd_{kind}_{r['id']}"):
-                    conn=get_conn(); conn.execute("DELETE FROM craft_items WHERE id=?", (int(r["id"]),)); conn.commit(); conn.close(); st.rerun()
+    st.divider(); st.markdown("### Register Campaign Entry")
+    ck = st.radio("Type", ["Talent", "Psychic Power", "Wargear"], horizontal=True, key="craft_custom_kind")
+    kind = {"Talent":"talent", "Psychic Power":"power", "Wargear":"wargear"}[ck]
+    cname = st.text_input("Name", key="craft_custom_name")
+    cdesc = st.text_area("Description / Effect", key="craft_custom_effect", height=150)
 
-    def register_form(kind, title):
-        st.divider(); st.markdown(f"### Register {title}")
-        cname = st.text_input("Name", key=f"craft_new_name_{kind}")
-        cdesc = st.text_area("Description / Effect", key=f"craft_new_effect_{kind}", height=130)
-        if cname.strip() and cdesc.strip():
-            cost = st.number_input("XP Cost", 0, 10000, 0, key=f"craft_new_cost_{kind}")
-            req = _render_craft_requirements(f"craft_new_{kind}")
-            details = {"requirements": req}
-            if kind == "wargear":
-                details["modifiers"] = _render_craft_modifiers(f"craft_new_{kind}", details)
-                details.update(_render_wargear_data(f"craft_new_{kind}", details))
-            elif kind == "power":
-                details.update(_render_power_data(f"craft_new_{kind}", details))
-                details["modifiers"] = _render_craft_modifiers(f"craft_new_{kind}_mods", details)
+    if cname.strip() and cdesc.strip():
+        st.markdown("### Mechanical Rules")
+        cost = st.number_input("XP Cost", 0, 10000, 0, key="craft_new_cost")
+        req = _render_craft_requirements("craft_new")
+        details = {"requirements": req}
+        if kind == "wargear":
+            details["modifiers"] = _render_craft_modifiers("craft_new", details)
+            details.update(_render_wargear_data("craft_new", details))
+        elif kind == "power":
+            details.update(_render_power_data("craft_new", details))
+            details["modifiers"] = _render_craft_modifiers("craft_new_power", details)
+        else:
+            details["modifiers"] = _render_craft_modifiers("craft_new_talent", details)
+        source = st.text_input("Source / Book", key="craft_new_source", placeholder="Core Rules, supplement, campaign source...")
+
+        if st.button("Register Campaign Entry", type="primary", use_container_width=True, key="craft_create_custom"):
+            if not cname.strip():
+                st.warning("Name is required.")
+            elif not cdesc.strip():
+                st.warning("A description / effect is required.")
             else:
-                details["modifiers"] = _render_craft_modifiers(f"craft_new_{kind}", details)
-            source = st.text_input("Source / Book", key=f"craft_new_source_{kind}")
-            if st.button(f"Register {title}", type="primary", use_container_width=True, key=f"craft_register_{kind}"):
-                save_craft_item({"kind":kind,"name":cname.strip(),"effect":cdesc.strip(),"cost":int(cost),"source":source.strip(),"details":{**details,"structured_rules":True,"custom":True,"official":False}})
-                st.success(f"{title} registered."); st.rerun()
-
-    with tabs[0]:
-        render_catalog("talent", talent_items, "Talents")
-        register_form("talent", "Talent")
-    with tabs[1]:
-        render_catalog("power", power_items, "Psychic Powers")
-        register_form("power", "Psychic Power")
-    with tabs[2]:
-        render_catalog("wargear", wargear_items, "Wargear")
-        register_form("wargear", "Wargear")
+                details.update({"structured_rules": True, "official": False, "custom": True})
+                save_craft_item({"kind": kind, "name": cname.strip(), "effect": cdesc.strip(), "cost": int(cost), "source": source.strip(), "source_url": "", "details": details})
+                st.success("Catalog entry created.")
+                st.rerun()
 
     edit_id = st.session_state.get("craft_edit_id")
     if edit_id:
@@ -2744,26 +2662,29 @@ def craft_view():
         if row:
             st.divider(); st.markdown(f"### Edit: {html.escape(row['name'])}")
             details = craft_details(row)
-            ename = st.text_input("Name", row["name"], key=f"edit_name_{edit_id}")
-            eeffect = st.text_area("Description / Effect", row.get("effect", ""), height=130, key=f"edit_effect_{edit_id}")
-            ecost = st.number_input("XP Cost", 0, 10000, int(row.get("cost",0) or 0), key=f"edit_cost_{edit_id}")
-            ereq = _render_craft_requirements(f"edit_{edit_id}", details)
+            ename = st.text_input("Name", row["name"], key=f"craft_edit_name_{edit_id}")
+            eeffect = st.text_area("Description / Effect", row.get("effect", ""), height=150, key=f"craft_edit_effect_{edit_id}")
+            ecost = st.number_input("XP Cost", 0, 10000, int(row.get("cost", 0) or 0), key=f"craft_edit_cost_{edit_id}")
+            ereq = _render_craft_requirements(f"craft_edit_{edit_id}", details)
             newdetails = {"requirements": ereq}
             if row["kind"] == "wargear":
-                newdetails["modifiers"] = _render_craft_modifiers(f"edit_{edit_id}", details)
-                newdetails.update(_render_wargear_data(f"edit_{edit_id}", details))
+                newdetails["modifiers"] = _render_craft_modifiers(f"craft_edit_{edit_id}", details)
+                newdetails.update(_render_wargear_data(f"craft_edit_{edit_id}", details))
             elif row["kind"] == "power":
-                newdetails.update(_render_power_data(f"edit_{edit_id}", details))
-                newdetails["modifiers"] = _render_craft_modifiers(f"edit_power_{edit_id}", details)
+                newdetails.update(_render_power_data(f"craft_edit_{edit_id}", details))
+                newdetails["modifiers"] = _render_craft_modifiers(f"craft_edit_power_{edit_id}", details)
             else:
-                newdetails["modifiers"] = _render_craft_modifiers(f"edit_talent_{edit_id}", details)
-            esource = st.text_input("Source / Book", row.get("source", ""), key=f"edit_source_{edit_id}")
-            b1,b2=st.columns(2)
-            if b1.button("Save Changes", type="primary", use_container_width=True, key=f"edit_save_{edit_id}"):
-                save_craft_item({**row,"name":ename.strip(),"effect":eeffect.strip(),"cost":int(ecost),"source":esource.strip(),"details":{**newdetails,"structured_rules":True,"custom":True,"official":False}}, int(edit_id))
-                st.session_state.pop("craft_edit_id",None); st.rerun()
-            if b2.button("Cancel", use_container_width=True, key=f"edit_cancel_{edit_id}"):
-                st.session_state.pop("craft_edit_id",None); st.rerun()
+                newdetails["modifiers"] = _render_craft_modifiers(f"craft_edit_talent_{edit_id}", details)
+            esource = st.text_input("Source / Book", row.get("source", ""), key=f"craft_edit_source_{edit_id}")
+            if st.button("Save Catalog Changes", key=f"craft_edit_save_{edit_id}", type="primary", use_container_width=True):
+                updated = dict(row)
+                updated.update({"name": ename.strip(), "effect": eeffect.strip(), "cost": int(ecost), "source": esource.strip(), "details": {**newdetails, "structured_rules": True, "official": False, "custom": True}})
+                if not updated["name"] or not updated["effect"]:
+                    st.warning("Name and description are required.")
+                else:
+                    save_craft_item(updated, int(edit_id))
+                    st.session_state.pop("craft_edit_id", None)
+                    st.rerun()
 
 def gm_view():
     camp = get_campaign()

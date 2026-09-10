@@ -296,11 +296,10 @@ def login_page():
     st.write("")
     col = st.columns([1, 1.3, 1])[1]
     with col:
-        st.markdown("### ⛨ Acesso ao Cogitador")
-        st.caption("Identifique-se, servo do Imperador. Os hereges não passam.")
+    
         with st.form("login"):
-            u = st.text_input("Designação (usuário)")
-            p = st.text_input("Código de Acesso (senha)", type="password")
+            u = st.text_input("Designação")
+            p = st.text_input("Código de Acesso", type="password")
             ok = st.form_submit_button("AUTENTICAR")
         if ok:
             user = verify_user(u.strip(), p)

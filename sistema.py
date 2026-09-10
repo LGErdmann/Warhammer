@@ -11,6 +11,9 @@ import math
 import html
 import os
 import random
+import re
+import urllib.request
+from urllib.parse import urlparse
 from datetime import datetime, timezone
 
 DB_PATH = os.environ.get("WG_DB_PATH", "cogitador.db")
@@ -434,6 +437,10 @@ def init_db():
         id INTEGER PRIMARY KEY AUTOINCREMENT, character_id INTEGER NOT NULL, user_id INTEGER,
         actor TEXT NOT NULL, source TEXT NOT NULL, field TEXT NOT NULL,
         old_value TEXT, new_value TEXT, changed_at TEXT NOT NULL)""")
+    c.execute("""CREATE TABLE IF NOT EXISTS craft_items(
+        id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL, name TEXT NOT NULL,
+        effect TEXT DEFAULT '', cost INTEGER DEFAULT 0, source TEXT DEFAULT '', source_url TEXT DEFAULT '',
+        details TEXT DEFAULT '{}', active INTEGER DEFAULT 1, created_at TEXT, updated_at TEXT)""")
     _ensure_columns(conn, "combatant", {"added_at": "TEXT", "initiative_order": "INTEGER DEFAULT 9999", "initiative_modifier": "INTEGER DEFAULT 0"})
     c.execute("""CREATE TABLE IF NOT EXISTS combat_encounter(
         id INTEGER PRIMARY KEY AUTOINCREMENT, session_no INTEGER, title TEXT, notes TEXT,
@@ -589,7 +596,10 @@ def normalize_talents(raw):
             effect = ""
             cost = 20
         if name:
-            out.append({"name": name, "effect": effect, "cost": cost})
+            entry = {"name": name, "effect": effect, "cost": cost}
+            for k in ("craft_id", "source", "source_url", "details"):
+                if k in t: entry[k] = t[k]
+            out.append(entry)
     return out
 
 
@@ -616,8 +626,164 @@ def normalize_wargear(raw):
             name = str(w).strip()
             effect = ""
         if name:
-            out.append({"name": name, "effect": effect})
+            entry = {"name": name, "effect": effect}
+            for k in ("craft_id", "source", "source_url", "details"):
+                if k in w: entry[k] = w[k]
+            out.append(entry)
     return out
+
+
+def _dod_fetch_text(url):
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"} or parsed.netloc.lower() != "www.doctors-of-doom.com":
+        raise ValueError("Only doctors-of-doom.com URLs are accepted.")
+    req = urllib.request.Request(url, headers={"User-Agent": "WrathGloryCampaignTool/1.0"})
+    with urllib.request.urlopen(req, timeout=12) as resp:
+        raw = resp.read().decode("utf-8", errors="replace")
+    raw = re.sub(r"<script.*?</script>", " ", raw, flags=re.I | re.S)
+    raw = re.sub(r"<style.*?</style>", " ", raw, flags=re.I | re.S)
+    raw = re.sub(r"<[^>]+>", " ", raw)
+    raw = html.unescape(raw)
+    raw = re.sub(r"\s+", " ", raw).strip()
+    return raw
+
+
+def import_dod_entry(url, kind):
+    """Import a single Doctors of Doom Library entry without retyping its rules text."""
+    text = _dod_fetch_text(url)
+    if kind == "talent":
+        if "/library/talents/" not in url:
+            raise ValueError("Use a Doctors of Doom Talent page URL.")
+        m = re.search(r"Name\s+(.+?)\s+Effect\s+(.*?)\s+Tags\s+(.*?)\s+Cost\s+(\d+)\s+Source\s+(.+)$", text, re.I)
+        if not m:
+            m = re.search(r"Library\s+Name\s+(.+?)\s+Effect\s+(.*?)\s+Cost\s+(\d+)\s+Source\s+(.+)$", text, re.I)
+        if not m:
+            effect_match = re.search(r"Effect\s+(.+?)\s+(?:Tags|Cost|Source)\s+", text, re.I)
+            cost_match = re.search(r"Cost\s+(\d+)", text, re.I)
+            source_match = re.search(r"Source\s+(.+?)(?:©|$)", text, re.I)
+            if not effect_match or not cost_match:
+                raise ValueError("Could not read the Talent data from that page.")
+            slug = urlparse(url).path.rstrip("/").split("/")[-1]
+            name = re.sub(r"^[^-]+-", "", slug).replace("-", " ").title()
+            effect = effect_match.group(1).strip()
+            cost = int(cost_match.group(1))
+            source = source_match.group(1).strip() if source_match else ""
+            details = {"tags": ""}
+            tag_match = re.search(r"Tags\s+(.*?)\s+Cost\s+\d+", text, re.I)
+            if tag_match: details["tags"] = tag_match.group(1).strip()
+            return {"kind": kind, "name": name, "effect": effect, "cost": cost, "source": source, "source_url": url, "details": details}
+        name = m.group(1).strip()
+        effect = m.group(2).strip()
+        if "Tags" in effect:
+            effect = effect.split(" Tags", 1)[0].strip()
+        cost_match = re.search(r"Cost\s+(\d+)", m.group(0), re.I)
+        cost = int(cost_match.group(1)) if cost_match else 0
+        source_match = re.search(r"Source\s+(.+)$", m.group(0), re.I)
+        source = source_match.group(1).strip() if source_match else ""
+        details = {"tags": ""}
+        tag_match = re.search(r"Tags\s+(.*?)\s+Cost\s+\d+", m.group(0), re.I)
+        if tag_match:
+            details["tags"] = tag_match.group(1).strip()
+    elif kind == "wargear":
+        if "/library/wargear/" not in url:
+            raise ValueError("Use a Doctors of Doom Wargear page URL.")
+        title = re.search(r"Library\s+(.+?)\s+(?:Weapons\s+Armour|Tools|Ranged Weapon|Melee Weapon|Armour|Weapon Upgrade|Tools & Equipment)", text, re.I)
+        if not title:
+            title = re.search(r"Library\s+(.+?)\s+Rarity:", text, re.I)
+        if not title:
+            slug = urlparse(url).path.rstrip("/").split("/")[-1]
+            name = re.sub(r"^[^-]+-", "", slug).replace("-", " ").title()
+        else:
+            name = title.group(1).strip()
+        source_match = re.search(r"Source\s+(.+?)(?:©|$)", text, re.I)
+        source = source_match.group(1).strip() if source_match else ""
+        rarity = re.search(r"Rarity:\s*([^V]+?)\s+Value:\s*(\d+)", text, re.I)
+        effect = ""
+        details = {}
+        if rarity:
+            details["rarity"] = rarity.group(1).strip()
+            details["value"] = int(rarity.group(2))
+            effect += f"Rarity: {details['rarity']} · Value: {details['value']}. "
+        # Weapon pages expose a compact stat row. Keep these fields structured so
+        # the character sheet can display them without asking the GM to retype them.
+        for key, label in (("range", "Range"), ("damage", "Damage"), ("ap", "AP"), ("salvo", "Salvo"), ("traits", "Traits")):
+            mstat = re.search(rf"{label}\s+(.+?)(?=\s+(?:Damage|AP|Salvo|Traits|Source|Keywords):?\s|\s+Source\s|$)", text, re.I)
+            if mstat:
+                details[key] = mstat.group(1).strip(" |·")
+        # Preserve the rules-facing details in the imported entry.
+        start = text.find("Keywords:")
+        if start >= 0:
+            detail = text[start:]
+            if "©" in detail:
+                detail = detail.split("©", 1)[0]
+            effect += detail.strip()
+        else:
+            marker = text.find("Name ")
+            if marker >= 0:
+                detail = text[marker:]
+                if "Source" in detail:
+                    detail = detail[:detail.find("Source")]
+                effect += detail.strip()
+        details["raw"] = effect
+    else:
+        raise ValueError("Unsupported Craft entry type.")
+    return {"kind": kind, "name": name, "effect": effect, "cost": cost if kind == "talent" else 0,
+            "source": source, "source_url": url, "details": details}
+
+
+def list_craft_items(kind=None, active_only=True):
+    conn = get_conn()
+    if kind:
+        sql = "SELECT * FROM craft_items WHERE kind=?" + (" AND active=1" if active_only else "") + " ORDER BY name COLLATE NOCASE"
+        rows = conn.execute(sql, (kind,)).fetchall()
+    else:
+        sql = "SELECT * FROM craft_items" + (" WHERE active=1" if active_only else "") + " ORDER BY kind, name COLLATE NOCASE"
+        rows = conn.execute(sql).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def save_craft_item(item, item_id=None):
+    now = now_iso()
+    conn = get_conn()
+    payload = json.dumps(item.get("details", {}), ensure_ascii=False)
+    if item_id:
+        conn.execute("""UPDATE craft_items SET kind=?,name=?,effect=?,cost=?,source=?,source_url=?,details=?,active=1,updated_at=? WHERE id=?""",
+                     (item["kind"], item["name"], item.get("effect", ""), int(item.get("cost", 0) or 0), item.get("source", ""), item.get("source_url", ""), payload, now, int(item_id)))
+    else:
+        conn.execute("""INSERT INTO craft_items(kind,name,effect,cost,source,source_url,details,active,created_at,updated_at) VALUES(?,?,?,?,?,?,?,1,?,?)""",
+                     (item["kind"], item["name"], item.get("effect", ""), int(item.get("cost", 0) or 0), item.get("source", ""), item.get("source_url", ""), payload, now, now))
+    conn.commit(); conn.close()
+
+
+def delete_craft_item(item_id):
+    conn = get_conn(); conn.execute("UPDATE craft_items SET active=0, updated_at=? WHERE id=?", (now_iso(), int(item_id))); conn.commit(); conn.close()
+
+
+def craft_item_label(row):
+    source = str(row.get("source", "") or "").strip()
+    return f"{row['name']}" + (f" · {source}" if source else "")
+
+
+def _craft_character_add(items, selected_id, kind):
+    rows = [r for r in items if int(r["id"]) == int(selected_id)]
+    if not rows:
+        return items
+    r = rows[0]
+    if kind == "talent":
+        entry = {"name": r["name"], "effect": r.get("effect", ""), "cost": int(r.get("cost", 0) or 0),
+                 "craft_id": int(r["id"]), "source": r.get("source", ""), "source_url": r.get("source_url", "")}
+    else:
+        details = r.get("details", {}) or {}
+        if isinstance(details, str):
+            try: details = json.loads(details)
+            except Exception: details = {}
+        entry = {"name": r["name"], "effect": r.get("effect", ""),
+                 "craft_id": int(r["id"]), "source": r.get("source", ""), "source_url": r.get("source_url", ""),
+                 "details": details}
+    if not any(str(x.get("name", "")).strip().lower() == str(entry["name"]).strip().lower() and int(x.get("craft_id", -1) or -1) == int(r["id"]) for x in items):
+        items.append(entry)
+    return items
 
 
 def _decode(row):
@@ -1347,15 +1513,13 @@ def live_vitals(cid):
     cols = st.columns(3)
     for i, (field, label, mx) in enumerate(trio):
         with cols[i]:
-            st.metric(label, f"{ch[field]} / {mx}")
-            b = st.columns(4)
+            row = st.columns([4, 1, 1])
+            row[0].metric(label, f"{ch[field]} / {mx}")
             user = st.session_state.get("user") or {}
             is_player = user.get("role") != "gm"
             actor_args = ("player" if is_player else "gm", user.get("id"), user.get("username", ""))
-            b[0].button("−5", key=f"lv{field}{cid}a", on_click=adjust_vital, args=(cid, field, -5, actor_args[0], actor_args[1], actor_args[2]))
-            b[1].button("−1", key=f"lv{field}{cid}b", on_click=adjust_vital, args=(cid, field, -1, actor_args[0], actor_args[1], actor_args[2]))
-            b[2].button("+1", key=f"lv{field}{cid}c", on_click=adjust_vital, args=(cid, field, +1, actor_args[0], actor_args[1], actor_args[2]))
-            b[3].button("+5", key=f"lv{field}{cid}d", on_click=adjust_vital, args=(cid, field, +5, actor_args[0], actor_args[1], actor_args[2]))
+            row[1].button("−", key=f"lv{field}{cid}minus", on_click=adjust_vital, args=(cid, field, -1, actor_args[0], actor_args[1], actor_args[2]))
+            row[2].button("+", key=f"lv{field}{cid}plus", on_click=adjust_vital, args=(cid, field, +1, actor_args[0], actor_args[1], actor_args[2]))
     if asc:
         st.warning("100+ Earned XP - this character may ascend to the next Tier.")
 
@@ -1458,7 +1622,6 @@ def battle_view(cid):
         if ch.get("chapter") in CHAPTERS:
             cd = CHAPTERS[ch["chapter"]]
             st.markdown("<div class='sectionttl'>Chapter</div>", unsafe_allow_html=True)
-            st.markdown(f"<div class='tal'><span class='tn'>{html.escape(ch['chapter'])}</span><span class='tc'>Legion {html.escape(cd['legion'])} · {html.escape(cd['primarch'])}</span></div>", unsafe_allow_html=True)
             ability = cd.get("ability", "")
             ability_name, ability_text = (ability.split(":", 1) + [""])[:2] if ":" in ability else (ability, "")
             tradition = cd.get("tradition", "")
@@ -1497,7 +1660,9 @@ def battle_view(cid):
                 effect = html.escape(str(t.get("effect", "")))
                 cost = f"<span class='tc'>{int(t.get('cost') or 0)} XP</span>" if t.get("cost") else ""
                 effect_html = f"<div style='margin-top:5px;opacity:.75;line-height:1.35'>{effect}</div>" if effect else ""
-                st.markdown(f"<div class='tal'><span class='tn'>{name}</span>{cost}{effect_html}</div>", unsafe_allow_html=True)
+                source = html.escape(str(t.get("source", "")))
+                source_html = f"<div style='margin-top:4px;opacity:.5;font-size:.72rem'>{source}</div>" if source else ""
+                st.markdown(f"<div class='tal'><span class='tn'>{name}</span>{cost}{effect_html}{source_html}</div>", unsafe_allow_html=True)
         else:
             st.markdown("<div class='tal' style='opacity:.6'>No talents.</div>", unsafe_allow_html=True)
 
@@ -1507,7 +1672,18 @@ def battle_view(cid):
                 name = html.escape(str(w.get("name", "")))
                 effect = html.escape(str(w.get("effect", "")))
                 effect_html = f"<div style='margin-top:5px;opacity:.75;line-height:1.35'>{effect}</div>" if effect else ""
-                st.markdown(f"<div class='wg'><b>{name}</b>{effect_html}</div>", unsafe_allow_html=True)
+                source = html.escape(str(w.get("source", "")))
+                source_html = f"<div style='margin-top:4px;opacity:.5;font-size:.72rem'>{source}</div>" if source else ""
+                details = w.get("details", {}) or {}
+                if isinstance(details, str):
+                    try: details = json.loads(details)
+                    except Exception: details = {}
+                stats = []
+                for key, label in (("range", "Range"), ("damage", "Damage"), ("ap", "AP"), ("salvo", "Salvo"), ("traits", "Traits"), ("rarity", "Rarity"), ("value", "Value")):
+                    if details.get(key) not in (None, ""):
+                        stats.append(f"<span style='margin-right:12px'><b>{label}</b> {html.escape(str(details[key]))}</span>")
+                stats_html = f"<div style='margin-top:5px;opacity:.85;font-size:.78rem'>{''.join(stats)}</div>" if stats else ""
+                st.markdown(f"<div class='wg'><b>{name}</b>{stats_html}{effect_html}{source_html}</div>", unsafe_allow_html=True)
         else:
             st.markdown("<div class='wg' style='opacity:.6'>No wargear.</div>", unsafe_allow_html=True)
 
@@ -1539,8 +1715,6 @@ def _sync_character_widgets(cid, ch, species_list):
         st.session_state[_k(cid, "n", "other")] = int(ch.get("other_xp", 0))
         st.session_state[_k(cid, "sel", "arch")] = ch.get("archetype", "") or ""
         if ch.get("species") in species_list: st.session_state[_k(cid, "sel", "sp")] = ch.get("species")
-        st.session_state[f"tal_{cid}"] = ch.get("talents", []) or [{"name":"", "effect":"", "cost":20}]
-        st.session_state[f"wg_{cid}"] = ch.get("wargear", []) or [{"name":"", "effect":""}]
     st.session_state[meta_key] = db_revision
     st.session_state[_k(cid, "meta", "last_sync")] = now_iso()
     return previous is not None
@@ -1727,60 +1901,74 @@ def edit_view(cid, gm_mode=False):
                     unsafe_allow_html=True,
                 )
 
+    # Craft catalog: select a GM-approved entry and the sheet receives its rules automatically.
+    catalog_talents = list_craft_items("talent")
+    catalog_wargear = list_craft_items("wargear")
+
     st.markdown("#### Talents")
-    st.caption("Enter the name, effect, and XP cost. The effect will appear in Battle View.")
-    tdf = ch["talents"] if ch["talents"] else [{"name": "", "effect": "", "cost": 20}]
-    edited_talents = st.data_editor(
-        tdf, num_rows="dynamic", key=f"tal_{cid}_v2", use_container_width=True,
-        column_config={
-            "name": st.column_config.TextColumn("Talent", width="medium"),
-            "effect": st.column_config.TextColumn("Effect", width="large"),
-            "cost": st.column_config.NumberColumn("XP", min_value=0, step=5),
-        },
-    )
-    talents = []
-    for r in edited_talents:
-        name = str(r.get("name", "") or "").strip()
-        if name:
-            talents.append({
-                "name": name,
-                "effect": str(r.get("effect", "") or "").strip(),
-                "cost": int(r.get("cost") or 0),
-            })
+    if catalog_talents:
+        talent_labels = {int(r["id"]): craft_item_label(r) for r in catalog_talents}
+        add_tid = st.selectbox("Add Talent from Craft", [None] + [int(r["id"]) for r in catalog_talents],
+                               format_func=lambda x: "Select a Talent..." if x is None else talent_labels[x],
+                               key=f"craft_add_talent_{cid}")
+        if st.button("Add Selected Talent", key=f"craft_add_talent_btn_{cid}", use_container_width=True):
+            current = normalize_talents(ch.get("talents", []))
+            if add_tid is not None:
+                current = _craft_character_add(current, add_tid, "talent")
+                # The next rerun reads the saved character; save immediately here.
+                save_build(cid, ch["name"], ch.get("chapter", ""), ch.get("species", ""), int(ch.get("tier", 1)),
+                           ch.get("attributes", {}), ch.get("skills", {}), current,
+                           json.dumps(normalize_wargear(ch.get("wargear", [])), ensure_ascii=False), int(ch.get("armour", 0)),
+                           ch.get("notes", ""), int(ch.get("other_xp", 0)), ch.get("archetype", ""), ch.get("creation_mode", "archetype"),
+                           actor_role=("gm" if gm_mode else "player"), actor_user_id=(st.session_state.get("user") or {}).get("id"),
+                           actor_name=(st.session_state.get("user") or {}).get("username", ""), source="Craft Talent",
+                           expected_revision=int(ch.get("revision", 0) or 0))
+                st.rerun()
+    else:
+        st.caption("No Talents are in the Craft catalog yet. The Magister can import them in GM → Craft.")
+
+    tdf = ch["talents"] if ch["talents"] else []
+    if tdf:
+        for idx, t in enumerate(tdf):
+            tc = st.columns([2.2, 4.5, 1])
+            tc[0].markdown(f"**{html.escape(str(t.get('name', '')))}**")
+            tc[1].caption(str(t.get("effect", "")))
+            tc[2].caption(f"{int(t.get('cost', 0) or 0)} XP")
+    else:
+        st.caption("No talents added.")
 
     st.markdown("#### Wargear")
-    st.caption("Add one item per row. Write the game effect directly in the Effect column; it will be shown in Battle View.")
+    if catalog_wargear:
+        gear_labels = {int(r["id"]): craft_item_label(r) for r in catalog_wargear}
+        add_gid = st.selectbox("Add Wargear from Craft", [None] + [int(r["id"]) for r in catalog_wargear],
+                               format_func=lambda x: "Select Wargear..." if x is None else gear_labels[x],
+                               key=f"craft_add_gear_{cid}")
+        if st.button("Add Selected Wargear", key=f"craft_add_gear_btn_{cid}", use_container_width=True):
+            current = normalize_wargear(ch.get("wargear", []))
+            if add_gid is not None:
+                current = _craft_character_add(current, add_gid, "wargear")
+                save_build(cid, ch["name"], ch.get("chapter", ""), ch.get("species", ""), int(ch.get("tier", 1)),
+                           ch.get("attributes", {}), ch.get("skills", {}), normalize_talents(ch.get("talents", [])),
+                           json.dumps(current, ensure_ascii=False), int(ch.get("armour", 0)), ch.get("notes", ""), int(ch.get("other_xp", 0)),
+                           ch.get("archetype", ""), ch.get("creation_mode", "archetype"),
+                           actor_role=("gm" if gm_mode else "player"), actor_user_id=(st.session_state.get("user") or {}).get("id"),
+                           actor_name=(st.session_state.get("user") or {}).get("username", ""), source="Craft Wargear",
+                           expected_revision=int(ch.get("revision", 0) or 0))
+                st.rerun()
+    else:
+        st.caption("No Wargear are in the Craft catalog yet. The Magister can import them in GM → Craft.")
 
-    # Wargear is intentionally kept as a simple two-column table so the GM can
-    # paste and edit several items quickly without opening separate forms.
-    wdf = ch["wargear"] if ch["wargear"] else [{"name": "", "effect": ""}]
-    edited_wargear = st.data_editor(
-        wdf,
-        num_rows="dynamic",
-        key=f"wg_{cid}_v2",
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "name": st.column_config.TextColumn(
-                "Gear",
-                width="medium",
-                help="Item name, e.g. Boltgun, Chainsword, Auspex."
-            ),
-            "effect": st.column_config.TextColumn(
-                "Effect",
-                width="large",
-                help="Rules, bonuses, special properties, damage, range, etc."
-            ),
-        },
-    )
+    wdf = normalize_wargear(ch["wargear"])
+    if wdf:
+        for w in wdf:
+            wc2 = st.columns([2.2, 5.5])
+            wc2[0].markdown(f"**{html.escape(str(w.get('name', '')))}**")
+            wc2[1].caption(str(w.get("effect", "")))
+    else:
+        st.caption("No wargear added.")
 
-    wargear = []
-    for r in edited_wargear:
-        name = str(r.get("name", "") or "").strip()
-        effect = str(r.get("effect", "") or "").strip()
-        if name or effect:
-            wargear.append({"name": name, "effect": effect})
-
+    talents = normalize_talents(ch.get("talents", []))
+    wargear = normalize_wargear(ch.get("wargear", []))
     wc = st.columns(2)
     wc[0].markdown("**Summary**")
     wc[0].caption(f"{len(wargear)} wargear item(s) · {len(talents)} talent(s)")
@@ -1927,6 +2115,96 @@ def players_audit_view():
         st.divider()
 
 
+def craft_view():
+    st.markdown("#### Craft")
+    st.caption("Manage reusable Talents and Wargear for the campaign. Entries can be imported directly from the Doctors of Doom Library so names, effects, XP costs and source information are filled automatically.")
+    st.info("Doctors of Doom is an unofficial fan site and its Library mixes Core Rules and community material. The imported Source is kept visible so the Magister can distinguish official book material from homebrew.")
+
+    add_tab, list_tab = st.tabs(["Import / Add", "Campaign Catalog"])
+    with add_tab:
+        kind_label = st.radio("Entry type", ["Talent", "Wargear"], horizontal=True, key="craft_add_kind")
+        kind = "talent" if kind_label == "Talent" else "wargear"
+        st.markdown("**Doctors of Doom page**")
+        url = st.text_input("Library URL", key="craft_import_url", placeholder="https://www.doctors-of-doom.com/library/talents/...")
+        if st.button("Import from Doctors of Doom", type="primary", use_container_width=True):
+            if not url.strip():
+                st.warning("Paste a Doctors of Doom Library page URL first.")
+            else:
+                try:
+                    item = import_dod_entry(url.strip(), kind)
+                    st.session_state["craft_preview"] = item
+                    st.success(f"Imported: {item['name']}")
+                except Exception as e:
+                    st.error(f"Import failed: {e}")
+
+        preview = st.session_state.get("craft_preview")
+        if preview and preview.get("kind") == kind:
+            st.divider(); st.markdown("**Imported entry**")
+            name = st.text_input("Name", preview.get("name", ""), key="craft_preview_name")
+            effect = st.text_area("Effect / Rules", preview.get("effect", ""), key="craft_preview_effect", height=150)
+            cost = int(st.number_input("XP Cost", min_value=0, max_value=1000, value=int(preview.get("cost", 0) or 0), step=5, key="craft_preview_cost")) if kind == "talent" else 0
+            source = st.text_input("Source", preview.get("source", ""), key="craft_preview_source")
+            if st.button("Add to Campaign Catalog", use_container_width=True):
+                preview = dict(preview); preview.update({"name": name.strip(), "effect": effect.strip(), "cost": cost, "source": source.strip()})
+                if not preview["name"]:
+                    st.warning("Name is required.")
+                else:
+                    save_craft_item(preview)
+                    st.session_state.pop("craft_preview", None)
+                    st.success("Added to the Craft catalog.")
+                    st.rerun()
+
+        st.divider()
+        st.markdown("**Create a custom campaign entry**")
+        st.caption("Use this only for house rules or an item that is not present in the Library.")
+        cname = st.text_input("Custom Name", key="craft_custom_name")
+        ceffect = st.text_area("Custom Effect / Rules", key="craft_custom_effect", height=100)
+        csource = st.text_input("Custom Source", value="House Rule", key="craft_custom_source")
+        ccost = st.number_input("Custom XP Cost", min_value=0, max_value=1000, value=20, step=5, key="craft_custom_cost") if kind == "talent" else 0
+        if st.button("Add Custom Entry", use_container_width=True):
+            if cname.strip():
+                save_craft_item({"kind": kind, "name": cname.strip(), "effect": ceffect.strip(), "cost": int(ccost), "source": csource.strip(), "source_url": "", "details": {"custom": True}})
+                st.success("Custom entry added to the Craft catalog.")
+                st.rerun()
+
+    with list_tab:
+        all_items = list_craft_items(active_only=True)
+        if not all_items:
+            st.info("The campaign Craft catalog is empty. Import entries from Doctors of Doom to build it.")
+        else:
+            search = st.text_input("Search catalog", key="craft_search")
+            filt = [r for r in all_items if not search.strip() or search.lower() in (str(r["name"]) + " " + str(r.get("source", ""))).lower()]
+            st.caption(f"{len(filt)} catalog entr{'y' if len(filt) == 1 else 'ies'}")
+            for r in filt:
+                with st.container(border=True):
+                    top = st.columns([3, 1.2, 1])
+                    top[0].markdown(f"**{html.escape(r['name'])}**")
+                    top[1].caption("Talent" if r["kind"] == "talent" else "Wargear")
+                    top[2].caption(f"{r.get('cost', 0)} XP" if r["kind"] == "talent" else "")
+                    if r.get("source"):
+                        st.caption(f"Source: {r['source']}")
+                    if r.get("effect"):
+                        st.write(r["effect"])
+                    bc = st.columns([1, 1, 3])
+                    if bc[0].button("Delete", key=f"craft_del_{r['id']}"):
+                        delete_craft_item(r["id"]); st.rerun()
+                    if r.get("source_url"):
+                        bc[1].markdown(f"[Source]({r['source_url']})")
+
+            st.divider(); st.markdown("**Edit catalog entry**")
+            ids = [int(r["id"]) for r in all_items]
+            labels = {int(r["id"]): craft_item_label(r) for r in all_items}
+            eid = st.selectbox("Entry", ids, format_func=lambda x: labels[x], key="craft_edit_id")
+            er = next(r for r in all_items if int(r["id"]) == int(eid))
+            ename = st.text_input("Name", er["name"], key=f"craft_edit_name_{eid}")
+            eeffect = st.text_area("Effect / Rules", er.get("effect", ""), key=f"craft_edit_effect_{eid}", height=130)
+            ecost = st.number_input("XP Cost", min_value=0, max_value=1000, value=int(er.get("cost", 0) or 0), step=5, key=f"craft_edit_cost_{eid}") if er["kind"] == "talent" else 0
+            esource = st.text_input("Source", er.get("source", ""), key=f"craft_edit_source_{eid}")
+            if st.button("Save Catalog Changes", key=f"craft_edit_save_{eid}", type="primary", use_container_width=True):
+                updated = dict(er); updated.update({"name": ename.strip(), "effect": eeffect.strip(), "cost": int(ecost), "source": esource.strip()})
+                save_craft_item(updated, eid); st.success("Catalog entry updated."); st.rerun()
+
+
 def gm_view():
     camp = get_campaign()
     st.markdown("<div class='banner'>✠ MAGISTER SANCTUM ✠<span class='sub'>Campaign Command</span></div>",
@@ -1942,7 +2220,7 @@ def gm_view():
             edit_view(cid, gm_mode=True)
         return
 
-    tabs = st.tabs(["Characters", "Players", "Vox", "Progression", "Session", "Combat", "Campaign", "Maintenance"])
+    tabs = st.tabs(["Characters", "Players", "Craft", "Vox", "Progression", "Session", "Combat", "Campaign", "Maintenance"])
 
     # ---- Characters / Folders ----
     with tabs[0]:
@@ -2078,8 +2356,12 @@ def gm_view():
     with tabs[1]:
         players_audit_view()
 
-    # ---- Vox ----
+    # ---- Craft ----
     with tabs[2]:
+        craft_view()
+
+    # ---- Vox ----
+    with tabs[3]:
         folders = list_folders()
         chars = list_characters()
         folder_map = {f["id"]: f["name"] for f in folders}
@@ -2130,7 +2412,7 @@ def gm_view():
         vox_live()
 
     # ---- Progression ----
-    with tabs[3]:
+    with tabs[4]:
         st.markdown("#### Progression")
         st.caption("Rank and Tier are controlled by the Magister. XP thresholds unlock normal advancement; the Magister may also approve an early advancement.")
 
@@ -2243,7 +2525,7 @@ def gm_view():
                         st.caption("No progression corrections or advancement changes have been recorded yet.")
 
     # ---- Session ----
-    with tabs[4]:
+    with tabs[5]:
         st.markdown("#### Session")
         st.caption("Close the session, award table XP and individual bonuses, record notes, and mark the NPCs involved.")
         current_session = int(camp.get("session_no", 1))
@@ -2318,7 +2600,7 @@ def gm_view():
                         st.markdown(f"**{aw['name']}** · +{aw['total_xp']} XP (base {aw['base_xp']} + bonus {aw['bonus_xp']})")
 
     # ---- Combat ----
-    with tabs[5]:
+    with tabs[6]:
         st.markdown("#### Combat")
         st.caption("The Magister controls the combat order manually. Add Players and NPCs, apply initiative modifiers, and arrange the turn order.")
         all_combat_chars = list_characters()
@@ -2395,8 +2677,7 @@ def gm_view():
                     st.markdown("<div class='combat-arrow'>▼</div>", unsafe_allow_html=True)
 
     # ---- Campaign ----
-    # ---- Campaign ----
-    with tabs[6]:
+    with tabs[7]:
         st.markdown("#### Campaign Configuration")
         with st.form("campf"):
             cc = st.columns([3, 1, 1])
@@ -2423,7 +2704,7 @@ def gm_view():
             st.markdown(f"<div class='row'><b>{lg['ts']}</b> - {lg['text']}</div>", unsafe_allow_html=True)
 
     # ---- Maintenance ----
-    with tabs[7]:
+    with tabs[8]:
         st.markdown("#### File Maintenance")
         st.caption("The .db backup contains everything: players, NPCs, folders, XP, Vox, portraits. "
                    "On free hosting the disk may reset; download backups regularly.")

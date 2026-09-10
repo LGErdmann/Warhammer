@@ -539,7 +539,7 @@ def create_player(username, pw, creation_mode="archetype", tier=2, rank=1, speci
         c.execute("""INSERT INTO characters(user_id,kind,name,chapter,species,archetype,creation_mode,tier,starting_tier,rank,earned_xp,other_xp,
                      attributes,skills,talents,powers,wargear,armour,cur_wounds,cur_shock,cur_wrath,notes,
                      comms_on,comms_changed_at)
-                     VALUES(?, 'player', ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                     VALUES(?, 'player', ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                   (uid, username, "", species, archetype, creation_mode, tier, tier, rank, 0, 0, json.dumps(attrs),
                    json.dumps(skills), json.dumps([]), json.dumps([]), "", 0, 0, 0, 0, "", 1, now_iso()))
         conn.commit(); return True, "Player recruited."
@@ -557,7 +557,7 @@ def create_npc(name, species, tier, creation_mode="archetype", rank=1):
     conn.execute("""INSERT INTO characters(user_id,kind,name,chapter,species,archetype,creation_mode,tier,starting_tier,rank,earned_xp,other_xp,
                     attributes,skills,talents,powers,wargear,armour,cur_wounds,cur_shock,cur_wrath,notes,
                     comms_on,comms_changed_at)
-                    VALUES(NULL,'npc',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    VALUES(NULL,'npc',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                  (name or "NPC", "", species, default_arch, creation_mode, tier, tier, rank, 0, 0, json.dumps(default_attributes()),
                   json.dumps(default_skills()), json.dumps([]), "", 0, 0, 0, 0, "", 1, now_iso()))
     conn.commit(); conn.close()

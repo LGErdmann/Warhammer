@@ -291,7 +291,7 @@ def inject_theme():
 # ============================================================
 def login_page():
     st.markdown("<div class='banner'>✠ COGITADOR IMPERIAL ✠"
-                "<span class='sub'>Adeptus Administratum · Registro de Campanha</span></div>",
+                "<span class='sub'>Adeptus Administratum</span></div>",
                 unsafe_allow_html=True)
     st.write("")
     col = st.columns([1, 1.3, 1])[1]

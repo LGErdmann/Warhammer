@@ -20,6 +20,7 @@ COMMS_FADE_S = 60
 #  DADOS DE WRATH & GLORY
 # ============================================================
 ATTRS = ["Strength", "Toughness", "Agility", "Initiative", "Willpower", "Intellect", "Fellowship"]
+ATTR_PT = {a: a for a in ATTRS}
 SKILLS = {
     "Athletics": "Strength", "Awareness": "Intellect", "Ballistic Skill": "Agility",
     "Cunning": "Fellowship", "Deception": "Fellowship", "Insight": "Fellowship",
@@ -101,14 +102,6 @@ SPECIES_PACKAGES = {
 # package data is encoded here. Other archetypes still set Species/Tier/XP and
 # can be customised manually, matching the Advanced Character Creation workflow.
 ARCHETYPE_PACKAGES = {
-    "Sister Hospitaller": {"attributes":{"Willpower":3,"Intellect":3}, "skills":{"Medicae":1,"Scholar":1}},
-    "Ministorum Priest": {"attributes":{"Willpower":3}, "skills":{"Scholar":1}},
-    "Imperial Guard": {"attributes":{}, "skills":{"Ballistic Skill":2}},
-    "Inquisitorial Acolyte": {"attributes":{}, "skills":{}},
-    "Inquisitorial Sage": {"attributes":{"Intellect":3}, "skills":{"Scholar":2}},
-    "Ganger": {"attributes":{}, "skills":{"Cunning":1}},
-    "Corsair": {"attributes":{}, "skills":{"Pilot":1,"Ballistic Skill":1}},
-    "Boy": {"attributes":{}, "skills":{"Weapon Skill":1}},
     "Sister of Battle": {"attributes": {"Strength":3,"Toughness":3,"Agility":3,"Willpower":3}, "skills":{"Ballistic Skill":2,"Scholar":1,"Weapon Skill":2}},
     "Sanctioned Psyker": {"attributes":{"Willpower":4}, "skills":{"Psychic Mastery":1}},
     "Skitarius": {"attributes":{"Toughness":3}, "skills":{"Ballistic Skill":2,"Tech":1}},
@@ -138,8 +131,31 @@ RANKS = {
 MAX_TIER = 4
 
 # ============================================================
-#  CHARACTER CREATION
+#  IDIOMA / LOCALIZAÇÃO
 # ============================================================
+UI = {
+    "en": {
+        "language": "Language", "english": "English", "portuguese": "Português",
+        "creation_mode": "Character Creation", "advanced": "Advanced / No Archetype",
+        "archetype_mode": "With Archetype", "archetype": "Archetype",
+        "species": "Species", "tier": "Tier", "record": "Record Changes",
+        "character_sheet": "Character Sheet", "battle_view": "Battle View",
+        "character_not_found": "Character sheet not found.", "controlled_by_gm": "Controlled by the Magister",
+    },
+    "pt": {
+        "language": "Idioma", "english": "English", "portuguese": "Português",
+        "creation_mode": "Criação da Ficha", "advanced": "Avançada / Sem Archetype",
+        "archetype_mode": "Com Archetype", "archetype": "Archetype",
+        "species": "Espécie", "tier": "Tier", "record": "Registrar Alterações",
+        "character_sheet": "Ficha do Personagem", "battle_view": "Visão de Batalha",
+        "character_not_found": "Ficha não encontrada.", "controlled_by_gm": "Controlado pelo Magister",
+    },
+}
+
+def T(key):
+    lang = st.session_state.get("lang", "en")
+    return UI.get(lang, UI["en"]).get(key, key)
+
 # Core Rulebook 2e archetypes. Archetype XP includes the Species package.
 # This list is intentionally limited to the Core Rulebook; supplements can be added later.
 ARCHETYPES = {
@@ -306,10 +322,8 @@ def xp_spent(ch):
     return total
 
 
-def starting_xp(tier, advanced=False):
-    """Wrath & Glory 2e starting XP. Advanced Creation adds Tier x10 bonus XP."""
-    base = int(tier) * 100
-    return base + (int(tier) * 10 if advanced else 0)
+def starting_xp(tier):
+    return int(tier) * 100
 
 
 def now_iso():
@@ -352,7 +366,7 @@ def init_db():
         role TEXT NOT NULL DEFAULT 'player', created_at TEXT)""")
     c.execute("""CREATE TABLE IF NOT EXISTS folders(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT)""")
     c.execute("""CREATE TABLE IF NOT EXISTS characters(id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER, kind TEXT DEFAULT 'player', name TEXT, chapter TEXT, species TEXT, archetype TEXT, creation_mode TEXT DEFAULT 'archetype', archetype_history TEXT DEFAULT '[]',
+        user_id INTEGER, kind TEXT DEFAULT 'player', name TEXT, chapter TEXT, species TEXT, archetype TEXT, creation_mode TEXT DEFAULT 'advanced',
         tier INTEGER DEFAULT 2, starting_tier INTEGER DEFAULT 2, rank INTEGER DEFAULT 1, earned_xp INTEGER DEFAULT 0, other_xp INTEGER DEFAULT 0,
         attributes TEXT, skills TEXT, talents TEXT, wargear TEXT, armour INTEGER DEFAULT 0,
         cur_wounds INTEGER DEFAULT 0, cur_shock INTEGER DEFAULT 0, cur_wrath INTEGER DEFAULT 0,
@@ -367,7 +381,7 @@ def init_db():
                                        "ruin": "INTEGER DEFAULT 0", "session_no": "INTEGER DEFAULT 1"})
     _ensure_columns(conn, "characters", {
         "user_id": "INTEGER", "kind": "TEXT DEFAULT 'player'", "name": "TEXT", "chapter": "TEXT",
-        "species": "TEXT", "archetype": "TEXT", "creation_mode": "TEXT DEFAULT 'archetype'", "archetype_history": "TEXT DEFAULT '[]'", "tier": "INTEGER DEFAULT 2", "starting_tier": "INTEGER DEFAULT 2", "rank": "INTEGER DEFAULT 1", "earned_xp": "INTEGER DEFAULT 0",
+        "species": "TEXT", "archetype": "TEXT", "creation_mode": "TEXT DEFAULT 'advanced'", "tier": "INTEGER DEFAULT 2", "starting_tier": "INTEGER DEFAULT 2", "rank": "INTEGER DEFAULT 1", "earned_xp": "INTEGER DEFAULT 0",
         "other_xp": "INTEGER DEFAULT 0", "attributes": "TEXT", "skills": "TEXT", "talents": "TEXT",
         "wargear": "TEXT", "armour": "INTEGER DEFAULT 0", "cur_wounds": "INTEGER DEFAULT 0",
         "cur_shock": "INTEGER DEFAULT 0", "cur_wrath": "INTEGER DEFAULT 0", "notes": "TEXT",
@@ -384,7 +398,7 @@ def init_db():
         WHERE rank IS NULL OR rank < 1""")
     conn.commit()
     if c.execute("SELECT COUNT(*) FROM campaign").fetchone()[0] == 0:
-        c.execute("INSERT INTO campaign(id,name,tier,ruin,session_no) VALUES(1,?,2,0,1)", ("Gilead Crusade",))
+        c.execute("INSERT INTO campaign(id,name,tier,ruin,session_no) VALUES(1,?,2,0,1)", ("A Cruzada de Gilead",))
     if c.execute("SELECT COUNT(*) FROM users WHERE role='gm'").fetchone()[0] == 0:
         salt = secrets.token_hex(16)
         c.execute("INSERT INTO users(username,pw_hash,salt,role,created_at) VALUES(?,?,?,?,?)",
@@ -399,28 +413,26 @@ def create_player(username, pw):
         c.execute("INSERT INTO users(username,pw_hash,salt,role,created_at) VALUES(?,?,?,?,?)",
                   (username, hash_pw(pw, salt), salt, "player", now_iso()))
         uid = c.lastrowid
-        default_arch = "Imperial Guard"
-        c.execute("""INSERT INTO characters(user_id,kind,name,chapter,species,archetype,creation_mode,tier,starting_tier,rank,earned_xp,other_xp,
+        c.execute("""INSERT INTO characters(user_id,kind,name,chapter,species,tier,starting_tier,rank,earned_xp,other_xp,
                      attributes,skills,talents,wargear,armour,cur_wounds,cur_shock,cur_wrath,notes,
                      comms_on,comms_changed_at)
-                     VALUES(?, 'player', ?,?,?,?,?,2,2,1,0,0,?,?,?,?,0,0,0,0,?,1,?)""",
-                  (uid, username, "", "Human", default_arch, "archetype", json.dumps(default_attributes()),
+                     VALUES(?, 'player', ?,?,?,?,?,?,0,0,?,?,?,?,0,0,0,0,?,1,?)""",
+                  (uid, username, "", "Adeptus Astartes", 2, 2, 1, json.dumps(default_attributes()),
                    json.dumps(default_skills()), json.dumps([]), "", "", now_iso()))
-        conn.commit(); return True, "Player recruited."
+        conn.commit(); return True, "Servo recrutado."
     except sqlite3.IntegrityError:
-        return False, "That designation already exists."
+        return False, "Essa designação já existe."
     finally:
         conn.close()
 
 
-def create_npc(name, species, tier, creation_mode="archetype"):
+def create_npc(name, species, tier):
     conn = get_conn()
-    default_arch = "" if creation_mode == "advanced" else default_archetype_for_species(species)
-    conn.execute("""INSERT INTO characters(user_id,kind,name,chapter,species,archetype,creation_mode,tier,starting_tier,rank,earned_xp,other_xp,
+    conn.execute("""INSERT INTO characters(user_id,kind,name,chapter,species,tier,starting_tier,rank,earned_xp,other_xp,
                     attributes,skills,talents,wargear,armour,cur_wounds,cur_shock,cur_wrath,notes,
                     comms_on,comms_changed_at)
-                    VALUES(NULL,'npc',?,?,?,?,?,?,?,1,0,0,?,?,?,?,0,0,0,0,?,1,?)""",
-                 (name or "NPC", "", species, default_arch, creation_mode, int(tier), int(tier), json.dumps(default_attributes()),
+                    VALUES(NULL,'npc',?,?,?,?,?,1,0,0,?,?,?,?,0,0,0,0,?,1,?)""",
+                 (name or "NPC", "", species, int(tier), int(tier), json.dumps(default_attributes()),
                   json.dumps(default_skills()), json.dumps([]), "", "", now_iso()))
     conn.commit(); conn.close()
 
@@ -516,7 +528,7 @@ def _decode(row):
         ch["skills"].setdefault(s, 0)
     for k, dv in {"tier": 2, "starting_tier": 2, "rank": 1, "earned_xp": 0, "other_xp": 0, "armour": 0, "cur_wounds": 0,
                   "cur_shock": 0, "cur_wrath": 0, "comms_on": 1, "kind": "player",
-                  "name": "", "chapter": "", "species": "", "archetype": "", "creation_mode": "archetype", "archetype_history": "[]", "wargear": "", "notes": ""}.items():
+                  "name": "", "chapter": "", "species": "", "archetype": "", "creation_mode": "advanced", "wargear": "", "notes": ""}.items():
         if ch.get(k) is None:
             ch[k] = dv
     return ch
@@ -578,41 +590,6 @@ def set_rank(cid, rank):
         conn.close(); return False
     conn.execute("UPDATE characters SET rank=? WHERE id=?", (rank, cid))
     conn.commit(); conn.close(); return True
-
-def get_archetype_history(ch):
-    raw = ch.get("archetype_history") or "[]"
-    try:
-        data = json.loads(raw) if isinstance(raw, str) else raw
-        return data if isinstance(data, list) else []
-    except Exception:
-        return []
-
-
-def ascend_archetype(cid, new_archetype):
-    """Perform Core Rulebook Archetype Ascension at the next Tier."""
-    ch = load_character(cid)
-    if not ch or ch.get("creation_mode") != "archetype":
-        return False, "Archetype Ascension requires an Archetype character."
-    if int(ch.get("rank", 1)) < 3 or int(ch.get("earned_xp", 0)) < 80:
-        return False, "Archetype Ascension requires Rank 3 (80+ earned XP)."
-    data = ARCHETYPES.get(new_archetype)
-    if not data:
-        return False, "Invalid Archetype."
-    if data.get("tier") != int(ch.get("tier", 1)) + 1:
-        return False, "The new Archetype must be from the next Tier."
-    # The new Archetype must belong to the same Faction.
-    current = ARCHETYPES.get(ch.get("archetype"), {})
-    if current.get("faction") and data.get("faction") != current.get("faction"):
-        return False, "The new Archetype must belong to the same Faction."
-    history = get_archetype_history(ch)
-    if ch.get("archetype"):
-        history.append({"archetype": ch["archetype"], "tier": int(ch["tier"]), "retained": True})
-    conn = get_conn()
-    conn.execute("UPDATE characters SET archetype=?, tier=?, archetype_history=? WHERE id=?",
-                 (new_archetype, int(data["tier"]), json.dumps(history), cid))
-    conn.commit(); conn.close()
-    return True, f"Character ascended to {new_archetype}. Attribute and Skill bonuses from the new Archetype were not granted."
-
 
 def set_tier(cid, tier):
     tier = max(1, min(MAX_TIER, int(tier)))
@@ -700,7 +677,7 @@ def delete_folder(fid):
 def get_campaign():
     conn = get_conn(); row = conn.execute("SELECT * FROM campaign WHERE id=1").fetchone(); conn.close()
     c = dict(row) if row else {}
-    c.setdefault("name", "The Crusade"); c.setdefault("tier", 2); c.setdefault("ruin", 0); c.setdefault("session_no", 1)
+    c.setdefault("name", "A Cruzada"); c.setdefault("tier", 2); c.setdefault("ruin", 0); c.setdefault("session_no", 1)
     return c
 
 
@@ -793,34 +770,6 @@ def inject_theme():
     """, unsafe_allow_html=True)
 
 
-def default_archetype_for_species(species):
-    mapping = {
-        "Human": "Imperial Guard",
-        "Adeptus Astartes": "Space Marine Scout",
-        "Primaris Astartes": "Primaris Intercessor",
-        "Aeldari": "Corsair",
-        "Ork": "Boy",
-    }
-    return mapping.get(species, "")
-
-
-def strip_archetype_package(cid, archetype, species):
-    """Remove only automatic Archetype bonuses; preserve values bought manually."""
-    if archetype not in ARCHETYPE_PACKAGES:
-        return
-    ap = ARCHETYPE_PACKAGES[archetype]
-    for attr, value in ap.get("attributes", {}).items():
-        key = _k(cid, "a", attr)
-        current = int(st.session_state.get(key, value))
-        if current <= int(value):
-            st.session_state[key] = species_base_attribute(species, attr)
-    for skill, value in ap.get("skills", {}).items():
-        key = _k(cid, "s", skill)
-        current = int(st.session_state.get(key, value))
-        if current <= int(value):
-            st.session_state[key] = species_base_skill(species, skill)
-
-
 # ============================================================
 #  CALLBACKS
 # ============================================================
@@ -838,33 +787,27 @@ def cb_archetype_change(cid):
     data = ARCHETYPES.get(archetype)
     if not data:
         return
-    previous = st.session_state.get(_k(cid, "meta", "previous_archetype"))
-    species_before = st.session_state.get(_k(cid, "sel", "sp"), data["species"])
-    if previous and previous != archetype:
-        strip_archetype_package(cid, previous, species_before)
     st.session_state[_k(cid, "sel", "sp")] = data["species"]
     st.session_state[_k(cid, "n", "tier")] = int(data["tier"])
+    # Archetype mode uses Species + Archetype as the source of the starting package.
     package = species_package(data["species"])
     ap = ARCHETYPE_PACKAGES.get(archetype, {})
     for attr, value in package.get("attributes", {}).items():
-        st.session_state[_k(cid, "a", attr)] = max(int(st.session_state.get(_k(cid, "a", attr), 1)), int(value))
+        st.session_state[_k(cid, "a", attr)] = int(value)
     for skill, value in package.get("skills", {}).items():
-        st.session_state[_k(cid, "s", skill)] = max(int(st.session_state.get(_k(cid, "s", skill), 0)), int(value))
+        st.session_state[_k(cid, "s", skill)] = int(value)
     for attr, value in ap.get("attributes", {}).items():
-        st.session_state[_k(cid, "a", attr)] = max(int(st.session_state.get(_k(cid, "a", attr), 1)), int(value))
+        st.session_state[_k(cid, "a", attr)] = int(value)
     for skill, value in ap.get("skills", {}).items():
-        st.session_state[_k(cid, "s", skill)] = max(int(st.session_state.get(_k(cid, "s", skill), 0)), int(value))
-    st.session_state[_k(cid, "meta", "previous_archetype")] = archetype
+        st.session_state[_k(cid, "s", skill)] = int(value)
 
 
 def cb_species_change(cid):
-    """Apply the selected Species package without wiping higher manual values."""
-    ch = load_character(cid) or {}
+    """Quando a espécie muda, aplica o pacote de bônus da nova espécie."""
     st.session_state.setdefault(_k(cid, "sel", "mode"), "archetype" if ch.get("creation_mode") == "archetype" else "advanced")
     ark = _k(cid, "sel", "arch")
     if ark not in st.session_state:
-        st.session_state[ark] = ch.get("archetype") if ch.get("archetype") in ARCHETYPES else default_archetype_for_species(ch.get("species")) or list(ARCHETYPES.keys())[0]
-    st.session_state.setdefault(_k(cid, "meta", "previous_archetype"), st.session_state.get(ark, ""))
+        st.session_state[ark] = ch.get("archetype") if ch.get("archetype") in ARCHETYPES else list(ARCHETYPES.keys())[0]
     spk = _k(cid, "sel", "sp")
     species = st.session_state.get(spk, "")
 
@@ -948,7 +891,7 @@ def vox_live(listener_cid=None):
     html = ""
     for name, kind, on in shown:
         ncls = "npc" if kind == "npc" else ""
-        state = "<span class='vlive'>✠ ACTIVE</span>" if on else "<span class='vdead'>✠ CUT</span>"
+        state = "<span class='vlive'>✠ ATIVO</span>" if on else "<span class='vdead'>✠ CORTADO</span>"
         html += f"<div class='wg'><span class='{ncls}'>{name}</span> <span style='float:right'>{state}</span></div>"
     st.markdown(html, unsafe_allow_html=True)
 
@@ -990,15 +933,6 @@ def battle_view(cid):
         st.markdown(rows, unsafe_allow_html=True)
 
     with right:
-        if ch.get("archetype") and ch.get("creation_mode") == "archetype":
-            st.markdown("<div class='sectionttl'>Archetype</div>", unsafe_allow_html=True)
-            st.markdown(f"<div class='tal'><span class='tn'>{html.escape(ch['archetype'])}</span></div>", unsafe_allow_html=True)
-            ap = ARCHETYPE_PACKAGES.get(ch["archetype"], {})
-            if ap.get("skills"):
-                st.markdown("<div class='sectionttl'>Archetype Skill Bonuses</div>", unsafe_allow_html=True)
-                for sk, rating in ap["skills"].items():
-                    st.markdown(f"<div class='tal'><span class='tn'>{html.escape(sk)}</span><span class='tc'>+{int(rating)}</span></div>", unsafe_allow_html=True)
-
         package = species_package(ch["species"])
         if package.get("abilities"):
             st.markdown("<div class='sectionttl'>Species Abilities</div>", unsafe_allow_html=True)
@@ -1007,14 +941,6 @@ def battle_view(cid):
                     f"<div class='tal'><span class='tn'>{ability}</span></div>",
                     unsafe_allow_html=True,
                 )
-
-        if ch.get("archetype") and ch.get("creation_mode") == "archetype":
-            ap = ARCHETYPE_PACKAGES.get(ch["archetype"], {})
-            askills = ap.get("skills", {})
-            if askills:
-                st.markdown("<div class='sectionttl'>Archetype Skills</div>", unsafe_allow_html=True)
-                for sk, rating in askills.items():
-                    st.markdown(f"<div class='tal'><span class='tn'>{html.escape(sk)}</span><span class='tc'>Rating {int(rating)}</span></div>", unsafe_allow_html=True)
 
         st.markdown("<div class='sectionttl'>Talents</div>", unsafe_allow_html=True)
         if ch["talents"]:
@@ -1070,7 +996,7 @@ def edit_view(cid, gm_mode=False):
     st.session_state.setdefault(_k(cid, "sel", "mode"), "archetype" if ch.get("creation_mode") == "archetype" else "advanced")
     ark = _k(cid, "sel", "arch")
     if ark not in st.session_state:
-        st.session_state[ark] = ch.get("archetype") if ch.get("archetype") in ARCHETYPES else default_archetype_for_species(ch.get("species")) or list(ARCHETYPES.keys())[0]
+        st.session_state[ark] = ch.get("archetype") if ch.get("archetype") in ARCHETYPES else list(ARCHETYPES.keys())[0]
     spk = _k(cid, "sel", "sp")
     if spk not in st.session_state:
         st.session_state[spk] = ch["species"] if ch["species"] in species_list else species_list[-1]
@@ -1097,30 +1023,15 @@ def edit_view(cid, gm_mode=False):
         st.session_state[_k(cid, "meta", "previous_species")] = selected_species
         st.session_state[species_init_key] = True
 
-    # The Magister alone chooses Advanced Character Creation. Players never see the mode selector.
-    mode = ch.get("creation_mode") or "archetype"
-    if gm_mode:
-        advanced_key = _k(cid, "sel", "advanced")
-        if advanced_key not in st.session_state:
-            st.session_state[advanced_key] = (mode == "advanced")
-        advanced = st.checkbox("Advanced Character Creation", key=advanced_key)
-        mode = "advanced" if advanced else "archetype"
-        if mode == "archetype":
-            arch_options = list(ARCHETYPES.keys())
-            st.selectbox("Archetype", arch_options, key=ark, on_change=cb_archetype_change, args=(cid,))
-            ad = ARCHETYPES[st.session_state[ark]]
-            st.caption(f"Tier {ad['tier']} · {ad['species']} · {ad['xp']} XP · {ad['faction']}")
-        else:
-            st.caption("Advanced Character Creation: no Archetype is selected. The character receives Tier ×10 bonus XP.")
+    mode = st.radio(T("creation_mode"), ["advanced", "archetype"], index=1 if st.session_state[_k(cid, "sel", "mode")] == "archetype" else 0, horizontal=True, key=_k(cid, "sel", "mode"), format_func=lambda x: T("archetype_mode") if x == "archetype" else T("advanced"))
+    if mode == "archetype":
+        arch_options = list(ARCHETYPES.keys())
+        st.selectbox(T("archetype"), arch_options, key=ark, on_change=cb_archetype_change, args=(cid,))
+        ad = ARCHETYPES[st.session_state[ark]]
+        st.caption(f"Tier {ad['tier']} · {ad['species']} · {ad['xp']} XP · {ad['faction']}")
     else:
-        if mode == "archetype":
-            arch_options = list(ARCHETYPES.keys())
-            st.selectbox("Archetype", arch_options, key=ark, on_change=cb_archetype_change, args=(cid,))
-            ad = ARCHETYPES[st.session_state[ark]]
-            st.caption(f"Tier {ad['tier']} · {ad['species']} · {ad['xp']} XP · {ad['faction']}")
-        # Advanced characters do not expose the creation mode to the player.
-    if mode == "archetype" and ch.get("creation_mode") != "archetype":
-        # A newly-created character defaults to Archetype creation.
+        st.caption("Advanced Character Creation: build freely without an Archetype.")
+    if mode == "archetype" and ch.get("creation_mode") == "archetype":
         cb_archetype_change(cid)
 
     c = st.columns([2, 2, 2])
@@ -1136,7 +1047,7 @@ def edit_view(cid, gm_mode=False):
         args=(cid,),
     )
     c = st.columns([1, 1, 1, 2])
-    c[0].metric("Tier", int(st.session_state[_k(cid, "n", "tier")]))
+    c[0].metric("Tier", int(st.session_state[_k(cid, "n", "tier")])) if (mode == "archetype" or not gm_mode) else c[0].number_input("Tier", 1, MAX_TIER, key=_k(cid, "n", "tier"))
     c[1].number_input("Armour", 0, 30, key=_k(cid, "n", "armour"))
     c[2].number_input("Other XP", 0, 100000, key=_k(cid, "n", "other"))
     if gm_mode:
@@ -1220,15 +1131,8 @@ def edit_view(cid, gm_mode=False):
     wc[0].caption(f"{len(wargear)} wargear item(s) · {len(talents)} talent(s)")
     wc[1].text_area("Notes", key=_k(cid, "t", "notes"), height=110)
 
-    if mode == "advanced":
-        previous_arch = st.session_state.get(_k(cid, "meta", "previous_archetype"), "")
-        if previous_arch:
-            strip_archetype_package(cid, previous_arch, st.session_state[spk])
-            cur_attr = {a: int(st.session_state[_k(cid, "a", a)]) for a in ATTRS}
-            cur_skill = {s: int(st.session_state[_k(cid, "s", s)]) for s in SKILLS}
-
     st.markdown(" ")
-    st.caption("Attribute, Skill, Talent, and Wargear changes are recorded on the character sheet when confirmed below.")
+    st.caption("Attribute, skill, talent, and wargear changes are recorded on the character sheet when confirmed below.")
     if st.button("✠ Record Changes", key=f"save_build_{cid}", use_container_width=True):
         save_build(
             cid, st.session_state[_k(cid, "t", "name")], st.session_state[_k(cid, "t", "chapter")],
@@ -1246,7 +1150,7 @@ def edit_view(cid, gm_mode=False):
                                 "archetype": st.session_state.get(ark, "") if mode == "archetype" else "",
                                 "creation_mode": mode,
                                 "other_xp": int(st.session_state[_k(cid, "n", "other")])})
-    spent = xp_spent(cur); start = starting_xp(camp["tier"], advanced=(mode == "advanced")); avail = start + int(ch["earned_xp"]) - spent
+    spent = xp_spent(cur); start = starting_xp(camp["tier"]); avail = start + int(ch["earned_xp"]) - spent
     st.divider()
     x = st.columns(4)
     x[0].metric("Starting XP", start); x[1].metric("Earned XP", ch["earned_xp"])
@@ -1267,20 +1171,20 @@ def edit_view(cid, gm_mode=False):
 # ============================================================
 def login_page():
     st.markdown("<div class='banner'>✠ COGITADOR IMPERIAL ✠"
-                "<span class='sub'>Adeptus Administratum · Campaign Record</span></div>", unsafe_allow_html=True)
+                "<span class='sub'>Adeptus Administratum · Registro de Campanha</span></div>", unsafe_allow_html=True)
     col = st.columns([1, 1.3, 1])[1]
     with col:
         st.markdown(" ")
         with st.form("login"):
-            u = st.text_input("Designation")
-            p = st.text_input("Access Code", type="password")
-            ok = st.form_submit_button("Authenticate")
+            u = st.text_input("Designação")
+            p = st.text_input("Código de Acesso", type="password")
+            ok = st.form_submit_button("Autenticar")
         if ok:
             user = verify_user(u.strip(), p)
             if user:
                 st.session_state.user = user; st.rerun()
             else:
-                st.error("Access denied.")
+                st.error("Acesso negado.")
         
     st.markdown("<div class='foot'>THE EMPEROR PROTECTS</div>", unsafe_allow_html=True)
 
@@ -1289,25 +1193,25 @@ def folder_label(fid, folders):
     for f in folders:
         if f["id"] == fid:
             return f["name"]
-    return "No folder"
+    return "Sem pasta"
 
 
 def char_row(ch, folders):
     rank, _ = rank_from_xp(ch["earned_xp"], ch.get("rank", 1)); d = derived_traits(ch)
     ncls = "npc" if ch["kind"] == "npc" else ""
-    vs = ("<span class='vlive'>ACTIVE</span>" if ch["comms_on"]
-          else ("<span class='vdead'>CUT</span>" if secs_since(ch["comms_changed_at"]) < COMMS_FADE_S else ""))
+    vs = ("<span class='vlive'>ATIVO</span>" if ch["comms_on"]
+          else ("<span class='vdead'>CORTADO</span>" if secs_since(ch["comms_changed_at"]) < COMMS_FADE_S else ""))
     c = st.columns([3.2, 1.6, 0.9, 1, 0.6])
-    c[0].markdown(f"<b class='{ncls}'>{ch['name'] or 'Unnamed'}{'*' if ch.get('creation_mode') == 'advanced' else ''}</b><br>"
+    c[0].markdown(f"<b class='{ncls}'>{ch['name'] or 'sem nome'}</b><br>"
                   f"<small style='opacity:.65'>{ch['species']} · T{ch['tier']} · Rank {rank}</small> {vs}",
                   unsafe_allow_html=True)
-    c[1].markdown(f"<small>Shock {ch['cur_shock']}/{d['Max Shock']}<br>Wrath {ch['cur_wrath']}/{d['Max Wrath']}</small>",
+    c[1].markdown(f"<small>Choque {ch['cur_shock']}/{d['Max Shock']}<br>Ira {ch['cur_wrath']}/{d['Max Wrath']}</small>",
                   unsafe_allow_html=True)
-    c[2].button("Open", key=f"op_{ch['id']}", on_click=cb_open, args=(ch["id"],))
+    c[2].button("Abrir", key=f"op_{ch['id']}", on_click=cb_open, args=(ch["id"],))
     if ch["comms_on"]:
-        c[3].button("Cut Vox", key=f"vr_{ch['id']}", on_click=set_comms, args=(ch["id"], 0))
+        c[3].button("Cortar", key=f"vr_{ch['id']}", on_click=set_comms, args=(ch["id"], 0))
     else:
-        c[3].button("Activate Vox", key=f"vr_{ch['id']}", on_click=set_comms, args=(ch["id"], 1))
+        c[3].button("Ativar", key=f"vr_{ch['id']}", on_click=set_comms, args=(ch["id"], 1))
     c[4].button("X", key=f"dl_{ch['id']}", on_click=delete_character, args=(ch["id"],))
 
 
@@ -1315,13 +1219,13 @@ def vox_toggle_list(chars):
     for ch in chars:
         ncls = "npc" if ch["kind"] == "npc" else ""
         c = st.columns([3, 1.4, 1.2])
-        c[0].markdown(f"<span class='{ncls}'>{ch['name'] or 'Unnamed'}</span>", unsafe_allow_html=True)
+        c[0].markdown(f"<span class='{ncls}'>{ch['name'] or 'sem nome'}</span>", unsafe_allow_html=True)
         if ch["comms_on"]:
-            c[1].markdown("<span class='vlive'>✠ ACTIVE</span>", unsafe_allow_html=True)
-            c[2].button("Cut Vox", key=f"vt_{ch['id']}", on_click=set_comms, args=(ch["id"], 0))
+            c[1].markdown("<span class='vlive'>✠ ATIVO</span>", unsafe_allow_html=True)
+            c[2].button("Cortar", key=f"vt_{ch['id']}", on_click=set_comms, args=(ch["id"], 0))
         else:
-            c[1].markdown("<span class='vdead'>✠ CUT</span>", unsafe_allow_html=True)
-            c[2].button("Activate Vox", key=f"vt_{ch['id']}", on_click=set_comms, args=(ch["id"], 1))
+            c[1].markdown("<span class='vdead'>✠ CORTADO</span>", unsafe_allow_html=True)
+            c[2].button("Ativar", key=f"vt_{ch['id']}", on_click=set_comms, args=(ch["id"], 1))
 
 
 def gm_view():
@@ -1339,67 +1243,65 @@ def gm_view():
             edit_view(cid, gm_mode=True)
         return
 
-    tabs = st.tabs(["Characters", "Vox", "Experience", "Campaign", "Maintenance"])
+    tabs = st.tabs(["Servos", "Vox", "Experiência", "Campanha", "Manutenção"])
 
-    # ---- Characters / Folders ----
+    # ---- Servos / Pastas ----
     with tabs[0]:
         folders = list_folders()
         all_chars = list_characters()
         folder_map = {f["id"]: f["name"] for f in folders}
         folder_options = [None] + [f["id"] for f in folders]
 
-        st.markdown("#### Table Organization")
-        st.caption("* = Advanced Character Creation")
-        st.caption("Use folders as campaign groups. They also define which characters share the Vox network.")
+        st.markdown("#### Organização da mesa")
+        st.caption("Use as pastas como grupos da campanha. Elas também definem quais personagens compartilham o Rádio Vox.")
 
-        # Quick folder creation
+        # Criar pasta rapidamente
         fc = st.columns([4, 1])
-        newf = fc[0].text_input("New Folder", key="newfolder", placeholder="e.g. Alpha Squad, Ship, Enemies...")
-        if fc[1].button("Create Folder", use_container_width=True):
+        newf = fc[0].text_input("Nova pasta", key="newfolder", placeholder="Ex.: Esquadrão Alfa, Nave, Inimigos...")
+        if fc[1].button("Criar pasta", use_container_width=True):
             if newf.strip():
                 create_folder(newf.strip()); st.rerun()
 
-        # Manage folders without hiding the main character list.
+        # Gerenciamento de pastas em uma linha, sem esconder a organização principal.
         if folders:
-            st.markdown("**Existing Folders**")
+            st.markdown("**Pastas existentes**")
             for f in folders:
                 c = st.columns([3.8, 1, 1])
                 nm = c[0].text_input("Name", f["name"], key=f"fn_{f['id']}", label_visibility="collapsed")
                 if nm.strip() and nm != f["name"]:
                     rename_folder(f["id"], nm.strip())
                 count = sum(1 for ch in all_chars if ch.get("folder_id") == f["id"])
-                c[1].markdown(f"**{count}** character(s)")
-                if c[2].button("Delete", key=f"fd_{f['id']}"):
+                c[1].markdown(f"**{count}** servo(s)")
+                if c[2].button("Excluir", key=f"fd_{f['id']}"):
                     delete_folder(f["id"]); st.rerun()
 
         st.divider()
         cre = st.columns(2)
         with cre[0]:
-            st.markdown("#### Recruit Player")
+            st.markdown("#### Recrutar Jogador")
             with st.form("newp"):
-                nu = st.text_input("Username")
-                npw = st.text_input("Password", type="password")
-                if st.form_submit_button("Recruit"):
+                nu = st.text_input("Usuário")
+                npw = st.text_input("Senha", type="password")
+                if st.form_submit_button("Recrutar"):
                     if nu.strip() and npw:
                         ok, msg = create_player(nu.strip(), npw)
                         (st.success if ok else st.error)(msg)
                         if ok:
                             st.rerun()
         with cre[1]:
-            st.markdown("#### Create NPC")
+            st.markdown("#### Criar NPC")
             with st.form("newn"):
                 nn = st.text_input("Name")
-                nsp = st.selectbox("Species / Type", NPC_SPECIES)
-                nt = st.number_input("Tier", 1, MAX_TIER, int(get_campaign()["tier"]))
-                nadvanced = st.checkbox("Advanced Character Creation", value=False)
-                if st.form_submit_button("Create NPC"):
-                    create_npc(nn.strip(), nsp, nt, "advanced" if nadvanced else "archetype")
+                nsp = st.selectbox("Raça / Tipo", NPC_SPECIES)
+                nt = st.number_input("Tier", 1, MAX_TIER, 2)
+                if st.form_submit_button("Criar NPC"):
+                    create_npc(nn.strip(), nsp, nt)
                     st.rerun()
 
         st.divider()
-        view = st.radio("View", ["By Folder", "All", "Players", "NPCs"], horizontal=True, key="gm_servo_view")
+        view = st.radio("Visualização", ["Por pasta", "Todos", "Jogadores", "NPCs"], horizontal=True, key="gm_servo_view")
 
-        if view == "By Folder":
+        if view == "Por pasta":
             groups = {None: []}
             for f in folders:
                 groups[f["id"]] = []
@@ -1407,11 +1309,11 @@ def gm_view():
                 groups.setdefault(ch.get("folder_id"), []).append(ch)
 
             for fid, items in groups.items():
-                label = folder_map.get(fid, "No folder")
+                label = folder_map.get(fid, "Sem pasta")
                 icon = "◈" if fid is not None else "◇"
-                st.markdown(f"#### {icon} {label}  ·  {len(items)} character(s)")
+                st.markdown(f"#### {icon} {label}  ·  {len(items)} servo(s)")
                 if not items:
-                    st.caption("No characters in this folder.")
+                    st.caption("Nenhum personagem nesta pasta.")
                     continue
                 for ch in items:
                     a = st.columns([4.2, 1.7, 1.1, 1.1])
@@ -1419,21 +1321,21 @@ def gm_view():
                         char_row(ch, folders)
                     opts = folder_options
                     idx = opts.index(ch.get("folder_id")) if ch.get("folder_id") in opts else 0
-                    a[1].selectbox("Folder", opts, index=idx, key=f"mv_{ch['id']}",
-                                   format_func=lambda x: folder_map.get(x, "No folder") if x is not None else "No folder",
+                    a[1].selectbox("Pasta", opts, index=idx, key=f"mv_{ch['id']}",
+                                   format_func=lambda x: folder_map.get(x, "Sem pasta") if x is not None else "Sem pasta",
                                    label_visibility="collapsed",
                                    on_change=lambda cid=ch["id"]: set_folder(cid, st.session_state[f"mv_{cid}"]))
                     a[2].markdown("📡 **Vox**")
                     if ch["comms_on"]:
-                        if a[3].button("Cut Vox", key=f"gmvc_{ch['id']}"):
+                        if a[3].button("Cortar", key=f"gmvc_{ch['id']}"):
                             set_comms(ch["id"], 0); st.rerun()
                     else:
-                        if a[3].button("Activate Vox", key=f"gmvc_{ch['id']}"):
+                        if a[3].button("Ativar", key=f"gmvc_{ch['id']}"):
                             set_comms(ch["id"], 1); st.rerun()
 
         else:
             filtered = all_chars
-            if view == "Players":
+            if view == "Jogadores":
                 filtered = [c for c in all_chars if c["kind"] == "player"]
             elif view == "NPCs":
                 filtered = [c for c in all_chars if c["kind"] == "npc"]
@@ -1443,8 +1345,8 @@ def gm_view():
                     char_row(ch, folders)
                 opts = folder_options
                 idx = opts.index(ch.get("folder_id")) if ch.get("folder_id") in opts else 0
-                a[1].selectbox("Folder", opts, index=idx, key=f"mva_{ch['id']}",
-                               format_func=lambda x: folder_map.get(x, "No folder") if x is not None else "No folder",
+                a[1].selectbox("Pasta", opts, index=idx, key=f"mva_{ch['id']}",
+                               format_func=lambda x: folder_map.get(x, "Sem pasta") if x is not None else "Sem pasta",
                                label_visibility="collapsed",
                                on_change=lambda cid=ch["id"]: set_folder(cid, st.session_state[f"mva_{cid}"]))
                 a[2].markdown("📡" + (" ON" if ch["comms_on"] else " OFF"))
@@ -1466,12 +1368,12 @@ def gm_view():
         # Seleção rápida de rede
         folder_choices = [None] + [f["id"] for f in folders]
         selected_fid = st.selectbox(
-            "Network / Folder", folder_choices, key="vox_folder_select",
-            format_func=lambda x: "No folder (isolated)" if x is None else folder_map.get(x, "Folder"),
+            "Rede / Pasta", folder_choices, key="vox_folder_select",
+            format_func=lambda x: "Sem pasta (isolados)" if x is None else folder_map.get(x, "Pasta"),
         )
 
         if selected_fid is None:
-            st.warning("Characters without a folder do not share Vox.")
+            st.warning("Personagens sem pasta não compartilham Vox entre si.")
         else:
             members = groups.get(selected_fid, [])
             on_count = sum(1 for ch in members if ch["comms_on"])
@@ -1480,9 +1382,9 @@ def gm_view():
             c[1].metric("Vox ativo", on_count)
             c[2].metric("Cortado", len(members) - on_count)
             b = st.columns(2)
-            if b[0].button("Activate Folder Vox", use_container_width=True):
+            if b[0].button("Ativar Vox da pasta", use_container_width=True):
                 set_comms_for_folder(selected_fid, 1); st.rerun()
-            if b[1].button("Cut Folder Vox", use_container_width=True):
+            if b[1].button("Cortar Vox da pasta", use_container_width=True):
                 set_comms_for_folder(selected_fid, 0); st.rerun()
 
             st.divider()
@@ -1494,7 +1396,7 @@ def gm_view():
         st.divider()
         st.markdown("#### Todas as redes")
         for fid, members in groups.items():
-            label = "No folder" if fid is None else folder_map.get(fid, "Folder")
+            label = "Sem pasta" if fid is None else folder_map.get(fid, "Pasta")
             on_count = sum(1 for ch in members if ch["comms_on"])
             st.markdown(f"**{label}** · {len(members)} membro(s) · {on_count} ativo(s)")
         st.markdown("#### Monitoramento do Magister")
@@ -1549,29 +1451,6 @@ def gm_view():
                 bc[1].button("Maximum Tier reached", disabled=True, use_container_width=True)
 
             st.divider()
-            st.markdown("#### Archetype Ascension")
-            st.caption("At Rank 3, you may ascend to a Tier +1 Archetype from your current Faction. The new Archetype grants its non-Attribute/Skill benefits; your existing Attribute and Skill ratings are retained.")
-            eligible_arch = [c for c in chars if c.get("creation_mode") == "archetype" and int(c.get("rank", 1)) >= 3 and int(c.get("tier", 1)) < MAX_TIER]
-            if eligible_arch:
-                ac_names = {c["name"] or f"#{c['id']}": c["id"] for c in eligible_arch}
-                ac_name = st.selectbox("Character", list(ac_names.keys()), key="arch_asc_character")
-                ac = next(c for c in eligible_arch if c["id"] == ac_names[ac_name])
-                current_arch = ARCHETYPES.get(ac.get("archetype"), {})
-                choices = [name for name, data in ARCHETYPES.items() if data.get("tier") == int(ac["tier"]) + 1 and (not current_arch.get("faction") or data.get("faction") == current_arch.get("faction"))]
-                if choices:
-                    new_arch = st.selectbox("New Archetype", choices, key="arch_asc_new")
-                    if st.button("Ascend Archetype", key=f"arch_asc_{ac['id']}", use_container_width=True):
-                        ok, msg = ascend_archetype(ac["id"], new_arch)
-                        (st.success if ok else st.error)(msg)
-                        if ok:
-                            add_log("Magister", f"{ac['name']} ascended to {new_arch}.")
-                            st.rerun()
-                else:
-                    st.info("No valid next-Tier Archetype from the current Faction.")
-            else:
-                st.info("No character is currently eligible for Archetype Ascension.")
-
-            st.divider()
             with st.form("xpf"):
                 cc = st.columns([2, 1, 2])
                 who = cc[0].selectbox("Character", ["Entire Party"] + list(control_names.keys()))
@@ -1597,41 +1476,41 @@ def gm_view():
         st.markdown("#### Configuração da Campanha")
         with st.form("campf"):
             cc = st.columns([3, 1, 1])
-            cname = cc[0].text_input("Campaign Name", camp["name"])
+            cname = cc[0].text_input("Nome da campanha", camp["name"])
             ctier = cc[1].number_input("Campaign Tier", 1, MAX_TIER, int(camp["tier"]))
-            sess = cc[2].number_input("Session", 1, 999, int(camp["session_no"]))
-            if st.form_submit_button("Save"):
+            sess = cc[2].number_input("Sessão", 1, 999, int(camp["session_no"]))
+            if st.form_submit_button("Salvar"):
                 save_campaign(cname, ctier, camp["ruin"], sess); st.rerun()
-        st.caption(f"Standard character XP: {starting_xp(camp['tier'])} (Tier {camp['tier']} × 100). Advanced Character Creation adds Tier ×10 bonus XP.")
+        st.caption(f"XP inicial dos personagens: {starting_xp(camp['tier'])} (Tier {camp['tier']} x 100).")
         st.divider()
-        st.markdown("#### Ruin")
+        st.markdown("#### Pontos de Ruína (Ruin)")
         rc = st.columns([1, 1, 1, 3])
-        rc[0].metric("Ruin", camp["ruin"])
+        rc[0].metric("Ruína", camp["ruin"])
         rc[1].button("−1", key="ruinm", on_click=adjust_ruin, args=(-1,))
         rc[2].button("+1", key="ruinp", on_click=adjust_ruin, args=(+1,))
         st.divider()
-        st.markdown("#### Session Log")
+        st.markdown("#### Registro de sessão")
         with st.form("voxlog"):
-            msg = st.text_area("New Entry")
-            if st.form_submit_button("Record"):
+            msg = st.text_area("Nova entrada")
+            if st.form_submit_button("Registrar"):
                 if msg.strip():
                     add_log("Magister", msg.strip()); st.rerun()
         for lg in get_logs():
             st.markdown(f"<div class='row'><b>{lg['ts']}</b> — {lg['text']}</div>", unsafe_allow_html=True)
 
-    # ---- Maintenance ----
+    # ---- Manutenção ----
     with tabs[4]:
-        st.markdown("#### File Maintenance")
-        st.caption("The .db backup contains everything: players, NPCs, folders, XP, Vox, portraits. "
-                   "On free hosting the disk may reset; download backups regularly.")
+        st.markdown("#### Manutenção dos Arquivos")
+        st.caption("O backup .db contém tudo: jogadores, NPCs, pastas, XP, vox, retratos. "
+                   "Em hospedagem grátis o disco reinicia; baixe periodicamente e reenvie depois.")
         if os.path.exists(DB_PATH):
             size = os.path.getsize(DB_PATH) / (1024 * 1024)
-            st.write(f"Database size: {size:.2f} MB (SQLite storage grows automatically).")
+            st.write(f"Size do banco: {size:.2f} MB (SQLite aguenta ~281 TB; cresce sozinho).")
             with open(DB_PATH, "rb") as f:
-                st.download_button("Download backup (cogitador.db)", f.read(),
+                st.download_button("Baixar backup (cogitador.db)", f.read(),
                                    file_name="cogitador.db", mime="application/octet-stream")
-        up = st.file_uploader("Restore backup", type=["db"])
-        if up is not None and st.button("Overwrite everything"):
+        up = st.file_uploader("Restaurar backup", type=["db"])
+        if up is not None and st.button("Sobrescrever tudo"):
             with open(DB_PATH, "wb") as f:
                 f.write(up.getbuffer())
             st.rerun()
@@ -1665,23 +1544,26 @@ def main():
         login_page(); return
 
     with st.sidebar:
+        st.session_state.setdefault("lang", "en")
+        lang_choice = st.radio(T("language"), ["en", "pt"], index=0 if st.session_state["lang"] == "en" else 1, horizontal=True, format_func=lambda x: "English" if x == "en" else "Português", key="ui_language")
+        st.session_state["lang"] = lang_choice
         camp = get_campaign(); role = st.session_state.user["role"]
         st.markdown(f"### ✠ {camp['name']}")
-        st.write(f"User: {st.session_state.user['username']}")
-        st.write("Role: " + ("Magister" if role == "gm" else "Battle-Brother"))
+        st.write(f"Servo: {st.session_state.user['username']}")
+        st.write("Função: " + ("Magister" if role == "gm" else "Irmão de Batalha"))
         if role == "gm":
-            st.metric("Ruin", camp["ruin"])
+            st.metric("Ruína (Ruin)", camp["ruin"])
         st.divider()
-        if st.button("Sign Out"):
+        if st.button("Encerrar Sessão"):
             st.session_state.user = None; st.session_state.editing = None; st.rerun()
-        with st.expander("Change Password"):
+        with st.expander("Alterar senha"):
             with st.form("chpw"):
-                a = st.text_input("New Password", type="password"); b = st.text_input("Confirm", type="password")
-                if st.form_submit_button("Change"):
+                a = st.text_input("Nova senha", type="password"); b = st.text_input("Confirmar", type="password")
+                if st.form_submit_button("Alterar"):
                     if a and a == b:
-                        set_password(st.session_state.user["id"], a); st.success("Password updated.")
+                        set_password(st.session_state.user["id"], a); st.success("Senha atualizada.")
                     else:
-                        st.error("Passwords do not match.")
+                        st.error("As senhas não conferem.")
 
     if st.session_state.user["role"] == "gm":
         gm_view()

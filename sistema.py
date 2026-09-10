@@ -1840,7 +1840,9 @@ def inject_theme():
     .skrow:nth-child(even){ background:rgba(255,255,255,.02); }
     .skrow .n{ letter-spacing:.02em; } .skrow .c{ text-align:center; opacity:.7; }
     .skrow .t{ text-align:center; font-family:'Cinzel',serif; color:var(--gold2); font-weight:700; }
-    .tal,.wg{ background:var(--panel2); border:1px solid #3a2e18; border-radius:3px; padding:6px 10px; margin-bottom:5px; }
+    .tal,.wg{ background:var(--panel2); border:1px solid #3a2e18; border-radius:4px; padding:7px 10px; margin-bottom:6px; }
+    .wgdesc,.taleffect{ margin-top:6px; padding-top:6px; border-top:1px solid rgba(191,151,70,.18); opacity:.82; line-height:1.42; font-size:.84rem; }
+    .wgdesc{ color:#d8d0bf; } .taleffect{ color:#d8d0bf; }
     .tal .tn{ font-family:'Cinzel',serif; color:var(--gold2); letter-spacing:.03em; }
     .chapter-card{ background:var(--panel2); border:1px solid #3a2e18; border-left:3px solid var(--gold); border-radius:3px; padding:9px 12px; margin-bottom:6px; }
     .chapter-card .ctitle{ font-family:'Cinzel',serif; color:var(--gold2); font-size:.95rem; font-weight:700; letter-spacing:.02em; }
@@ -2220,15 +2222,20 @@ def battle_view(cid):
                     st.markdown(f"<div class='tal'><span class='tn'>{html.escape(sk)}</span><span class='tc'>Rating {int(rating)}</span></div>", unsafe_allow_html=True)
 
         st.markdown("<div class='sectionttl'>Talents</div>", unsafe_allow_html=True)
+        talent_catalog = {str(r["name"]).strip().lower(): r for r in list_craft_items("talent")}
         if ch["talents"]:
             for t in ch["talents"]:
-                name = html.escape(str(t.get("name", "")))
-                effect = html.escape(str(t.get("effect", "")))
+                raw_name = str(t.get("name", ""))
+                name = html.escape(raw_name)
+                effect_raw = str(t.get("effect", "") or "").strip()
+                if not effect_raw or effect_raw.lower().startswith("core rulebook"):
+                    row = talent_catalog.get(raw_name.strip().lower())
+                    if row is not None:
+                        effect_raw = str(row["effect"] or "").strip()
+                effect = html.escape(effect_raw)
                 cost = f"<span class='tc'>{int(t.get('cost') or 0)} XP</span>" if t.get("cost") else ""
-                effect_html = f"<div style='margin-top:5px;opacity:.75;line-height:1.35'>{effect}</div>" if effect else ""
-                source = html.escape(str(t.get("source", "")))
-                source_html = f"<div style='margin-top:4px;opacity:.5;font-size:.72rem'>{source}</div>" if source else ""
-                st.markdown(f"<div class='tal'><span class='tn'>{name}</span>{cost}{effect_html}{source_html}</div>", unsafe_allow_html=True)
+                effect_html = f"<div class='taleffect'>{effect}</div>" if effect else ""
+                st.markdown(f"<div class='tal'><span class='tn'>{name}</span>{cost}{effect_html}</div>", unsafe_allow_html=True)
         else:
             st.markdown("<div class='tal' style='opacity:.6'>No talents.</div>", unsafe_allow_html=True)
 
@@ -2243,13 +2250,18 @@ def battle_view(cid):
         render_ammo_section(cid, ch)
 
         st.markdown("<div class='sectionttl'>Wargear</div>", unsafe_allow_html=True)
+        wargear_catalog = {str(r["name"]).strip().lower(): r for r in list_craft_items("wargear")}
         if ch["wargear"]:
             for w in ch["wargear"]:
-                name = html.escape(str(w.get("name", "")))
-                effect = html.escape(str(w.get("effect", "")))
-                effect_html = f"<div style='margin-top:5px;opacity:.75;line-height:1.35'>{effect}</div>" if effect else ""
-                source = html.escape(str(w.get("source", "")))
-                source_html = f"<div style='margin-top:4px;opacity:.5;font-size:.72rem'>{source}</div>" if source else ""
+                raw_name = str(w.get("name", ""))
+                name = html.escape(raw_name)
+                effect_raw = str(w.get("effect", "") or "").strip()
+                if not effect_raw or effect_raw.lower().startswith("core rulebook"):
+                    row = wargear_catalog.get(raw_name.strip().lower())
+                    if row is not None:
+                        effect_raw = str(row["effect"] or "").strip()
+                effect = html.escape(effect_raw)
+                effect_html = f"<div class='wgdesc'>{effect}</div>" if effect else ""
                 details = w.get("details", {}) or {}
                 if isinstance(details, str):
                     try: details = json.loads(details)
@@ -2259,7 +2271,7 @@ def battle_view(cid):
                     if details.get(key) not in (None, ""):
                         stats.append(f"<span style='margin-right:12px'><b>{label}</b> {html.escape(str(details[key]))}</span>")
                 stats_html = f"<div style='margin-top:5px;opacity:.85;font-size:.78rem'>{''.join(stats)}</div>" if stats else ""
-                st.markdown(f"<div class='wg'><b>{name}</b>{stats_html}{effect_html}{source_html}</div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='wg'><b>{name}</b>{stats_html}{effect_html}</div>", unsafe_allow_html=True)
         else:
             st.markdown("<div class='wg' style='opacity:.6'>No wargear.</div>", unsafe_allow_html=True)
 

@@ -1444,20 +1444,37 @@ def edit_view(cid, gm_mode=False):
             })
 
     st.markdown("#### Wargear")
-    st.caption("Enter the name and effect. Both will appear in Battle View.")
+    st.caption("Add one item per row. Write the game effect directly in the Effect column; it will be shown in Battle View.")
+
+    # Wargear is intentionally kept as a simple two-column table so the GM can
+    # paste and edit several items quickly without opening separate forms.
     wdf = ch["wargear"] if ch["wargear"] else [{"name": "", "effect": ""}]
     edited_wargear = st.data_editor(
-        wdf, num_rows="dynamic", key=f"wg_{cid}", use_container_width=True,
+        wdf,
+        num_rows="dynamic",
+        key=f"wg_{cid}",
+        use_container_width=True,
+        hide_index=True,
         column_config={
-            "name": st.column_config.TextColumn("Wargear", width="medium"),
-            "effect": st.column_config.TextColumn("Effect", width="large"),
+            "name": st.column_config.TextColumn(
+                "Gear",
+                width="medium",
+                help="Item name, e.g. Boltgun, Chainsword, Auspex."
+            ),
+            "effect": st.column_config.TextColumn(
+                "Effect",
+                width="large",
+                help="Rules, bonuses, special properties, damage, range, etc."
+            ),
         },
     )
+
     wargear = []
     for r in edited_wargear:
         name = str(r.get("name", "") or "").strip()
-        if name:
-            wargear.append({"name": name, "effect": str(r.get("effect", "") or "").strip()})
+        effect = str(r.get("effect", "") or "").strip()
+        if name or effect:
+            wargear.append({"name": name, "effect": effect})
 
     wc = st.columns(2)
     wc[0].markdown("**Summary**")

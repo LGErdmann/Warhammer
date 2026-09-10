@@ -853,15 +853,7 @@ def _requirements_satisfied(ch, row):
     return True, "Eligible"
 
 
-def talent_limit(ch):
-    """Wrath & Glory Talent limit: Tier + Rank."""
-    return max(0, int(ch.get("tier", 1) or 1) + int(ch.get("rank", 1) or 1))
-
-
 def talent_is_available(ch, row):
-    owned = normalize_talents(ch.get("talents", []))
-    if len(owned) >= talent_limit(ch):
-        return False
     ok, _ = _requirements_satisfied(ch, row)
     return ok
 
@@ -2107,10 +2099,7 @@ def edit_view(cid, gm_mode=False):
     keys = sorted(character_keywords({**ch, "species": st.session_state[spk], "archetype": st.session_state.get(ark, "")}))
 
     st.markdown("#### Talents")
-    owned_count = len(normalize_talents(ch.get("talents", [])))
-    max_talents = talent_limit({**ch, "tier": int(st.session_state[_k(cid, "n", "tier")]), "rank": int(ch.get("rank", 1) or 1)})
-    st.caption(f"Talent limit: {owned_count} / {max_talents}. Purchase requires all registered prerequisites and sufficient XP.")
-    st.caption("Purchase Talents unlocked by your Keywords and prerequisites. The XP cost is deducted from your available XP budget automatically.")
+    st.caption("Purchase Talents by meeting their registered prerequisites and spending XP.")
     if keys:
         st.caption("Keywords: " + ", ".join(k.title() for k in keys))
 
@@ -2166,7 +2155,6 @@ def edit_view(cid, gm_mode=False):
         else:
             st.info("No additional Talents are currently available for this character.")
     else:
-        st.caption("The Magister can assign Talents directly to NPCs. Players purchase Talents through XP.")
         if ch["kind"] == "npc" and catalog_talents:
             labels = {int(r["id"]): craft_item_label(r) for r in catalog_talents}
             npc_tid = st.selectbox("NPC Talent", [None] + [int(r["id"]) for r in catalog_talents], format_func=lambda x: "Select Talent..." if x is None else labels[x], key=f"gm_talent_{cid}")
@@ -2226,7 +2214,6 @@ def edit_view(cid, gm_mode=False):
 
     st.markdown("#### Wargear")
     if gm_mode:
-        st.caption("The Magister assigns Wargear directly. Equipped Wargear automatically contributes its structured modifiers to the character's derived values.")
         if catalog_wargear:
             labels = {int(r["id"]): craft_item_label(r) for r in catalog_wargear}
             gid = st.selectbox("Wargear", [None] + [int(r["id"]) for r in catalog_wargear],

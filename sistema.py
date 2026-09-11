@@ -689,7 +689,7 @@ def init_db():
         cur_corruption INTEGER DEFAULT 0, cur_wealth INTEGER DEFAULT 0, cur_faith INTEGER DEFAULT 0,
         notes TEXT, folder_id INTEGER, portrait BLOB, comms_on INTEGER DEFAULT 1, comms_changed_at TEXT, updated_at TEXT, revision INTEGER DEFAULT 0)""")
     c.execute("""CREATE TABLE IF NOT EXISTS campaign(id INTEGER PRIMARY KEY CHECK (id=1),
-        name TEXT, tier INTEGER DEFAULT 2, ruin INTEGER DEFAULT 0, session_no INTEGER DEFAULT 1)""")
+        name TEXT, tier INTEGER DEFAULT 2, ruin INTEGER DEFAULT 0, session_no INTEGER DEFAULT 1, map_url TEXT DEFAULT '')""")
     c.execute("""CREATE TABLE IF NOT EXISTS log(id INTEGER PRIMARY KEY AUTOINCREMENT,
         ts TEXT, author TEXT, text TEXT)""")
     c.execute("""CREATE TABLE IF NOT EXISTS session_record(id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -728,7 +728,8 @@ def init_db():
     conn.commit()
     # migration: ensure columns exist in databases created by older versions
     _ensure_columns(conn, "campaign", {"name": "TEXT", "tier": "INTEGER DEFAULT 2",
-                                       "ruin": "INTEGER DEFAULT 0", "session_no": "INTEGER DEFAULT 1"})
+                                       "ruin": "INTEGER DEFAULT 0", "session_no": "INTEGER DEFAULT 1",
+                                       "map_url": "TEXT DEFAULT ''"})
     had_wealth_column = "cur_wealth" in {r[1] for r in conn.execute("PRAGMA table_info(characters)").fetchall()}
     _ensure_columns(conn, "characters", {
         "user_id": "INTEGER", "kind": "TEXT DEFAULT 'player'", "name": "TEXT", "chapter": "TEXT",
@@ -2265,6 +2266,7 @@ def get_campaign():
     conn = get_conn(); row = conn.execute("SELECT * FROM campaign WHERE id=1").fetchone(); conn.close()
     c = dict(row) if row else {}
     c.setdefault("name", "The Crusade"); c.setdefault("tier", 2); c.setdefault("ruin", 0); c.setdefault("session_no", 1)
+    c.setdefault("map_url", "")
     return c
 
 
@@ -2272,6 +2274,12 @@ def save_campaign(name, tier, ruin, session_no):
     conn = get_conn()
     conn.execute("UPDATE campaign SET name=?,tier=?,ruin=?,session_no=? WHERE id=1",
                  (name, int(tier), int(ruin), int(session_no)))
+    conn.commit(); conn.close()
+
+
+def set_map_url(url):
+    conn = get_conn()
+    conn.execute("UPDATE campaign SET map_url=? WHERE id=1", (str(url or "").strip(),))
     conn.commit(); conn.close()
 
 
@@ -4395,6 +4403,31 @@ def archetypes_view():
                 if ok: st.rerun()
 
 
+def render_map_section(gm_mode=False):
+    """Embed the campaign's Owlbear Rodeo room, with a "join" link as a
+    fallback next to it. Owlbear Rodeo has no API for auto-joining a room
+    under a given name or bridging identity with this app — each browser
+    that opens the room link (embedded here, or via the link) simply joins
+    that Owlbear Rodeo room as its own participant, the same as opening it
+    directly. Whether the embed actually renders depends on Owlbear Rodeo's
+    own framing policy, which can change; the link always works regardless."""
+    st.markdown("#### Map")
+    camp = get_campaign()
+    url = str(camp.get("map_url") or "").strip()
+    if gm_mode:
+        st.caption("Paste the Owlbear Rodeo room link. Every connected Player sees the same link below their own sheet.")
+        new_url = st.text_input("Owlbear Rodeo Room URL", value=url, key="map_url_input", placeholder="https://www.owlbear.rodeo/room/...")
+        if st.button("Save Room URL", key="map_url_save"):
+            set_map_url(new_url)
+            st.rerun()
+    if not url:
+        st.info("No map room configured yet." if gm_mode else "The Magister has not shared a map room yet.")
+        return
+    st.link_button("Open in a new tab", url, use_container_width=True)
+    st.caption("If the map does not appear below, use the button above instead — some sites refuse to be embedded.")
+    st.components.v1.iframe(url, height=700, scrolling=True)
+
+
 def gm_view():
     camp = get_campaign()
     st.markdown("<div class='banner'>✠ MAGISTER SANCTUM ✠<span class='sub'>Campaign Command</span></div>",
@@ -4410,7 +4443,7 @@ def gm_view():
             edit_view(cid, gm_mode=True)
         return
 
-    tabs = st.tabs(["Characters", "Players", "Craft", "Archetypes", "Vox", "Progression", "Session", "Combat", "Campaign", "Maintenance"])
+    tabs = st.tabs(["Characters", "Players", "Craft", "Archetypes", "Vox", "Progression", "Session", "Combat", "Campaign", "Map", "Maintenance"])
 
     # ---- Characters / Folders ----
     with tabs[0]:
@@ -4964,8 +4997,12 @@ def gm_view():
         for lg in get_logs():
             st.markdown(f"<div class='row'><b>{lg['ts']}</b> - {lg['text']}</div>", unsafe_allow_html=True)
 
-    # ---- Maintenance ----
+    # ---- Map ----
     with tabs[9]:
+        render_map_section(gm_mode=True)
+
+    # ---- Maintenance ----
+    with tabs[10]:
         st.markdown("#### File Maintenance")
         st.caption("The .db backup contains everything: players, NPCs, folders, XP, Vox, portraits. "
                    "On free hosting the disk may reset; download backups regularly.")
@@ -4990,11 +5027,13 @@ def player_view():
     if not cid:
         st.error("No character sheet linked. Contact the Magister.")
         return
-    t = st.tabs(["Battle View", "Character Sheet"])
+    t = st.tabs(["Battle View", "Character Sheet", "Map"])
     with t[0]:
         battle_view(cid)
     with t[1]:
         edit_view(cid, gm_mode=False)
+    with t[2]:
+        render_map_section(gm_mode=False)
 
 
 # ============================================================

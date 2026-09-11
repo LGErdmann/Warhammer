@@ -213,7 +213,7 @@ def archetype_starting_wargear(archetype):
         qty, base = _gear_quantity_name(raw)
         row = _catalog_gear_row(catalog, base)
         if row is not None:
-            entry_list = _craft_character_add([], int(row["id"]), "wargear")
+            entry_list = _craft_character_add([], row, "wargear")
             if entry_list:
                 entry = entry_list[0]
                 entry["quantity"] = qty
@@ -686,7 +686,7 @@ def init_db():
         tier INTEGER DEFAULT 2, starting_tier INTEGER DEFAULT 2, rank INTEGER DEFAULT 1, earned_xp INTEGER DEFAULT 0, other_xp INTEGER DEFAULT 0, faction TEXT DEFAULT '', keywords TEXT DEFAULT '[]', archetype_choices TEXT DEFAULT '{}',
         attributes TEXT, skills TEXT, talents TEXT, powers TEXT, wargear TEXT, armour INTEGER DEFAULT 0,
         cur_wounds INTEGER DEFAULT 0, cur_shock INTEGER DEFAULT 0, cur_wrath INTEGER DEFAULT 0, cur_ammo INTEGER DEFAULT 3,
-        cur_corruption INTEGER DEFAULT 0, cur_wealth INTEGER DEFAULT 0,
+        cur_corruption INTEGER DEFAULT 0, cur_wealth INTEGER DEFAULT 0, cur_faith INTEGER DEFAULT 0,
         notes TEXT, folder_id INTEGER, portrait BLOB, comms_on INTEGER DEFAULT 1, comms_changed_at TEXT, updated_at TEXT, revision INTEGER DEFAULT 0)""")
     c.execute("""CREATE TABLE IF NOT EXISTS campaign(id INTEGER PRIMARY KEY CHECK (id=1),
         name TEXT, tier INTEGER DEFAULT 2, ruin INTEGER DEFAULT 0, session_no INTEGER DEFAULT 1)""")
@@ -736,7 +736,7 @@ def init_db():
         "other_xp": "INTEGER DEFAULT 0", "faction": "TEXT DEFAULT ''", "keywords": "TEXT DEFAULT '[]'", "archetype_choices": "TEXT DEFAULT '{}'", "attributes": "TEXT", "skills": "TEXT", "talents": "TEXT", "powers": "TEXT",
         "wargear": "TEXT", "armour": "INTEGER DEFAULT 0", "cur_wounds": "INTEGER DEFAULT 0",
         "cur_shock": "INTEGER DEFAULT 0", "cur_wrath": "INTEGER DEFAULT 0", "cur_ammo": "INTEGER DEFAULT 3",
-        "cur_corruption": "INTEGER DEFAULT 0", "cur_wealth": "INTEGER DEFAULT 0", "notes": "TEXT",
+        "cur_corruption": "INTEGER DEFAULT 0", "cur_wealth": "INTEGER DEFAULT 0", "cur_faith": "INTEGER DEFAULT 0", "notes": "TEXT",
         "folder_id": "INTEGER", "portrait": "BLOB", "comms_on": "INTEGER DEFAULT 1",
         "comms_changed_at": "TEXT", "updated_at": "TEXT", "revision": "INTEGER DEFAULT 0"})
     if not had_wealth_column:
@@ -822,7 +822,7 @@ def starting_ammo_for_wargear(wargear, quantity=3):
     if row is None:
         return [{"name": ammo_name, "effect": "", "equipped": True, "quantity": int(quantity),
                  "details": {"category": "ammo", "stackable": True, "stack_group": keyword, "keywords": [keyword], "official": True}}]
-    entry = _craft_character_add([], int(row["id"]), "wargear")
+    entry = _craft_character_add([], row, "wargear")
     if entry:
         entry[0]["quantity"] = int(quantity)
         entry[0].setdefault("details", {})["starting_ammo"] = True
@@ -1558,12 +1558,7 @@ def assign_craft_to_character(cid, craft_id, kind, actor_name="", actor_user_id=
                   normalize_wargear(ch.get("wargear", []))
         old_value = list(current)
 
-        # _craft_character_add expects catalog rows, not character-owned entries.
-        # Build the new catalog entry first, then merge it into the character.
-        catalog_entry = _craft_character_add([dict(item)], int(craft_id), kind)
-        if not catalog_entry:
-            return False, f"Could not build the {kind.title()} catalog entry."
-        entry = catalog_entry[0]
+        entry = _build_craft_entry(dict(item), kind)
         updated = list(current)
         if kind in ("talent", "power"):
             if any(int(x.get("craft_id", -1) or -1) == int(craft_id) for x in updated):
@@ -1646,7 +1641,7 @@ def adjust_wargear_quantity(cid, craft_id, delta, actor_name="", actor_user_id=N
         if target is None:
             if delta <= 0:
                 return False, "This stack is not assigned to the character."
-            current = _craft_character_add(current, int(craft_id), "wargear")
+            current = _craft_character_add(current, dict(item), "wargear")
             target = next((w for w in current if int(w.get("craft_id", -1) or -1) == int(craft_id)), None)
             if target is None:
                 return False, "Could not create the Wargear stack."
@@ -1802,30 +1797,43 @@ def craft_item_label(row):
     return f"{row['name']}" + (f" · {source}" if source else "")
 
 
-def _craft_character_add(items, selected_id, kind):
-    rows = [r for r in items if int(r["id"]) == int(selected_id)]
-    if not rows:
-        return items
-    r = rows[0]
+def _build_craft_entry(row, kind):
+    """Build one character-owned Talent/Power/Wargear entry from a catalog row.
+
+    This is the single place that shapes an owned entry — it always sets
+    craft_id (as a real int) and a proper dict `details`, which is what
+    every craft_id-based lookup (Wargear modifiers, Faith Talents, quantity
+    adjustment, duplicate-purchase checks, etc.) relies on downstream.
+    """
+    details = craft_details(row)
     if kind in ("talent", "power"):
-        details = craft_details(r)
-        entry = {"name": r["name"], "effect": r.get("effect", ""), "cost": int(r.get("cost", 0) or 0),
-                 "craft_id": int(r["id"]), "source": r.get("source", ""), "source_url": r.get("source_url", ""),
-                 "details": details}
-    else:
-        details = craft_details(r)
-        stackable, group = _infer_stackable_gear(r["name"], details)
+        return {"name": row["name"], "effect": row.get("effect", ""), "cost": int(row.get("cost", 0) or 0),
+                "craft_id": int(row["id"]), "source": row.get("source", ""), "source_url": row.get("source_url", ""),
+                "details": details}
+    stackable, group = _infer_stackable_gear(row["name"], details)
+    if stackable:
+        details["stackable"] = True
+        details["stack_group"] = group
+    return {"name": row["name"], "effect": row.get("effect", ""), "equipped": True, "quantity": 1,
+            "craft_id": int(row["id"]), "source": row.get("source", ""), "source_url": row.get("source_url", ""),
+            "details": details}
+
+
+def _craft_character_add(items, row, kind):
+    """Add one catalog `row` (a dict/Row with at least id/name/effect/...) to
+    an owned `items` list, merging into a matching stackable Wargear entry
+    if one is already present."""
+    if kind == "wargear":
+        details = craft_details(row)
+        stackable, _ = _infer_stackable_gear(row["name"], details)
         if stackable:
-            details["stackable"] = True
-            details["stack_group"] = group
-            existing = next((x for x in items if int(x.get("craft_id", -1) or -1) == int(r["id"])), None)
+            existing = next((x for x in items if int(x.get("craft_id", -1) or -1) == int(row["id"])), None)
             if existing is not None:
                 existing["quantity"] = int(existing.get("quantity", 1)) + 1
                 return normalize_wargear(items)
-        entry = {"name": r["name"], "effect": r.get("effect", ""), "equipped": True, "quantity": 1,
-                 "craft_id": int(r["id"]), "source": r.get("source", ""), "source_url": r.get("source_url", ""),
-                 "details": details}
-    if not any(str(x.get("name", "")).strip().lower() == str(entry["name"]).strip().lower() and int(x.get("craft_id", -1) or -1) == int(r["id"]) for x in items):
+    entry = _build_craft_entry(row, kind)
+    if not any(str(x.get("name", "")).strip().lower() == str(entry["name"]).strip().lower()
+               and int(x.get("craft_id", -1) or -1) == int(row["id"]) for x in items):
         items.append(entry)
     return normalize_wargear(items) if kind == "wargear" else items
 
@@ -1860,7 +1868,7 @@ def _decode(row):
     for s in SKILLS:
         ch["skills"].setdefault(s, 0)
     for k, dv in {"tier": 2, "starting_tier": 2, "rank": 1, "earned_xp": 0, "other_xp": 0, "armour": 0, "cur_wounds": 0,
-                  "cur_shock": 0, "cur_wrath": 0, "cur_ammo": 3, "cur_corruption": 0, "cur_wealth": 0, "comms_on": 1, "kind": "player",
+                  "cur_shock": 0, "cur_wrath": 0, "cur_ammo": 3, "cur_corruption": 0, "cur_wealth": 0, "cur_faith": 0, "comms_on": 1, "kind": "player",
                   "name": "", "chapter": "", "species": "", "archetype": "", "faction": "", "keywords": [], "archetype_choices": {}, "creation_mode": "archetype", "archetype_history": "[]", "powers": "", "wargear": "", "notes": "", "updated_at": "", "revision": 0}.items():
         if ch.get(k) is None:
             ch[k] = dv
@@ -2805,7 +2813,8 @@ def _gear_mod_caption(mod):
 
 
 def _vital_stat_block(col, label, value, maximum=None, cid=None, field=None, editable=False,
-                       actor_role="gm", actor_user_id=None, actor_name="", key_prefix="", max_mod=0):
+                       actor_role="gm", actor_user_id=None, actor_name="", key_prefix="", max_mod=0,
+                       adjust_fn=None):
     """Render one Wounds/Shock/Wrath-style stat using the Battle Sheet's compact metric + −/+ pattern.
 
     The − and + controls stack vertically right beside the value, instead of
@@ -2816,19 +2825,26 @@ def _vital_stat_block(col, label, value, maximum=None, cid=None, field=None, edi
     +Wounds trinket) as the same green badge used in the Skills table.
     `maximum=None` renders just the value, for open-ended pools like Wealth
     that have no fixed ceiling to show a "current / max" against.
+    By default the +/- buttons call adjust_vital(cid, field, delta, ...).
+    Pass `adjust_fn` for a pool with its own adjuster (e.g. Faith uses
+    adjust_faith(cid, delta, ...), which has no `field` — leave `field=None`
+    in that case and the buttons drop it from the call.
     """
     display = f"{value} / {maximum}" if maximum is not None else f"{value}"
     with col:
-        if editable and cid is not None and field is not None:
+        if editable and cid is not None:
+            fn = adjust_fn or adjust_vital
+            if field is not None:
+                plus_args = (cid, field, +1, actor_role, actor_user_id, actor_name)
+                minus_args = (cid, field, -1, actor_role, actor_user_id, actor_name)
+            else:
+                plus_args = (cid, +1, actor_role, actor_user_id, actor_name)
+                minus_args = (cid, -1, actor_role, actor_user_id, actor_name)
             row = st.columns([5, 1], gap="small")
             row[0].metric(label, display)
             with row[1]:
-                st.button("+", key=f"{key_prefix}plus", on_click=adjust_vital,
-                          args=(cid, field, +1, actor_role, actor_user_id, actor_name),
-                          use_container_width=True)
-                st.button("−", key=f"{key_prefix}minus", on_click=adjust_vital,
-                          args=(cid, field, -1, actor_role, actor_user_id, actor_name),
-                          use_container_width=True)
+                st.button("+", key=f"{key_prefix}plus", on_click=fn, args=plus_args, use_container_width=True)
+                st.button("−", key=f"{key_prefix}minus", on_click=fn, args=minus_args, use_container_width=True)
         else:
             st.metric(label, display)
         _gear_mod_caption(max_mod)
@@ -2915,6 +2931,23 @@ def live_vitals(cid, ch=None, gear_mods=None):
 
     if corr_info["level"] >= 5:
         st.error("Corruption Level 5 - Chaos Spawn (p.286). This character is lost to the Warp; the GM now controls them as a Chaos Spawn.")
+
+    # Core Rulebook 2e, p.142: Faith only exists for characters who have
+    # purchased at least one Faith Talent (Adeptus Ministorum / Adepta
+    # Sororitas) — hidden entirely otherwise, since it does not apply.
+    f_max = faith_max(ch)
+    if f_max > 0:
+        faith_cols = st.columns([2, 2, 1])
+        _vital_stat_block(faith_cols[0], "Faith", min(f_max, int(ch.get("cur_faith", 0) or 0)), f_max,
+                          cid=cid, field=None, editable=True, actor_role=actor_role, actor_user_id=actor_user_id,
+                          actor_name=actor_name, key_prefix=f"lvfaith{cid}", adjust_fn=adjust_faith)
+        faith_cols[1].caption("Spend to trigger Faith Talent abilities. Restored to maximum each session or Respite (p.142).")
+        with faith_cols[2]:
+            st.write("")
+            if st.button("Restore to Max", key=f"lvfaithrestore{cid}", use_container_width=True):
+                result = restore_faith(cid, actor_role=actor_role, actor_user_id=actor_user_id, actor_name=actor_name)
+                if result[0]: st.rerun()
+                else: st.error(result[1])
 
     if asc:
         st.warning("100+ Earned XP - this character may ascend to the next Tier.")
@@ -3054,6 +3087,72 @@ def adjust_ammo_pool(cid, delta, actor_role="gm", actor_user_id=None, actor_name
         return False, f"Could not update Ammo Pool: {exc}"
     finally:
         conn.close()
+
+
+def faith_max(ch):
+    """Core Rulebook 2e, p.142: each Faith Talent purchased grants +1
+    maximum Faith. Faith Talents are Talents flagged with the
+    details.faith_talent option in the Craft catalog (Adeptus Ministorum /
+    Adepta Sororitas Talents such as By His Will, Shield of Faith, etc.).
+    Prefers the live catalog entry over the owned Talent's frozen snapshot,
+    matching how Wargear modifiers are resolved."""
+    catalog = {int(r["id"]): r for r in list_craft_items("talent", active_only=False)}
+    count = 0
+    for t in normalize_talents(ch.get("talents", [])):
+        row = None
+        try:
+            tid = int(t.get("craft_id", -1) or -1)
+            if tid > 0:
+                row = catalog.get(tid)
+        except Exception:
+            row = None
+        details = craft_details(row) if row is not None else _gear_details_dict(t.get("details", {}))
+        if details.get("faith_talent"):
+            count += 1
+    return count
+
+
+def adjust_faith(cid, delta, actor_role="gm", actor_user_id=None, actor_name="", source="Faith"):
+    """Adjust Faith Points between 0 and the character's current Faith maximum."""
+    conn = get_conn()
+    try:
+        row = conn.execute("SELECT * FROM characters WHERE id=?", (int(cid),)).fetchone()
+        if row is None:
+            return False, "Character not found."
+        ch = _decode(row)
+        if actor_role == "player":
+            if ch.get("kind") != "player" or int(ch.get("user_id") or -1) != int(actor_user_id or -2):
+                return False, "Players can only edit their own character sheet."
+        maximum = faith_max(ch)
+        old_val = min(maximum, int(ch.get("cur_faith", 0) or 0))
+        new_val = max(0, min(maximum, old_val + int(delta)))
+        if new_val == old_val:
+            return True, "Faith unchanged."
+        new_rev = int(ch.get("revision", 0) or 0) + 1
+        cur = conn.execute("UPDATE characters SET cur_faith=?, updated_at=?, revision=? WHERE id=? AND revision=?",
+                           (new_val, now_iso(), new_rev, int(cid), int(ch.get("revision", 0) or 0)))
+        if cur.rowcount != 1:
+            conn.rollback()
+            return False, "Concurrent change detected."
+        conn.commit()
+        if actor_role == "player" and actor_user_id:
+            record_player_audit(cid, actor_user_id, actor_name, source, [("cur_faith", old_val, new_val)])
+        return True, "Faith updated."
+    except Exception as exc:
+        conn.rollback()
+        return False, f"Could not update Faith: {exc}"
+    finally:
+        conn.close()
+
+
+def restore_faith(cid, actor_role="gm", actor_user_id=None, actor_name="", source="Faith Restored"):
+    """Core Rulebook 2e, p.142: Faith is restored to maximum at the start of
+    each session and whenever a Respite is completed."""
+    ch = load_character(cid)
+    if not ch:
+        return False, "Character not found."
+    return adjust_faith(cid, faith_max(ch), actor_role=actor_role, actor_user_id=actor_user_id,
+                        actor_name=actor_name, source=source)
 
 
 def ammo_capacity_bonus(ch, gear=None):
@@ -3210,6 +3309,10 @@ def battle_view(cid):
             f"<div class='v'>{corr_info['level']} · {html.escape(corr_info['name'])}</div></div>"
             f"<div class='statcard'><div class='l'>Wealth</div><div class='v'>{int(ch.get('cur_wealth', 0) or 0)}</div></div>"
         )
+        # Faith (p.142) only applies to characters with at least one Faith Talent.
+        f_max_card = faith_max(ch)
+        if f_max_card > 0:
+            cards += f"<div class='statcard'><div class='l'>Faith</div><div class='v'>{min(f_max_card, int(ch.get('cur_faith', 0) or 0))} / {f_max_card}</div></div>"
         st.markdown(f"<div class='grid'>{cards}</div>", unsafe_allow_html=True)
 
         st.markdown("<div class='sectionttl'>Skills &nbsp;<small style='opacity:.6;letter-spacing:0'>Total = Skill + Attribute</small></div>", unsafe_allow_html=True)
@@ -4112,6 +4215,7 @@ def craft_view():
                     if r.get("effect"): st.write(r["effect"])
                     if req.get("keywords_all"): st.caption("Required Keywords: " + ", ".join(req["keywords_all"]))
                     if details.get("modifiers"): st.caption("Automatic modifiers: " + ", ".join(f"{k} {int(v):+d}" for k,v in details["modifiers"].items() if v))
+                    if kind == "talent" and details.get("faith_talent"): st.caption("Faith Talent · grants +1 maximum Faith (p.142)")
                     if kind == "wargear":
                         extra = [f"{lab}: {details.get(key)}" for key,lab in (("category","Category"),("damage","Damage"),("ed","ED"),("ap","AP"),("range","Range"),("salvo","Salvo"),("traits","Traits"),("keywords","Keywords")) if details.get(key) not in (None,"",[])]
                         if extra: st.caption(" · ".join(extra))
@@ -4140,6 +4244,10 @@ def craft_view():
                 details["modifiers"] = _render_craft_modifiers(f"craft_new_{kind}_mods", details, True)
                 details.update(_render_wargear_data(f"craft_new_{kind}_gear", details))
             elif kind == "power": details.update(_render_power_data(f"craft_new_{kind}_power", details))
+            elif kind == "talent":
+                details["faith_talent"] = st.checkbox(
+                    "Faith Talent (Adeptus Ministorum / Adepta Sororitas)", value=False, key=f"craft_new_{kind}_faith",
+                    help="Core Rulebook p.142: purchasing a Faith Talent grants +1 maximum Faith.")
             source = st.text_input("Source / Book", key=f"craft_new_source_{kind}")
             if st.button(f"Register {title}", type="primary", use_container_width=True, key=f"craft_register_{kind}"):
                 if not cname.strip() or not cdesc.strip(): st.error("Name and Description / Effect are required.")
@@ -4163,6 +4271,10 @@ def craft_view():
                 if row["kind"] == "wargear":
                     newdetails["modifiers"] = _render_craft_modifiers(f"edit_wargear_mod_{edit_id}", details, True); newdetails.update(_render_wargear_data(f"edit_wargear_{edit_id}", details))
                 elif row["kind"] == "power": newdetails.update(_render_power_data(f"edit_power_{edit_id}", details))
+                elif row["kind"] == "talent":
+                    newdetails["faith_talent"] = st.checkbox(
+                        "Faith Talent (Adeptus Ministorum / Adepta Sororitas)", value=bool(details.get("faith_talent")), key=f"edit_{edit_id}_faith",
+                        help="Core Rulebook p.142: purchasing a Faith Talent grants +1 maximum Faith.")
                 esource = st.text_input("Source / Book", row.get("source", ""), key=f"edit_source_{edit_id}")
                 b1,b2=st.columns(2)
                 if b1.button("Save Changes", type="primary", use_container_width=True, key=f"edit_save_{edit_id}"):

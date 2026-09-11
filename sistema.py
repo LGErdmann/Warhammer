@@ -1049,6 +1049,19 @@ def _keyword_ok(token, available):
     return canonical in {str(x).strip().lower() for x in available}
 
 
+def _attribute_values(ch):
+    """Return current Attribute and Skill values for prerequisite checks."""
+    values = {}
+    for name, value in (ch.get("attributes", {}) or {}).items():
+        values[str(name).strip().lower()] = int(value or 0)
+    for name, value in (ch.get("skills", {}) or {}).items():
+        key = str(name).strip().lower()
+        if key == "ballistics skill":
+            key = "ballistic skill"
+        values[key] = int(value or 0)
+    return values
+
+
 def _requirements_satisfied(ch, row):
     req = _requirement_data(row)
     available = character_keywords(ch)
@@ -2385,10 +2398,13 @@ def battle_view(cid):
             st.markdown(f"<div class='tal'><span class='tn'>{aname}</span></div>", unsafe_allow_html=True)
             if ch['archetype'] in ARCHETYPE_ABILITIES:
                 st.markdown(f"<div class='tal'><span class='tn'>Archetype Ability: {html.escape(ARCHETYPE_ABILITIES[ch['archetype']])}</span></div>", unsafe_allow_html=True)
+        # Chapter abilities are resolved from the latest saved character data,
+        # so changing Chapter on the sheet is reflected on the next refresh.
+        latest_chapter = str(ch.get("chapter", "") or "").strip()
         package = species_package(ch["species"])
         chapter_abilities = []
-        if ch.get("chapter") in CHAPTERS and ch.get("species") in ("Adeptus Astartes", "Primaris Astartes"):
-            cd = CHAPTERS[ch["chapter"]]
+        if latest_chapter in CHAPTERS and ch.get("species") in ("Adeptus Astartes", "Primaris Astartes"):
+            cd = CHAPTERS[latest_chapter]
             if cd.get("ability"): chapter_abilities.append(cd["ability"])
             if cd.get("tradition"): chapter_abilities.append(cd["tradition"])
         if package.get("abilities") or chapter_abilities:
@@ -3585,27 +3601,27 @@ def gm_view():
             for fid, items in groups.items():
                 label = folder_map.get(fid, "No folder")
                 icon = "◈" if fid is not None else "◇"
-                st.markdown(f"#### {icon} {label}  ·  {len(items)} character(s)")
-                if not items:
-                    st.caption("No characters in this folder.")
-                    continue
-                for ch in items:
-                    a = st.columns([4.2, 1.7, 1.1, 1.1])
-                    with a[0]:
-                        char_row(ch, folders)
-                    opts = folder_options
-                    idx = opts.index(ch.get("folder_id")) if ch.get("folder_id") in opts else 0
-                    a[1].selectbox("Folder", opts, index=idx, key=f"mv_{ch['id']}",
-                                   format_func=lambda x: folder_map.get(x, "No folder") if x is not None else "No folder",
-                                   label_visibility="collapsed",
-                                   on_change=lambda cid=ch["id"]: set_folder(cid, st.session_state[f"mv_{cid}"]))
-                    a[2].markdown("📡 **Vox**")
-                    if ch["comms_on"]:
-                        if a[3].button("Cut Vox", key=f"gmvc_{ch['id']}"):
-                            set_comms(ch["id"], 0); st.rerun()
-                    else:
-                        if a[3].button("Activate Vox", key=f"gmvc_{ch['id']}"):
-                            set_comms(ch["id"], 1); st.rerun()
+                with st.expander(f"{icon} {label}  ·  {len(items)} character(s)", expanded=False):
+                    if not items:
+                        st.caption("No characters in this folder.")
+                        continue
+                    for ch in items:
+                        a = st.columns([4.2, 1.7, 1.1, 1.1])
+                        with a[0]:
+                            char_row(ch, folders)
+                        opts = folder_options
+                        idx = opts.index(ch.get("folder_id")) if ch.get("folder_id") in opts else 0
+                        a[1].selectbox("Folder", opts, index=idx, key=f"mv_{ch['id']}",
+                                       format_func=lambda x: folder_map.get(x, "No folder") if x is not None else "No folder",
+                                       label_visibility="collapsed",
+                                       on_change=lambda cid=ch["id"]: set_folder(cid, st.session_state[f"mv_{cid}"]))
+                        a[2].markdown("📡 **Vox**")
+                        if ch["comms_on"]:
+                            if a[3].button("Cut Vox", key=f"gmvc_{ch['id']}"):
+                                set_comms(ch["id"], 0); st.rerun()
+                        else:
+                            if a[3].button("Activate Vox", key=f"gmvc_{ch['id']}"):
+                                set_comms(ch["id"], 1); st.rerun()
 
         else:
             filtered = all_chars

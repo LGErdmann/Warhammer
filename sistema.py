@@ -1368,14 +1368,14 @@ def adjust_wargear_quantity(cid, craft_id, delta, actor_name="", actor_user_id=N
         if actor_role == "player":
             if ch.get("kind") != "player" or int(ch.get("user_id") or -1) != int(actor_user_id or -2):
                 return False, "Players can only edit their own character sheet."
-            if int(delta) > 0:
-                return False, "Players cannot add Wargear or ammunition. Ask the Magister to assign it."
         current = normalize_wargear(ch.get("wargear", []))
         # Standard and special Ammo share one carrying pool. Grenades/Missiles do not.
         item_details = _gear_details_dict(item["details"] if "details" in item.keys() else {})
         item_category = str(item_details.get("category", item_details.get("type", ""))).strip().lower()
         item_name = str(item["name"] or "")
         item_is_ammo = item_category in {"ammo", "ammunition", "reload"} or "ammo" in item_name.lower() or "cartridge" in item_name.lower() or "cartucho" in item_name.lower()
+        if actor_role == "player" and int(delta) > 0 and not item_is_ammo:
+            return False, "Players cannot add Wargear or consumables. Ask the Magister to assign it."
         if item_is_ammo and int(delta) > 0:
             _, ammo_total = ammo_inventory(ch)
             if ammo_total + int(delta) > ammo_capacity(ch):
@@ -2233,6 +2233,10 @@ def inject_theme():
     .tal .tc{ float:right; opacity:.6; font-size:.75rem; }
     .craft-shop-name{ font-family:'Cinzel',serif; font-size:.76rem; font-weight:700; letter-spacing:.025em; line-height:1.05; }
     .craft-shop-cost{ color:rgba(216,208,191,.52); font-size:.66rem; white-space:nowrap; }
+.gear-mod{margin-left:4px;color:#55c96b;font-size:.68em;font-weight:700;vertical-align:middle;}
+.ammo-vital-value{min-height:30px;padding-top:2px;text-align:center;color:#d7d0c2;font-family:Cinzel,serif;font-size:1.05rem;}
+.vital-label{font-family:Cinzel,serif;color:#c9a227;letter-spacing:.08em;font-size:.78rem;margin-bottom:4px;}
+
     .craft-details{ margin:0 0 3px; border-bottom:1px solid #342817; }
     .craft-details summary{ cursor:pointer; list-style:none; padding:2px 0; font-family:'Cinzel',serif; font-size:.76rem; letter-spacing:.025em; }
     .craft-details summary::-webkit-details-marker{ display:none; }
@@ -2382,20 +2386,59 @@ def live_vitals(cid):
     if not ch:
         return
     d = derived_traits(ch)
+    gear_mods = equipped_wargear_modifiers(ch)
     rank, asc = rank_from_xp(ch["earned_xp"], ch.get("rank", 1))
+    ammo_stacks, ammo_total = ammo_inventory(ch)
+    ammo_max = ammo_capacity(ch)
+    user = st.session_state.get("user") or {}
+    is_player = user.get("role") != "gm"
+    actor_args = ("player" if is_player else "gm", user.get("id"), user.get("username", ""))
+
     trio = [("cur_wounds", "Wounds", d["Max Wounds"]),
             ("cur_shock", "Shock", d["Max Shock"]),
             ("cur_wrath", "Wrath", d["Max Wrath"])]
-    cols = st.columns(3)
+    cols = st.columns(4)
     for i, (field, label, mx) in enumerate(trio):
         with cols[i]:
             row = st.columns([4, 1, 1])
             row[0].metric(label, f"{ch[field]} / {mx}")
-            user = st.session_state.get("user") or {}
-            is_player = user.get("role") != "gm"
-            actor_args = ("player" if is_player else "gm", user.get("id"), user.get("username", ""))
             row[1].button("−", key=f"lv{field}{cid}minus", on_click=adjust_vital, args=(cid, field, -1, actor_args[0], actor_args[1], actor_args[2]))
             row[2].button("+", key=f"lv{field}{cid}plus", on_click=adjust_vital, args=(cid, field, +1, actor_args[0], actor_args[1], actor_args[2]))
+
+    with cols[3]:
+        st.markdown("<div class='vital-label'>AMMO</div>", unsafe_allow_html=True)
+        acols = st.columns([1, 3, 1])
+        if acols[0].button("−", key=f"lvammo{cid}minus", disabled=ammo_total <= 0):
+            if ammo_stacks:
+                target = ammo_stacks[0]
+                craft_id = _wargear_craft_id(target)
+                result = adjust_wargear_quantity(
+                    cid, craft_id, -1,
+                    actor_name=user.get("username", ""),
+                    actor_user_id=user.get("id"),
+                    source="Magister Ammo -1" if not is_player else "Player Ammo -1",
+                    actor_role="gm" if not is_player else "player",
+                )
+                if result[0]: st.rerun()
+                else: st.error(result[1])
+        acols[1].markdown(
+            f"<div class='ammo-vital-value'><b>{ammo_total}</b> / {ammo_max}</div>",
+            unsafe_allow_html=True,
+        )
+        if acols[2].button("+", key=f"lvammo{cid}plus", disabled=(ammo_total >= ammo_max or not ammo_stacks)):
+            target = ammo_stacks[0]
+            craft_id = _wargear_craft_id(target)
+            result = adjust_wargear_quantity(
+                cid, craft_id, 1,
+                actor_name=user.get("username", ""),
+                actor_user_id=user.get("id"),
+                source="Magister Ammo +1" if not is_player else "Player Ammo +1",
+                actor_role="gm" if not is_player else "player",
+            )
+            if result[0]: st.rerun()
+            else: st.error(result[1])
+        st.caption("Capacity")
+
     if asc:
         st.warning("100+ Earned XP - this character may ascend to the next Tier.")
 
@@ -2550,19 +2593,20 @@ def render_ammo_section(cid, ch, compact=False, gm_mode=False):
                 f"<span class='resource-meta'>{html.escape(meta)} · ×{qty}</span></div>",
                 unsafe_allow_html=True,
             )
-            if cols[1].button("− 1" if gm_mode else "USE 1", key=f"battle_ammo_use_{cid}_{idx}", disabled=craft_id < 1 or qty <= 0):
+            if cols[1].button("− 1", key=f"battle_ammo_use_{cid}_{idx}", disabled=craft_id < 1 or qty <= 0):
                 result = adjust_wargear_quantity(cid, craft_id, -1,
                                                  actor_name=(st.session_state.get("user") or {}).get("username", ""),
                                                  actor_user_id=(st.session_state.get("user") or {}).get("id"),
-                                                 source="Magister Ammo Used" if gm_mode else "Player Ammo Used",
+                                                 source="Magister Ammo -1" if gm_mode else "Player Ammo -1",
                                                  actor_role="gm" if gm_mode else "player")
                 if result[0]: st.rerun()
                 else: st.error(result[1])
-            if gm_mode and cols[2].button("+ 1", key=f"battle_ammo_add_{cid}_{idx}", disabled=craft_id < 1):
+            if cols[2].button("+ 1", key=f"battle_ammo_add_{cid}_{idx}", disabled=craft_id < 1 or ammo_total >= capacity):
                 result = adjust_wargear_quantity(cid, craft_id, 1,
                                                  actor_name=(st.session_state.get("user") or {}).get("username", ""),
                                                  actor_user_id=(st.session_state.get("user") or {}).get("id"),
-                                                 source="Magister Ammo Added", actor_role="gm")
+                                                 source="Magister Ammo +1" if gm_mode else "Player Ammo +1",
+                                                 actor_role="gm" if gm_mode else "player")
                 if result[0]: st.rerun()
                 else: st.error(result[1])
 
@@ -2619,8 +2663,15 @@ def battle_view(cid):
         order = [("Defence", "Defence"), ("Resilience", "Resilience"), ("Soak", "Soak"),
                  ("Determination", "Determination"), ("Resolve", "Resolve"), ("Conviction", "Conviction"),
                  ("Passive Awareness", "Passive Awareness"), ("Influence", "Influence"), ("Speed", "Speed")]
-        cards = "".join(f"<div class='statcard'><div class='l'>{pt}</div><div class='v'>{d[en]}</div></div>"
-                        for en, pt in order)
+        def gear_badge(key):
+            value = int(gear_mods.get(str(key).lower(), 0) or 0)
+            if not value:
+                return ""
+            return f"<span class='gear-mod'>{value:+d}</span>"
+        cards = "".join(
+            f"<div class='statcard'><div class='l'>{pt}</div><div class='v'>{d[en]}{gear_badge(en)}</div></div>"
+            for en, pt in order
+        )
         st.markdown(f"<div class='grid'>{cards}</div>", unsafe_allow_html=True)
 
         st.markdown("<div class='sectionttl'>Skills &nbsp;<small style='opacity:.6;letter-spacing:0'>Total = Skill + Attribute</small></div>", unsafe_allow_html=True)
@@ -2628,8 +2679,13 @@ def battle_view(cid):
         eff_sk = effective_skills(ch); eff_attr = effective_attributes(ch)
         for s in SKILLS:
             r = eff_sk[s]; av = eff_attr[SKILLS[s]]
-            rows += (f"<div class='skrow'><span class='n'>{s}</span><span class='c'>{r}</span>"
-                     f"<span class='c'>+{av}</span><span class='t'>{r+av}</span></div>")
+            skill_mod = int(gear_mods.get(str(s).lower(), 0) or 0)
+            skill_badge = f"<span class='gear-mod'>{skill_mod:+d}</span>" if skill_mod else ""
+            attr_name = SKILLS[s]
+            attr_mod = int(gear_mods.get(str(attr_name).lower(), 0) or 0)
+            attr_badge = f"<span class='gear-mod'>{attr_mod:+d}</span>" if attr_mod else ""
+            rows += (f"<div class='skrow'><span class='n'>{s}</span><span class='c'>{r}{skill_badge}</span>"
+                     f"<span class='c'>+{av}{attr_badge}</span><span class='t'>{r+av}</span></div>")
         st.markdown(rows, unsafe_allow_html=True)
 
     with right:

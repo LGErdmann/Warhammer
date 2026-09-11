@@ -736,7 +736,7 @@ def create_npc(name, species, tier, creation_mode="archetype", rank=1, archetype
     conn.execute("""INSERT INTO characters(user_id,kind,name,chapter,species,archetype,faction,keywords,archetype_choices,creation_mode,tier,starting_tier,rank,earned_xp,other_xp,
                     attributes,skills,talents,powers,wargear,armour,cur_wounds,cur_shock,cur_wrath,notes,
                     comms_on,comms_changed_at)
-                    VALUES(NULL,'npc',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    VALUES(NULL,'npc',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                  (name or "NPC", "", species, archetype, faction, json.dumps([], ensure_ascii=False), json.dumps({}, ensure_ascii=False), creation_mode, tier, tier, rank, 0, 0, json.dumps(attrs),
                   json.dumps(skills), json.dumps([]), json.dumps([]), json.dumps(starting_gear, ensure_ascii=False), 0, 0, 0, 0, "", 1, now_iso()))
     conn.commit(); conn.close()

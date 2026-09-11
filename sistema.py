@@ -4518,57 +4518,59 @@ def gm_view():
                 role_cls = "npc" if is_npc else "player"
                 folder_name = folder_map.get(ch.get("folder_id"), "No folder")
 
-                with st.expander(
-                    f"{idx + 1:02d}  {ch.get('name') or 'Unnamed'}  ·  {role_label}  ·  "
-                    f"W {wounds}/{max_wounds}  ·  S {shock}/{max_shock}  ·  A {ammo}/{max_ammo}  ·  Wr {wrath}/{max_wrath}",
-                    expanded=(idx == 0),
-                ):
-                    head = st.columns([4, 1, 1, 1])
-                    head[0].markdown(
-                        f"<div class='combat-card {role_cls}'><div class='combat-name'>{html.escape(ch.get('name') or 'Unnamed')} "
-                        f"<span class='combat-kind {role_cls}'>{role_label}</span></div>"
-                        f"<div class='combat-meta'>{species_label(ch.get('species'))} · Tier {ch.get('tier', 1)} · "
-                        f"{rank_label(ch.get('rank', 1))} · {html.escape(folder_name)}</div></div>",
-                        unsafe_allow_html=True,
-                    )
-                    if head[1].button("↑", key=f"combat_up_{ch['id']}", disabled=(idx == 0), use_container_width=True):
-                        move_combatant(ch["id"], -1)
-                        st.rerun()
-                    if head[2].button("↓", key=f"combat_down_{ch['id']}", disabled=(idx == len(current) - 1), use_container_width=True):
-                        move_combatant(ch["id"], 1)
-                        st.rerun()
-                    if head[3].button("Remove", key=f"combat_current_remove_{ch['id']}", use_container_width=True):
-                        set_combatant(ch["id"], False)
-                        st.rerun()
+                # Compact combat row stays outside the details expander, matching Characters.
+                row = st.columns([3.5, 1.15, 1.15, 1.15, 1.15, 1.15, 1.15, 0.65, 0.65, 0.9])
+                row[0].markdown(
+                    f"<b class='{role_cls}'>{html.escape(ch.get('name') or 'Unnamed')}</b> · {role_label} · "
+                    f"{species_label(ch.get('species'))} · T{ch.get('tier', 1)} · {rank_label(ch.get('rank', 1))}",
+                    unsafe_allow_html=True,
+                )
 
-                    if is_npc:
-                        st.markdown("**Quick NPC Vitals**")
-                        vc = st.columns(12)
-                        vc[0].markdown("Wounds")
-                        if vc[1].button("−", key=f"combat_wm_{ch['id']}", use_container_width=True):
-                            adjust_vital(ch["id"], "cur_wounds", -1, actor_role="gm", actor_name=st.session_state.user.get("username", "Magister"), source="Combat Quick Panel")
-                            st.rerun()
-                        vc[2].metric("", f"{wounds}/{max_wounds}")
-                        if vc[3].button("+", key=f"combat_wp_{ch['id']}", use_container_width=True):
-                            adjust_vital(ch["id"], "cur_wounds", 1, actor_role="gm", actor_name=st.session_state.user.get("username", "Magister"), source="Combat Quick Panel")
-                            st.rerun()
-                        vc[4].markdown("Shock")
-                        if vc[5].button("−", key=f"combat_sm_{ch['id']}", use_container_width=True):
-                            adjust_vital(ch["id"], "cur_shock", -1, actor_role="gm", actor_name=st.session_state.user.get("username", "Magister"), source="Combat Quick Panel")
-                            st.rerun()
-                        vc[6].metric("", f"{shock}/{max_shock}")
-                        if vc[7].button("+", key=f"combat_sp_{ch['id']}", use_container_width=True):
-                            adjust_vital(ch["id"], "cur_shock", 1, actor_role="gm", actor_name=st.session_state.user.get("username", "Magister"), source="Combat Quick Panel")
-                            st.rerun()
-                        vc[8].markdown("Ammo")
-                        if vc[9].button("−", key=f"combat_am_{ch['id']}", use_container_width=True):
-                            adjust_ammo_pool(ch["id"], -1, actor_role="gm", actor_name=st.session_state.user.get("username", "Magister"), source="Combat Quick Panel")
-                            st.rerun()
-                        vc[10].metric("", f"{ammo}/{max_ammo}")
-                        if vc[11].button("+", key=f"combat_ap_{ch['id']}", use_container_width=True):
-                            adjust_ammo_pool(ch["id"], 1, actor_role="gm", actor_name=st.session_state.user.get("username", "Magister"), source="Combat Quick Panel")
-                            st.rerun()
+                def vital_cell(col, label, value, maximum, minus_cb=None, plus_cb=None, key_prefix=""):
+                    col.markdown(f"<small>{label}</small>", unsafe_allow_html=True)
+                    parts = col.columns([0.8, 1.4, 0.8])
+                    if minus_cb:
+                        parts[0].button("−", key=f"{key_prefix}m", on_click=minus_cb, use_container_width=True)
+                    else:
+                        parts[0].write("")
+                    parts[1].markdown(f"<div style='text-align:center'><b>{value}/{maximum}</b></div>", unsafe_allow_html=True)
+                    if plus_cb:
+                        parts[2].button("+", key=f"{key_prefix}p", on_click=plus_cb, use_container_width=True)
+                    else:
+                        parts[2].write("")
 
+                if is_npc:
+                    vital_cell(row[1], "Wounds", wounds, max_wounds,
+                               lambda cid=ch["id"]: adjust_vital(cid, "cur_wounds", -1, actor_role="gm", actor_name=st.session_state.user.get("username", "Magister"), source="Combat Quick Panel"),
+                               lambda cid=ch["id"]: adjust_vital(cid, "cur_wounds", 1, actor_role="gm", actor_name=st.session_state.user.get("username", "Magister"), source="Combat Quick Panel"),
+                               f"combat_w_{ch['id']}")
+                    vital_cell(row[2], "Shock", shock, max_shock,
+                               lambda cid=ch["id"]: adjust_vital(cid, "cur_shock", -1, actor_role="gm", actor_name=st.session_state.user.get("username", "Magister"), source="Combat Quick Panel"),
+                               lambda cid=ch["id"]: adjust_vital(cid, "cur_shock", 1, actor_role="gm", actor_name=st.session_state.user.get("username", "Magister"), source="Combat Quick Panel"),
+                               f"combat_s_{ch['id']}")
+                    vital_cell(row[3], "Ammo", ammo, max_ammo,
+                               lambda cid=ch["id"]: adjust_ammo_pool(cid, -1, actor_role="gm", actor_name=st.session_state.user.get("username", "Magister"), source="Combat Quick Panel"),
+                               lambda cid=ch["id"]: adjust_ammo_pool(cid, 1, actor_role="gm", actor_name=st.session_state.user.get("username", "Magister"), source="Combat Quick Panel"),
+                               f"combat_a_{ch['id']}")
+                else:
+                    vital_cell(row[1], "Wounds", wounds, max_wounds, key_prefix=f"combat_pw_{ch['id']}")
+                    vital_cell(row[2], "Shock", shock, max_shock, key_prefix=f"combat_ps_{ch['id']}")
+                    vital_cell(row[3], "Ammo", ammo, max_ammo, key_prefix=f"combat_pa_{ch['id']}")
+
+                row[4].markdown(f"<small>Wrath</small><br><b>{wrath}/{max_wrath}</b>", unsafe_allow_html=True)
+                row[5].markdown(f"<small>Folder</small><br>{html.escape(folder_name)}", unsafe_allow_html=True)
+                if row[6].button("↑", key=f"combat_up_{ch['id']}", disabled=(idx == 0), use_container_width=True):
+                    move_combatant(ch["id"], -1)
+                    st.rerun()
+                if row[7].button("↓", key=f"combat_down_{ch['id']}", disabled=(idx == len(current) - 1), use_container_width=True):
+                    move_combatant(ch["id"], 1)
+                    st.rerun()
+                if row[8].button("Remove", key=f"combat_current_remove_{ch['id']}", use_container_width=True):
+                    set_combatant(ch["id"], False)
+                    st.rerun()
+                row[9].write("")
+
+                with st.expander("Details", expanded=False):
                     gear_mods = equipped_wargear_modifiers(ch)
                     d = derived_traits(ch)
                     st.markdown("**Derived Traits**")

@@ -176,8 +176,34 @@ ARCHETYPE_ABILITIES = {'Sister Hospitaller': 'Loyal Compassion', 'Ministorum Pri
 # Core Rulebook 2e starting Wargear by Archetype.
 ARCHETYPE_STARTING_WARGEAR = {'Sister Hospitaller': ['Sororitas Power Armour', "Chirurgeon's Tools", 'Chain Bayonet (wrist mounted)', 'Laspistol', 'Sororitas Vestments', 'Copy of the Rule of the Sororitas'], 'Ministorum Priest': ['Chainsword', 'Laspistol', 'Rosarius', 'Knife', 'Ministorum Robes', 'Missionary Kit'], 'Imperial Guard': ['Flak Armour', 'Lasgun', 'Knife', 'Munitorum Issue Mess Kit', 'Grooming Kit', "Imperial Infantryman's Uplifting Primer", '3 Ration Packs'], 'Inquisitorial Acolyte': ['Flak Armour', 'Symbol of Authority'], 'Inquisitorial Sage': ['Administratum Robes', 'Laspistol', 'Knife', 'Auto Quill', 'Data-Slate', '3 Scrolls of Ancient Records'], 'Ganger': ['Knife', 'Bedroll', 'Canteen', 'Gang Colours', 'Laspistol'], 'Corsair': ['Corsair Armour', 'Shuriken Pistol', 'Lasblaster', 'Spirit Stone', '3 Plasma Grenades', 'Void Suit'], 'Boy': ['Shoota', 'Slugga', 'Choppa', 'Ripped Clothes'], 'Sister of Battle': ['Sororitas Power Armour', 'Chaplet Ecclesiasticus', 'Sororitas Vestments', 'Writing Kit', 'Copy of the Rule of the Sororitas', 'Boltgun'], 'Sanctioned Psyker': ['Laspistol', 'Force Stave', 'Psykana Mercy Blade', 'Munitorum Issue Mess Kit', 'Blanket', 'Grooming Kit', '2 Ration Packs'], 'Skitarius': ['Combi-Tool', 'Galvanic Rifle', 'Skitarii Auto-Cuirass'], 'Death Cult Assassin': ['Two Death Cult Power Blades', 'Bodyglove', 'Knife', 'Laspistol', '3 doses of Stimm'], 'Tempestus Scion': ['Tempestus Carapace', 'Hot-Shot Lasgun', 'Grav-Chute', 'Knife', 'Munitorum Issue Mess Kit', "Imperial Infantryman's Uplifting Primer", 'Slate Monitron', 'Monoscope', '3 Ration Packs'], 'Rogue Trader': ['Imperial Frigate', 'Flak Coat', 'Carapace Armour'], 'Scavvy': ['Laspistol', 'Knife', 'Bedroll', 'Canteen', 'Tattered Clothes'], 'Space Marine Scout': ['Scout Armour', 'Astartes Combat Knife', '3 Frag Grenades', 'Vox Bead', 'Boltgun'], 'Ranger': ['Cameleoline Cloak', 'Aeldari Mesh Armour', 'Ranger Long Rifle', 'Shuriken Pistol', 'Knife', 'Spirit Stone', 'Bedroll', 'Blanket', 'Magnocular Scope'], 'Kommando': ['Shoota', 'Slugga', 'Choppa', '3 Stikkbombs', 'Survival Kit'], 'Tech-Priest': ['Omnissian Axe', 'Laspistol', 'One Mechadendrite', '2 Augmetics', 'Combi-Tool', 'Light Power Armour', 'Omnissian Sigil'], 'Crusader': ['Power Sword', 'Storm Shield', 'Carapace Armour', 'Ministorum Robes'], 'Imperial Commissar': ['Bolt Pistol', 'Chainsword', 'Flak Coat', 'Munitorum Issue Mess Kit', 'Blanket', 'Grooming Kit', 'Uplifting Primer', '3 Ration Packs'], 'Desperado': ['Flak Coat', 'Preysense Goggles', 'Maps of the Heartworlds', 'Combi-Tool', 'Projectile Weapon', 'Uncommon Melee Weapon'], 'Tactical Space Marine': ['Aquila Mk VII Power Armour', 'Boltgun', 'Bolt Pistol', 'Astartes Combat Knife', '3 Frag Grenades', '3 Krak Grenades'], 'Warlock': ['Rune Armour', 'Witchblade', 'Shuriken Pistol', 'Set of Wraithbone Runes', 'Spirit Stone'], 'Nob': ["'Eavy Armour", 'Kustom Slugga', 'Kustom Choppa'], 'Inquisitor': ['Inquisitorial Rosette', 'Boltgun', 'Bolt Pistol', 'Flak Coat'], 'Primaris Intercessor': ['Mark X Tacticus Power Armour', 'Bolt Rifle', 'Heavy Bolt Pistol', 'Astartes Combat Knife', '3 Frag Grenades', '3 Krak Grenades', 'Ballistic Appeasement Autoreliquary']}
 
+ARCHETYPE_GEAR_ALIASES = {
+    "aquila mk vii power armour": "Aquila Mk VII",
+    "mark x tacticus power armour": "Tacticus Mk X",
+    "munitorum issue mess kit": "Munitorum-Issue Mess Kit",
+    "auto quill": "Auto-Quill",
+    "vox-bead": "Vox Bead",
+    "ballistic appeasement autoreliquary": "Ballistic Appeasement Auto-Reliquary",
+}
+
+def _catalog_gear_row(catalog, name):
+    target = str(name or "").strip().lower()
+    alias = ARCHETYPE_GEAR_ALIASES.get(target, name)
+    candidates = [str(alias or "").strip().lower(), target]
+    for candidate in candidates:
+        row = next((r for r in catalog if str(r.get("name", "")).strip().lower() == candidate), None)
+        if row is not None:
+            return row
+    def compact(value):
+        return re.sub(r"[^a-z0-9]+", "", str(value or "").lower())
+    target_compact = compact(alias)
+    if target_compact:
+        row = next((r for r in catalog if compact(r.get("name", "")) == target_compact), None)
+        if row is not None:
+            return row
+    return None
+
 def archetype_starting_wargear(archetype):
-    """Build starting gear from the Craft catalog, preserving stack quantities."""
+    """Build the complete Archetype starting Wargear package."""
     out = []
     try:
         catalog = list_craft_items("wargear")
@@ -185,18 +211,23 @@ def archetype_starting_wargear(archetype):
         catalog = []
     for raw in ARCHETYPE_STARTING_WARGEAR.get(archetype, []):
         qty, base = _gear_quantity_name(raw)
-        row = next((r for r in catalog if str(r.get("name", "")).strip().lower() == base.lower()), None)
-        if row is None:
-            row = next((r for r in catalog if str(r.get("name", "")).strip().lower() == str(raw).strip().lower()), None)
+        row = _catalog_gear_row(catalog, base)
         if row is not None:
-            out = _craft_character_add(out, int(row["id"]), "wargear")
-            entry = next((x for x in out if int(x.get("craft_id", -1) or -1) == int(row["id"])), None)
-            if entry is not None:
+            entry_list = _craft_character_add([], int(row["id"]), "wargear")
+            if entry_list:
+                entry = entry_list[0]
                 entry["quantity"] = qty
-                entry["details"]["archetype_default"] = True
-        else:
-            out.append({"name": base if qty > 1 else raw, "effect": "", "equipped": True, "quantity": qty,
-                        "source": "Wrath & Glory Core Rulebook 2e", "details": {"archetype_default": True}})
+                entry.setdefault("details", {})["archetype_default"] = True
+                out.extend(entry_list)
+                continue
+        out.append({
+            "name": base if qty > 1 else raw,
+            "effect": "",
+            "equipped": True,
+            "quantity": qty,
+            "source": "Wrath & Glory Core Rulebook 2e",
+            "details": {"archetype_default": True},
+        })
     return normalize_wargear(out)
 
 VITAL_FIELDS = {"cur_wounds", "cur_shock", "cur_wrath"}
@@ -2157,9 +2188,17 @@ def default_archetype_for_species(species, tier=None):
         "Aeldari": {1: "Corsair", 2: "Ranger", 3: "Warlock"},
         "Ork": {1: "Boy", 2: "Kommando", 3: "Nob"},
     }
+    species_alias = {
+        "Astra Militarum (Humano)": "Human",
+        "Adepta Sororitas": "Human",
+        "Inquisição": "Human",
+        "Rogue Trader": "Human",
+        "Aeldari (Asuryani)": "Aeldari",
+    }
+    normalized_species = species_alias.get(species, species)
     if tier is not None:
-        return preferred.get(species, {}).get(int(tier), "")
-    return next(iter(preferred.get(species, {}).values()), "")
+        return preferred.get(normalized_species, {}).get(int(tier), "")
+    return next(iter(preferred.get(normalized_species, {}).values()), "")
 
 
 def strip_archetype_package(cid, archetype, species):
@@ -2875,34 +2914,44 @@ def edit_view(cid, gm_mode=False):
     if not gm_mode:
         owned_ids = {int(t.get("craft_id", -1) or -1) for t in normalize_talents(ch.get("talents", []))}
         visible = [r for r in catalog_talents if int(r["id"]) not in owned_ids and craft_keyword_match(current_build, r)]
-        if visible:
-            for r in visible:
-                rid = int(r["id"])
-                status, reason = craft_purchase_status(current_build, r, available_xp)
-                color = craft_status_color(status)
-                name = html.escape(str(r.get("name", "")))
-                cost = int(r.get("cost", 0) or 0)
-                cols = st.columns([5.5, 1.4, 1.6])
-                cols[0].markdown(f"<span style='color:{color};font-weight:700;font-size:1rem'>{name}</span>", unsafe_allow_html=True)
-                cols[1].caption(f"{cost} XP")
-                if cols[2].button("Purchase", key=f"talent_buy_{cid}_{rid}", disabled=status != "green", use_container_width=True):
-                    result = assign_craft_to_character(cid, rid, "talent", actor_name=(st.session_state.get("user") or {}).get("username", ""), actor_user_id=(st.session_state.get("user") or {}).get("id"), source="Talent Purchase")
-                    if result[0]: st.rerun()
-                    st.error(result[1])
-                with st.expander("Details", expanded=False):
-                    st.caption(str(r.get("effect", "")))
+        with st.expander(f"Available Talents ({len(visible)})", expanded=False):
+            talent_query = st.text_input("Search Talents", key=f"talent_search_{cid}", placeholder="Type a Talent name...")
+            if talent_query.strip():
+                q = talent_query.strip().lower()
+                visible = [r for r in visible if q in str(r.get("name", "")).lower()]
+            st.caption(f"{len(visible)} Talent(s) shown")
+            if visible:
+                for r in visible:
+                    rid = int(r["id"])
+                    status, reason = craft_purchase_status(current_build, r, available_xp)
+                    color = craft_status_color(status)
+                    name = html.escape(str(r.get("name", "")))
+                    cost = int(r.get("cost", 0) or 0)
+                    cols = st.columns([5.5, 1.4, 1.6])
+                    cols[0].markdown(f"<span style='color:{color};font-weight:700;font-size:1rem'>{name}</span>", unsafe_allow_html=True)
+                    cols[1].caption(f"{cost} XP")
+                    if cols[2].button("Purchase", key=f"talent_buy_{cid}_{rid}", disabled=status != "green", use_container_width=True):
+                        result = assign_craft_to_character(cid, rid, "talent", actor_name=(st.session_state.get("user") or {}).get("username", ""), actor_user_id=(st.session_state.get("user") or {}).get("id"), source="Talent Purchase")
+                        if result[0]: st.rerun()
+                        st.error(result[1])
+                    if r.get("effect"):
+                        st.caption(str(r.get("effect", "")))
                     if status == "orange": st.warning(craft_status_text(status, reason))
                     elif status == "red": st.error(craft_status_text(status, reason))
                     else: st.success(craft_status_text(status, reason))
-        else: st.info("No Talents match this character's Keywords.")
+            else:
+                st.info("No Talents match the search.")
     else:
         if catalog_talents:
-            labels = {int(r["id"]): craft_item_label(r) for r in catalog_talents}
-            gm_tid = st.selectbox("Assign Talent", [None] + [int(r["id"]) for r in catalog_talents], format_func=lambda x: "Select Talent..." if x is None else labels[x], key=f"gm_talent_{cid}")
-            if gm_tid is not None and st.button("Assign Talent", key=f"gm_talent_add_{cid}", use_container_width=True):
-                result = assign_craft_to_character(cid, gm_tid, "talent", source="Magister Talent Assignment")
-                if result[0]: st.rerun()
-                st.error(result[1])
+            with st.expander(f"Assign Talent ({len(catalog_talents)})", expanded=False):
+                talent_query = st.text_input("Search Talents", key=f"gm_talent_search_{cid}", placeholder="Type a Talent name...")
+                filtered_talents = [r for r in catalog_talents if talent_query.strip().lower() in str(r.get("name", "")).lower()] if talent_query.strip() else catalog_talents
+                labels = {int(r["id"]): craft_item_label(r) for r in filtered_talents}
+                gm_tid = st.selectbox("Talent", [None] + [int(r["id"]) for r in filtered_talents], format_func=lambda x: "Select Talent..." if x is None else labels[x], key=f"gm_talent_{cid}")
+                if gm_tid is not None and st.button("Assign Talent", key=f"gm_talent_add_{cid}", use_container_width=True):
+                    result = assign_craft_to_character(cid, gm_tid, "talent", source="Magister Talent Assignment")
+                    if result[0]: st.rerun()
+                    st.error(result[1])
 
     owned_talents = normalize_talents(ch.get("talents", []))
     if owned_talents:
@@ -2920,35 +2969,45 @@ def edit_view(cid, gm_mode=False):
         catalog_powers = list_craft_items("power")
         owned_power_ids = {int(x.get("craft_id", -1) or -1) for x in owned_powers}
         visible_powers = [r for r in catalog_powers if int(r["id"]) not in owned_power_ids and craft_keyword_match(current_build, r)]
-        if visible_powers:
-            for r in visible_powers:
-                rid = int(r["id"])
-                status, reason = craft_purchase_status(current_build, r, available_xp)
-                color = craft_status_color(status)
-                name = html.escape(str(r.get("name", "")))
-                cost = int(r.get("cost", 0) or 0)
-                cols = st.columns([5.5, 1.4, 1.6])
-                cols[0].markdown(f"<span style='color:{color};font-weight:700;font-size:1rem'>{name}</span>", unsafe_allow_html=True)
-                cols[1].caption(f"{cost} XP")
-                if cols[2].button("Purchase", key=f"power_buy_{cid}_{rid}", disabled=status != "green", use_container_width=True):
-                    result = assign_craft_to_character(cid, rid, "power", actor_name=(st.session_state.get("user") or {}).get("username", ""), actor_user_id=(st.session_state.get("user") or {}).get("id"), source="Psychic Power Purchase")
-                    if result[0]: st.rerun()
-                    st.error(result[1])
-                with st.expander("Details", expanded=False):
-                    st.caption(str(r.get("effect", "")))
+        with st.expander(f"Available Psychic Powers ({len(visible_powers)})", expanded=False):
+            power_query = st.text_input("Search Psychic Powers", key=f"power_search_{cid}", placeholder="Type a Psychic Power name...")
+            if power_query.strip():
+                q = power_query.strip().lower()
+                visible_powers = [r for r in visible_powers if q in str(r.get("name", "")).lower()]
+            st.caption(f"{len(visible_powers)} Psychic Power(s) shown")
+            if visible_powers:
+                for r in visible_powers:
+                    rid = int(r["id"])
+                    status, reason = craft_purchase_status(current_build, r, available_xp)
+                    color = craft_status_color(status)
+                    name = html.escape(str(r.get("name", "")))
+                    cost = int(r.get("cost", 0) or 0)
+                    cols = st.columns([5.5, 1.4, 1.6])
+                    cols[0].markdown(f"<span style='color:{color};font-weight:700;font-size:1rem'>{name}</span>", unsafe_allow_html=True)
+                    cols[1].caption(f"{cost} XP")
+                    if cols[2].button("Purchase", key=f"power_buy_{cid}_{rid}", disabled=status != "green", use_container_width=True):
+                        result = assign_craft_to_character(cid, rid, "power", actor_name=(st.session_state.get("user") or {}).get("username", ""), actor_user_id=(st.session_state.get("user") or {}).get("id"), source="Psychic Power Purchase")
+                        if result[0]: st.rerun()
+                        st.error(result[1])
+                    if r.get("effect"):
+                        st.caption(str(r.get("effect", "")))
                     if status == "orange": st.warning(craft_status_text(status, reason))
                     elif status == "red": st.error(craft_status_text(status, reason))
                     else: st.success(craft_status_text(status, reason))
-        else: st.info("No Psychic Powers match this character's Keywords.")
-    if gm_mode:
+            else:
+                st.info("No Psychic Powers match the search.")
+    else:
         catalog_powers = list_craft_items("power")
         if catalog_powers:
-            labels = {int(r["id"]): craft_item_label(r) for r in catalog_powers}
-            pid = st.selectbox("Psychic Power", [None] + [int(r["id"]) for r in catalog_powers], format_func=lambda x: "Select Psychic Power..." if x is None else labels[x], key=f"gm_power_{cid}")
-            if pid is not None and st.button("Assign Psychic Power", key=f"gm_power_add_{cid}", use_container_width=True):
-                result = assign_craft_to_character(cid, pid, "power", source="Magister Psychic Power Assignment")
-                if result[0]: st.rerun()
-                st.error(result[1])
+            with st.expander(f"Assign Psychic Power ({len(catalog_powers)})", expanded=False):
+                power_query = st.text_input("Search Psychic Powers", key=f"gm_power_search_{cid}", placeholder="Type a Psychic Power name...")
+                filtered_powers = [r for r in catalog_powers if power_query.strip().lower() in str(r.get("name", "")).lower()] if power_query.strip() else catalog_powers
+                labels = {int(r["id"]): craft_item_label(r) for r in filtered_powers}
+                pid = st.selectbox("Psychic Power", [None] + [int(r["id"]) for r in filtered_powers], format_func=lambda x: "Select Psychic Power..." if x is None else labels[x], key=f"gm_power_{cid}")
+                if pid is not None and st.button("Assign Psychic Power", key=f"gm_power_add_{cid}", use_container_width=True):
+                    result = assign_craft_to_character(cid, pid, "power", source="Magister Psychic Power Assignment")
+                    if result[0]: st.rerun()
+                    st.error(result[1])
     if owned_powers:
         for pwr in owned_powers:
             pc = st.columns([2.2, 5.2, 1])
@@ -2972,17 +3031,20 @@ def edit_view(cid, gm_mode=False):
         _ammo_stacks_gm, _ammo_total_gm = ammo_inventory(ch)
         st.markdown(f"<div class='wg'><b>Ammo Capacity</b> <span style='float:right'>{ammo_capacity(ch)} total Ammo</span><div style='opacity:.65;font-size:.76rem'>The Magister controls the maximum Ammo pool, not the quantity of each Ammo type.</div></div>", unsafe_allow_html=True)
         if catalog_wargear:
-            labels = {int(r["id"]): craft_item_label(r) for r in catalog_wargear}
-            gid = st.selectbox("Wargear", [None] + [int(r["id"]) for r in catalog_wargear],
-                               format_func=lambda x: "Select Wargear..." if x is None else labels[x], key=f"gm_gear_{cid}")
-            if gid is not None and st.button("Assign Wargear", key=f"gm_gear_add_{cid}", use_container_width=True):
-                result = assign_wargear_to_character(
-                    cid, gid,
-                    actor_name=(st.session_state.get("user") or {}).get("username", ""),
-                    actor_user_id=(st.session_state.get("user") or {}).get("id"),
-                )
-                if result[0]: st.rerun()
-                st.error(result[1])
+            with st.expander(f"Assign Wargear ({len(catalog_wargear)})", expanded=False):
+                gear_query = st.text_input("Search Wargear", key=f"gm_gear_search_{cid}", placeholder="Type a Wargear name...")
+                filtered_wargear = [r for r in catalog_wargear if gear_query.strip().lower() in str(r.get("name", "")).lower()] if gear_query.strip() else catalog_wargear
+                labels = {int(r["id"]): craft_item_label(r) for r in filtered_wargear}
+                gid = st.selectbox("Wargear", [None] + [int(r["id"]) for r in filtered_wargear],
+                                   format_func=lambda x: "Select Wargear..." if x is None else labels[x], key=f"gm_gear_{cid}")
+                if gid is not None and st.button("Assign Wargear", key=f"gm_gear_add_{cid}", use_container_width=True):
+                    result = assign_wargear_to_character(
+                        cid, gid,
+                        actor_name=(st.session_state.get("user") or {}).get("username", ""),
+                        actor_user_id=(st.session_state.get("user") or {}).get("id"),
+                    )
+                    if result[0]: st.rerun()
+                    st.error(result[1])
     else:
         st.caption("The Magister may assign Wargear at any time. During Advanced Character Creation, you may also select Wargear within the Core Rulebook Tier limits.")
         if mode == "advanced" and catalog_wargear:

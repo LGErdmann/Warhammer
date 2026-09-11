@@ -2669,45 +2669,53 @@ def cb_species_change(cid):
 # ============================================================
 def _vital_stat_block(col, label, value, maximum, cid=None, field=None, editable=False,
                        actor_role="gm", actor_user_id=None, actor_name="", key_prefix=""):
-    """Render one Wounds/Shock/Wrath-style stat using the Battle Sheet's metric + −/+ pattern.
+    """Render one Wounds/Shock/Wrath-style stat using the Battle Sheet's compact metric + −/+ pattern.
 
-    This is the single source of the vitals widget style so every page (the
-    Player/GM Battle Sheet, the Combat panel, etc.) renders it identically.
+    The − and + controls stack vertically right beside the value, instead of
+    spreading across separate columns, so this is the single source of the
+    vitals widget style and every page (the Player/GM Battle Sheet, the
+    Combat panel, the Ruin counter, etc.) stays compact and identical.
     """
     with col:
-        row = st.columns([4, 1, 1])
-        row[0].metric(label, f"{value} / {maximum}")
         if editable and cid is not None and field is not None:
-            row[1].button("−", key=f"{key_prefix}minus", on_click=adjust_vital,
-                          args=(cid, field, -1, actor_role, actor_user_id, actor_name))
-            row[2].button("+", key=f"{key_prefix}plus", on_click=adjust_vital,
-                          args=(cid, field, +1, actor_role, actor_user_id, actor_name))
+            row = st.columns([5, 1], gap="small")
+            row[0].metric(label, f"{value} / {maximum}")
+            with row[1]:
+                st.button("+", key=f"{key_prefix}plus", on_click=adjust_vital,
+                          args=(cid, field, +1, actor_role, actor_user_id, actor_name),
+                          use_container_width=True)
+                st.button("−", key=f"{key_prefix}minus", on_click=adjust_vital,
+                          args=(cid, field, -1, actor_role, actor_user_id, actor_name),
+                          use_container_width=True)
+        else:
+            st.metric(label, f"{value} / {maximum}")
 
 
 def _ammo_stat_block(col, cid, ch, editable=False, actor_role="gm", actor_user_id=None,
                       actor_name="", key_prefix="", source_prefix="Ammo"):
-    """Render the Ammo Pool using the Battle Sheet's compact metric + −/+ pattern."""
+    """Render the Ammo Pool using the same compact metric + stacked −/+ pattern."""
     ammo_total = current_ammo(ch)
     ammo_max = ammo_capacity(ch)
     with col:
-        st.markdown("<div class='vital-label'>AMMO</div>", unsafe_allow_html=True)
-        acols = st.columns([1, 3, 1])
-        if editable and acols[0].button("−", key=f"{key_prefix}minus", disabled=ammo_total <= 0):
-            result = adjust_ammo_pool(cid, -1, actor_role=actor_role, actor_user_id=actor_user_id,
-                                      actor_name=actor_name, source=f"{source_prefix} -1")
-            if result[0]: st.rerun()
-            else: st.error(result[1])
-        acols[1].markdown(
-            f"<div class='ammo-vital-value'><b>{ammo_total}</b> / {ammo_max}</div>",
-            unsafe_allow_html=True,
-        )
-        if editable and acols[2].button("+", key=f"{key_prefix}plus", disabled=ammo_total >= ammo_max):
-            result = adjust_ammo_pool(cid, 1, actor_role=actor_role, actor_user_id=actor_user_id,
-                                      actor_name=actor_name, source=f"{source_prefix} +1")
-            if result[0]: st.rerun()
-            else: st.error(result[1])
         if editable:
-            st.caption("Capacity")
+            acols = st.columns([5, 1], gap="small")
+            with acols[0]:
+                st.markdown("<div class='vital-label'>AMMO</div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='ammo-vital-value'><b>{ammo_total}</b> / {ammo_max}</div>", unsafe_allow_html=True)
+            with acols[1]:
+                if st.button("+", key=f"{key_prefix}plus", disabled=ammo_total >= ammo_max, use_container_width=True):
+                    result = adjust_ammo_pool(cid, 1, actor_role=actor_role, actor_user_id=actor_user_id,
+                                              actor_name=actor_name, source=f"{source_prefix} +1")
+                    if result[0]: st.rerun()
+                    else: st.error(result[1])
+                if st.button("−", key=f"{key_prefix}minus", disabled=ammo_total <= 0, use_container_width=True):
+                    result = adjust_ammo_pool(cid, -1, actor_role=actor_role, actor_user_id=actor_user_id,
+                                              actor_name=actor_name, source=f"{source_prefix} -1")
+                    if result[0]: st.rerun()
+                    else: st.error(result[1])
+        else:
+            st.markdown("<div class='vital-label'>AMMO</div>", unsafe_allow_html=True)
+            st.markdown(f"<div class='ammo-vital-value'><b>{ammo_total}</b> / {ammo_max}</div>", unsafe_allow_html=True)
 
 
 def live_vitals(cid):
@@ -4534,7 +4542,7 @@ def gm_view():
 
                 with st.container(border=True):
                     # Name + expandable details popover, matching the Characters page.
-                    head = st.columns([3.6, 0.7, 0.7, 1])
+                    head = st.columns([4.2, 0.6, 1], gap="small")
                     with head[0]:
                         with st.popover(ch.get("name") or "Unnamed", use_container_width=True, key=f"combat_pop_{ch['id']}"):
                             st.markdown(f"**{species_label(ch.get('species', ''))}** · T{ch.get('tier', 1)} · {rank_label(rank)}")
@@ -4550,18 +4558,19 @@ def gm_view():
                             ]
                             st.markdown("**Derived Traits**  " + " · ".join(f"{lbl} {int(d.get(key, 0) or 0)}" for key, lbl in derived_order))
                         st.caption(f"{role_label} · {species_label(ch.get('species'))} · T{ch.get('tier', 1)} · {rank_label(rank)} · {folder_name}")
-                    if head[1].button("↑", key=f"combat_up_{ch['id']}", disabled=(idx == 0), use_container_width=True):
-                        move_combatant(ch["id"], -1)
-                        st.rerun()
-                    if head[2].button("↓", key=f"combat_down_{ch['id']}", disabled=(idx == len(current) - 1), use_container_width=True):
-                        move_combatant(ch["id"], 1)
-                        st.rerun()
-                    if head[3].button("Remove", key=f"combat_current_remove_{ch['id']}", use_container_width=True):
+                    with head[1]:
+                        if st.button("↑", key=f"combat_up_{ch['id']}", disabled=(idx == 0), use_container_width=True):
+                            move_combatant(ch["id"], -1)
+                            st.rerun()
+                        if st.button("↓", key=f"combat_down_{ch['id']}", disabled=(idx == len(current) - 1), use_container_width=True):
+                            move_combatant(ch["id"], 1)
+                            st.rerun()
+                    if head[2].button("Remove", key=f"combat_current_remove_{ch['id']}", use_container_width=True):
                         set_combatant(ch["id"], False)
                         st.rerun()
 
-                    # Wounds/Shock/Ammo/Wrath, in the same metric + −/+ pattern as the Battle Sheet.
-                    vcols = st.columns(4)
+                    # Wounds/Shock/Ammo/Wrath, in the same compact metric + stacked −/+ pattern as the Battle Sheet.
+                    vcols = st.columns(4, gap="small")
                     _vital_stat_block(vcols[0], "Wounds", max(0, int(ch.get("cur_wounds", 0) or 0)), int(d.get("Max Wounds", 0) or 0),
                                       cid=ch["id"], field="cur_wounds", editable=is_npc, actor_role="gm",
                                       actor_user_id=user.get("id"), actor_name=user.get("username", "Magister"),
@@ -4612,11 +4621,12 @@ def gm_view():
         st.caption(f"Standard character XP: {starting_xp(camp['tier'])} (Tier {camp['tier']} × 100). Advanced Character Creation adds Tier ×10 bonus XP.")
         st.divider()
         st.markdown("#### Ruin")
-        # Same metric + −/+ pattern as the Battle Sheet vitals (Wounds/Shock/Wrath/Ammo).
-        rc = st.columns([4, 1, 1])
+        # Same compact metric + stacked −/+ pattern as the Battle Sheet vitals.
+        rc = st.columns([5, 1], gap="small")
         rc[0].metric("Ruin", camp["ruin"])
-        rc[1].button("−", key="ruinminus", on_click=adjust_ruin, args=(-1,))
-        rc[2].button("+", key="ruinplus", on_click=adjust_ruin, args=(+1,))
+        with rc[1]:
+            st.button("+", key="ruinplus", on_click=adjust_ruin, args=(+1,), use_container_width=True)
+            st.button("−", key="ruinminus", on_click=adjust_ruin, args=(-1,), use_container_width=True)
         st.divider()
         st.markdown("#### Session Log")
         with st.form("voxlog"):

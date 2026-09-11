@@ -1194,7 +1194,28 @@ def assign_craft_to_character(cid, craft_id, kind, actor_name="", actor_user_id=
                   normalize_powers(ch.get("powers", [])) if kind == "power" else \
                   normalize_wargear(ch.get("wargear", []))
         old_value = list(current)
-        updated = _craft_character_add(current, int(craft_id), kind)
+
+        # _craft_character_add expects catalog rows, not character-owned entries.
+        # Build the new catalog entry first, then merge it into the character.
+        catalog_entry = _craft_character_add([], int(craft_id), kind)
+        if not catalog_entry:
+            return False, f"Could not build the {kind.title()} catalog entry."
+        entry = catalog_entry[0]
+        updated = list(current)
+        if kind in ("talent", "power"):
+            if any(int(x.get("craft_id", -1) or -1) == int(craft_id) for x in updated):
+                return True, f"{kind.title()} already assigned."
+            updated.append(entry)
+        else:
+            existing = next((x for x in updated if int(x.get("craft_id", -1) or -1) == int(craft_id)), None)
+            stackable = bool((entry.get("details", {}) or {}).get("stackable", False))
+            if existing is not None and stackable:
+                existing["quantity"] = int(existing.get("quantity", 1) or 1) + int(entry.get("quantity", 1) or 1)
+            elif existing is not None:
+                return True, "Wargear already assigned."
+            else:
+                updated.append(entry)
+            updated = normalize_wargear(updated)
 
         if updated == current:
             return True, f"{kind.title()} already assigned."
@@ -2925,6 +2946,13 @@ def edit_view(cid, gm_mode=False):
                     st.error(result[1])
 
     wdf = normalize_wargear(ch.get("wargear", []))
+    # Archetype Creation includes the Archetype's starting Wargear package.
+    # If an older/incomplete character has no Wargear yet, populate it here so
+    # the normal auto-save immediately persists the complete package.
+    if mode == "archetype" and st.session_state.get(ark, "") and not wdf:
+        starting_wdf = archetype_starting_wargear(st.session_state.get(ark, ""))
+        if starting_wdf:
+            wdf = normalize_wargear(starting_wdf + starting_ammo_for_wargear(starting_wdf))
     if wdf:
         catalog_all = list_craft_items("wargear", active_only=False)
         for idx, w in enumerate(wdf):
@@ -2981,7 +3009,7 @@ def edit_view(cid, gm_mode=False):
         st.caption("No wargear assigned.")
 
     talents = normalize_talents(ch.get("talents", []))
-    wargear = normalize_wargear(ch.get("wargear", []))
+    wargear = normalize_wargear(wdf)
     wc = st.columns(2)
     wc[0].markdown("**Summary**")
     wc[0].caption(f"{len(wargear)} wargear item(s) · {len(talents)} talent(s)")

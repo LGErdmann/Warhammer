@@ -2995,8 +2995,13 @@ def battle_view(cid):
                  ("Passive Awareness", "Passive Awareness"), ("Influence", "Influence"), ("Speed", "Speed")]
         def gear_value(key):
             key_l = str(key).lower()
+            # Keep in sync with derived_traits(): the Shield trait's Armour
+            # Rating (shield_armour) adds to both Defence and Resilience.
+            shield = int(gear_mods.get("shield_armour", 0) or 0)
             if key_l == "resilience":
-                return int(gear_mods.get("armour", 0) or 0) + int(gear_mods.get("resilience", 0) or 0)
+                return int(gear_mods.get("armour", 0) or 0) + int(gear_mods.get("resilience", 0) or 0) + shield
+            if key_l == "defence":
+                return int(gear_mods.get("defence", 0) or 0) + shield
             return int(gear_mods.get(key_l, 0) or 0)
 
         def gear_badge(key):

@@ -2556,6 +2556,49 @@ def inject_theme():
     .sheet-banner{ background:linear-gradient(110deg,#21170c,#120c07); border:1px solid #5a4421; border-left:4px solid var(--gold); padding:7px 10px; margin:8px 0 9px; font-family:'Cinzel',serif; color:var(--gold2); letter-spacing:.08em; text-transform:uppercase; }
     .foot{ text-align:center; color:var(--gold); opacity:.5; font-family:'Cinzel',serif; letter-spacing:.3em;
         font-size:.75rem; margin-top:20px; }
+
+    /* ============================================================
+       RESPONSIVE / MOBILE
+       Streamlit has no reliable server-side "is this a phone" signal,
+       so recognition happens the standard web way: the browser itself
+       matches this media query against the viewport. This is what
+       Players opening their Battle Sheet or Character Sheet on a phone
+       actually hit, since a GM's desk usually has a real screen.
+       ============================================================ */
+    @media (max-width: 768px){
+        .block-container{ padding-left:.6rem !important; padding-right:.6rem !important; padding-top:1rem !important; }
+        /* Every multi-column row stacks into a single column instead of
+           squeezing five slivers into a 360px screen. */
+        div[data-testid="stHorizontalBlock"]{ flex-direction:column !important; gap:.35rem !important; }
+        div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]{
+            width:100% !important; min-width:100% !important; flex:1 1 100% !important;
+        }
+        /* Bigger tap targets for fingers instead of a mouse cursor. */
+        .stButton>button, .stDownloadButton>button, .stFormSubmitButton>button{
+            min-height:44px; width:100%; font-size:.82rem; padding:8px 10px;
+        }
+        .stNumberInput input, .stTextInput input, .stSelectbox, .stTextArea textarea{ font-size:1rem !important; }
+        /* Titles that were sized for a wide desktop banner. */
+        .banner{ font-size:1.05rem; letter-spacing:.06em; padding:10px 6px 4px; }
+        .banner .sub{ font-size:.6rem; letter-spacing:.14em; }
+        .hero{ padding:10px 12px; }
+        .hero .nm{ font-size:1.25rem; }
+        .hero .meta{ font-size:.72rem; }
+        .sectionttl{ font-size:.82rem; margin:10px 0 6px; }
+        .grid{ gap:5px; }
+        .statcard{ flex:1 1 42%; min-width:0; padding:5px 8px; }
+        .statcard .v{ font-size:1.1rem; }
+        /* The Skills table's 4-column grid: keep it on one line per Skill,
+           just narrower, rather than stacking (it would stop reading as a
+           table at all). */
+        .skhead,.skrow{ grid-template-columns:1fr 32px 46px 40px; gap:2px; padding:3px 4px; font-size:.8rem; }
+        /* Tabs: scroll sideways instead of shrinking every label to nothing. */
+        .stTabs [data-baseweb="tab-list"]{ overflow-x:auto; flex-wrap:nowrap; }
+        .stTabs [data-baseweb="tab"]{ font-size:.66rem; padding:6px 8px; white-space:nowrap; }
+        /* Popovers (character/combatant details) should not overflow off
+           the side of a narrow screen. */
+        div[data-testid="stPopoverBody"]{ max-width:92vw !important; }
+    }
     </style>
     """, unsafe_allow_html=True)
 

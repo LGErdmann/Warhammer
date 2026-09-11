@@ -230,7 +230,7 @@ def archetype_starting_wargear(archetype):
         })
     return normalize_wargear(out)
 
-VITAL_FIELDS = {"cur_wounds", "cur_shock", "cur_wrath"}
+VITAL_FIELDS = {"cur_wounds", "cur_shock", "cur_wrath", "cur_corruption", "cur_wealth"}
 
 # Official First Founding Chapters from the Core Rulebook (2nd edition).
 # Homebrew material is intentionally excluded from this catalog.
@@ -291,6 +291,32 @@ RANKS = {
     3: {"name": "Champion", "min_xp": 80, "bonus": 3},
 }
 MAX_TIER = 4
+
+# Core Rulebook 2e, Corruption Levels table (p.285): the Level and its
+# Corruption Test DN Modifier are derived from accumulated Corruption
+# Points, which are tracked on the character like Wounds/Shock/Wrath.
+# Level 5 (26+) has no DN Modifier because the character instead becomes a
+# Chaos Spawn, lost to the GM's control.
+CORRUPTION_LEVELS = [
+    (0, "Pure", 0),
+    (6, "Tarnished", 1),
+    (12, "Contaminated", 2),
+    (16, "Tainted", 3),
+    (21, "Defiled", 4),
+    (26, "Chaos Spawn", None),
+]
+
+
+def corruption_level_info(points):
+    """Return the Corruption Level, its name, Test DN Modifier, and the
+    points needed to reach the next Level, for a given Corruption Points total."""
+    points = max(0, int(points or 0))
+    level, name, dn_modifier, next_threshold = 0, "Pure", 0, CORRUPTION_LEVELS[1][0]
+    for i, (start, lvl_name, mod) in enumerate(CORRUPTION_LEVELS):
+        if points >= start:
+            level, name, dn_modifier = i, lvl_name, mod
+            next_threshold = CORRUPTION_LEVELS[i + 1][0] if i + 1 < len(CORRUPTION_LEVELS) else None
+    return {"level": level, "name": name, "dn_modifier": dn_modifier, "next_threshold": next_threshold, "points": points}
 
 # ============================================================
 #  CHARACTER CREATION
@@ -660,6 +686,7 @@ def init_db():
         tier INTEGER DEFAULT 2, starting_tier INTEGER DEFAULT 2, rank INTEGER DEFAULT 1, earned_xp INTEGER DEFAULT 0, other_xp INTEGER DEFAULT 0, faction TEXT DEFAULT '', keywords TEXT DEFAULT '[]', archetype_choices TEXT DEFAULT '{}',
         attributes TEXT, skills TEXT, talents TEXT, powers TEXT, wargear TEXT, armour INTEGER DEFAULT 0,
         cur_wounds INTEGER DEFAULT 0, cur_shock INTEGER DEFAULT 0, cur_wrath INTEGER DEFAULT 0, cur_ammo INTEGER DEFAULT 3,
+        cur_corruption INTEGER DEFAULT 0, cur_wealth INTEGER DEFAULT 0,
         notes TEXT, folder_id INTEGER, portrait BLOB, comms_on INTEGER DEFAULT 1, comms_changed_at TEXT, updated_at TEXT, revision INTEGER DEFAULT 0)""")
     c.execute("""CREATE TABLE IF NOT EXISTS campaign(id INTEGER PRIMARY KEY CHECK (id=1),
         name TEXT, tier INTEGER DEFAULT 2, ruin INTEGER DEFAULT 0, session_no INTEGER DEFAULT 1)""")
@@ -702,14 +729,23 @@ def init_db():
     # migration: ensure columns exist in databases created by older versions
     _ensure_columns(conn, "campaign", {"name": "TEXT", "tier": "INTEGER DEFAULT 2",
                                        "ruin": "INTEGER DEFAULT 0", "session_no": "INTEGER DEFAULT 1"})
+    had_wealth_column = "cur_wealth" in {r[1] for r in conn.execute("PRAGMA table_info(characters)").fetchall()}
     _ensure_columns(conn, "characters", {
         "user_id": "INTEGER", "kind": "TEXT DEFAULT 'player'", "name": "TEXT", "chapter": "TEXT",
         "species": "TEXT", "archetype": "TEXT", "creation_mode": "TEXT DEFAULT 'archetype'", "archetype_history": "TEXT DEFAULT '[]'", "tier": "INTEGER DEFAULT 2", "starting_tier": "INTEGER DEFAULT 2", "rank": "INTEGER DEFAULT 1", "earned_xp": "INTEGER DEFAULT 0",
         "other_xp": "INTEGER DEFAULT 0", "faction": "TEXT DEFAULT ''", "keywords": "TEXT DEFAULT '[]'", "archetype_choices": "TEXT DEFAULT '{}'", "attributes": "TEXT", "skills": "TEXT", "talents": "TEXT", "powers": "TEXT",
         "wargear": "TEXT", "armour": "INTEGER DEFAULT 0", "cur_wounds": "INTEGER DEFAULT 0",
-        "cur_shock": "INTEGER DEFAULT 0", "cur_wrath": "INTEGER DEFAULT 0", "cur_ammo": "INTEGER DEFAULT 3", "notes": "TEXT",
+        "cur_shock": "INTEGER DEFAULT 0", "cur_wrath": "INTEGER DEFAULT 0", "cur_ammo": "INTEGER DEFAULT 3",
+        "cur_corruption": "INTEGER DEFAULT 0", "cur_wealth": "INTEGER DEFAULT 0", "notes": "TEXT",
         "folder_id": "INTEGER", "portrait": "BLOB", "comms_on": "INTEGER DEFAULT 1",
         "comms_changed_at": "TEXT", "updated_at": "TEXT", "revision": "INTEGER DEFAULT 0"})
+    if not had_wealth_column:
+        # Core Rulebook 2e, p.38: "Your starting Wealth is equal to your
+        # Tier." Existing characters migrating to this column all land on
+        # the column's SQL default of 0, so backfill them once to the RAW
+        # starting value instead of silently leaving everyone at 0 Wealth.
+        conn.execute("UPDATE characters SET cur_wealth = tier")
+        conn.commit()
     _ensure_columns(conn, "folders", {"name": "TEXT"})
     # Existing characters keep their current Tier as their recorded starting Tier.
     conn.execute("UPDATE characters SET starting_tier = COALESCE(starting_tier, tier, 2) WHERE starting_tier IS NULL")
@@ -824,11 +860,13 @@ def create_player(username, pw, creation_mode="archetype", tier=2, rank=1, speci
             skills[skill] = max(int(skills.get(skill, 0)), int(value))
 
         c.execute("""INSERT INTO characters(user_id,kind,name,chapter,species,archetype,faction,keywords,archetype_choices,creation_mode,tier,starting_tier,rank,earned_xp,other_xp,
-                     attributes,skills,talents,powers,wargear,armour,cur_wounds,cur_shock,cur_wrath,notes,
+                     attributes,skills,talents,powers,wargear,armour,cur_wounds,cur_shock,cur_wrath,cur_corruption,cur_wealth,notes,
                      comms_on,comms_changed_at)
-                     VALUES(?, 'player', ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                     VALUES(?, 'player', ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                   (uid, username, "", species, archetype, ARCHETYPES.get(archetype, {}).get("faction", "") if creation_mode == "archetype" else "", json.dumps([], ensure_ascii=False), json.dumps({}, ensure_ascii=False), creation_mode, tier, tier, rank, 0, 0, json.dumps(attrs),
-                   json.dumps(skills), json.dumps([]), json.dumps([]), json.dumps(normalize_wargear((archetype_starting_wargear(archetype) if creation_mode == "archetype" else []) + starting_ammo_for_wargear(archetype_starting_wargear(archetype) if creation_mode == "archetype" else [])), ensure_ascii=False), 0, 0, 0, 0, "", 1, now_iso()))
+                   json.dumps(skills), json.dumps([]), json.dumps([]), json.dumps(normalize_wargear((archetype_starting_wargear(archetype) if creation_mode == "archetype" else []) + starting_ammo_for_wargear(archetype_starting_wargear(archetype) if creation_mode == "archetype" else [])), ensure_ascii=False), 0, 0, 0, 0,
+                   # Core Rulebook 2e, p.38: Corruption starts at 0, Wealth starts equal to Tier.
+                   0, tier, "", 1, now_iso()))
         conn.commit(); return True, "Player recruited."
     except sqlite3.IntegrityError:
         return False, "That designation already exists."
@@ -870,11 +908,13 @@ def create_npc(name, species, tier, creation_mode="archetype", rank=1, archetype
     starting_gear = normalize_wargear(starting_gear + starting_ammo_for_wargear(starting_gear))
     faction = ARCHETYPES.get(archetype, {}).get("faction", "") if archetype else ""
     conn.execute("""INSERT INTO characters(user_id,kind,name,chapter,species,archetype,faction,keywords,archetype_choices,creation_mode,tier,starting_tier,rank,earned_xp,other_xp,
-                    attributes,skills,talents,powers,wargear,armour,cur_wounds,cur_shock,cur_wrath,notes,
+                    attributes,skills,talents,powers,wargear,armour,cur_wounds,cur_shock,cur_wrath,cur_corruption,cur_wealth,notes,
                     comms_on,comms_changed_at)
-                    VALUES(NULL,'npc',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    VALUES(NULL,'npc',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                  (name or "NPC", "", species, archetype, faction, json.dumps([], ensure_ascii=False), json.dumps({}, ensure_ascii=False), creation_mode, tier, tier, rank, 0, 0, json.dumps(attrs),
-                  json.dumps(skills), json.dumps([]), json.dumps([]), json.dumps(starting_gear, ensure_ascii=False), 0, 0, 0, 0, "", 1, now_iso()))
+                  json.dumps(skills), json.dumps([]), json.dumps([]), json.dumps(starting_gear, ensure_ascii=False), 0, 0, 0, 0,
+                  # Core Rulebook 2e, p.38: Corruption starts at 0, Wealth starts equal to Tier.
+                  0, tier, "", 1, now_iso()))
     conn.commit(); conn.close()
 
 
@@ -1820,7 +1860,7 @@ def _decode(row):
     for s in SKILLS:
         ch["skills"].setdefault(s, 0)
     for k, dv in {"tier": 2, "starting_tier": 2, "rank": 1, "earned_xp": 0, "other_xp": 0, "armour": 0, "cur_wounds": 0,
-                  "cur_shock": 0, "cur_wrath": 0, "cur_ammo": 3, "comms_on": 1, "kind": "player",
+                  "cur_shock": 0, "cur_wrath": 0, "cur_ammo": 3, "cur_corruption": 0, "cur_wealth": 0, "comms_on": 1, "kind": "player",
                   "name": "", "chapter": "", "species": "", "archetype": "", "faction": "", "keywords": [], "archetype_choices": {}, "creation_mode": "archetype", "archetype_history": "[]", "powers": "", "wargear": "", "notes": "", "updated_at": "", "revision": 0}.items():
         if ch.get(k) is None:
             ch[k] = dv
@@ -1960,8 +2000,14 @@ def adjust_vital(cid, field, delta, actor_role="gm", actor_user_id=None, actor_n
     if row is None:
         conn.close(); return False
     old = _decode(row); old_val = int(old.get(field, 0) or 0)
+    # Corruption Points and Wealth are open-ended resource pools with no
+    # fixed ceiling (Corruption Level 5 is a narrative end state, not a
+    # cap), so only Wounds/Shock/Wrath are clamped to a derived maximum.
     maximums = {"cur_wounds": derived_traits(old)["Max Wounds"], "cur_shock": derived_traits(old)["Max Shock"], "cur_wrath": derived_traits(old)["Max Wrath"]}
-    new_val = max(0, min(int(maximums[field]), old_val + int(delta)))
+    if field in maximums:
+        new_val = max(0, min(int(maximums[field]), old_val + int(delta)))
+    else:
+        new_val = max(0, old_val + int(delta))
     new_rev = int(old.get("revision", 0) or 0) + 1
     conn.execute("UPDATE characters SET %s=?, updated_at=?, revision=? WHERE id=?" % field,
                  (new_val, now_iso(), new_rev, int(cid)))
@@ -2758,7 +2804,7 @@ def _gear_mod_caption(mod):
         st.markdown(f"<div style='margin-top:-6px'><span class='gear-mod'>{int(mod):+d} gear</span></div>", unsafe_allow_html=True)
 
 
-def _vital_stat_block(col, label, value, maximum, cid=None, field=None, editable=False,
+def _vital_stat_block(col, label, value, maximum=None, cid=None, field=None, editable=False,
                        actor_role="gm", actor_user_id=None, actor_name="", key_prefix="", max_mod=0):
     """Render one Wounds/Shock/Wrath-style stat using the Battle Sheet's compact metric + −/+ pattern.
 
@@ -2768,11 +2814,14 @@ def _vital_stat_block(col, label, value, maximum, cid=None, field=None, editable
     Combat panel, the Ruin counter, etc.) stays compact and identical.
     `max_mod` surfaces any Wargear modifier folded into `maximum` (e.g. a
     +Wounds trinket) as the same green badge used in the Skills table.
+    `maximum=None` renders just the value, for open-ended pools like Wealth
+    that have no fixed ceiling to show a "current / max" against.
     """
+    display = f"{value} / {maximum}" if maximum is not None else f"{value}"
     with col:
         if editable and cid is not None and field is not None:
             row = st.columns([5, 1], gap="small")
-            row[0].metric(label, f"{value} / {maximum}")
+            row[0].metric(label, display)
             with row[1]:
                 st.button("+", key=f"{key_prefix}plus", on_click=adjust_vital,
                           args=(cid, field, +1, actor_role, actor_user_id, actor_name),
@@ -2781,7 +2830,7 @@ def _vital_stat_block(col, label, value, maximum, cid=None, field=None, editable
                           args=(cid, field, -1, actor_role, actor_user_id, actor_name),
                           use_container_width=True)
         else:
-            st.metric(label, f"{value} / {maximum}")
+            st.metric(label, display)
         _gear_mod_caption(max_mod)
 
 
@@ -2846,6 +2895,26 @@ def live_vitals(cid, ch=None, gear_mods=None):
                      actor_name=actor_name, key_prefix=f"lvammo{cid}",
                      source_prefix="Player Ammo" if is_player else "Magister Ammo",
                      cap_mod=ammo_capacity_bonus(ch, gear), gear_mods=gear)
+
+    # Core Rulebook 2e, p.38/p.285: Corruption Points and Wealth are tracked
+    # resource pools like Wounds/Shock/Wrath/Ammo above, not fixed-formula
+    # Traits, so they get the same adjustable metric + −/+ treatment.
+    corr_cols = st.columns(2)
+    corr_info = corruption_level_info(ch.get("cur_corruption", 0))
+    corr_max = corr_info["next_threshold"] if corr_info["next_threshold"] is not None else corr_info["points"]
+    _vital_stat_block(corr_cols[0], "Corruption", corr_info["points"], corr_max, cid=cid, field="cur_corruption",
+                      editable=True, actor_role=actor_role, actor_user_id=actor_user_id, actor_name=actor_name,
+                      key_prefix=f"lvcorr{cid}")
+    dn_text = f" ({corr_info['dn_modifier']:+d} DN to Corruption Tests)" if corr_info["dn_modifier"] else ""
+    corr_cols[0].caption(f"Level {corr_info['level']} - {corr_info['name']}{dn_text}")
+
+    _vital_stat_block(corr_cols[1], "Wealth", int(ch.get("cur_wealth", 0) or 0), cid=cid, field="cur_wealth",
+                      editable=True, actor_role=actor_role, actor_user_id=actor_user_id, actor_name=actor_name,
+                      key_prefix=f"lvwealth{cid}")
+    corr_cols[1].caption("Spend on Bribery and Wargear Requisition (p.206).")
+
+    if corr_info["level"] >= 5:
+        st.error("Corruption Level 5 - Chaos Spawn (p.286). This character is lost to the Warp; the GM now controls them as a Chaos Spawn.")
 
     if asc:
         st.warning("100+ Earned XP - this character may ascend to the next Tier.")
@@ -3131,6 +3200,15 @@ def battle_view(cid):
         cards = "".join(
             f"<div class='statcard'><div class='l'>{pt}</div><div class='v'>{derived_display(en)}</div></div>"
             for en, pt in order
+        )
+        # Corruption and Wealth (p.285, p.38) are tracked point pools, not
+        # attribute-formula Traits, so they are read here from the
+        # character sheet directly rather than through gear_value()/derived_display().
+        corr_info = corruption_level_info(ch.get("cur_corruption", 0))
+        cards += (
+            f"<div class='statcard'><div class='l'>Corruption</div>"
+            f"<div class='v'>{corr_info['level']} · {html.escape(corr_info['name'])}</div></div>"
+            f"<div class='statcard'><div class='l'>Wealth</div><div class='v'>{int(ch.get('cur_wealth', 0) or 0)}</div></div>"
         )
         st.markdown(f"<div class='grid'>{cards}</div>", unsafe_allow_html=True)
 

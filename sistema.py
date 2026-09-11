@@ -689,7 +689,7 @@ def init_db():
         cur_corruption INTEGER DEFAULT 0, cur_wealth INTEGER DEFAULT 0, cur_faith INTEGER DEFAULT 0,
         notes TEXT, folder_id INTEGER, portrait BLOB, comms_on INTEGER DEFAULT 1, comms_changed_at TEXT, updated_at TEXT, revision INTEGER DEFAULT 0)""")
     c.execute("""CREATE TABLE IF NOT EXISTS campaign(id INTEGER PRIMARY KEY CHECK (id=1),
-        name TEXT, tier INTEGER DEFAULT 2, ruin INTEGER DEFAULT 0, session_no INTEGER DEFAULT 1, map_url TEXT DEFAULT '')""")
+        name TEXT, tier INTEGER DEFAULT 2, ruin INTEGER DEFAULT 0, session_no INTEGER DEFAULT 1)""")
     c.execute("""CREATE TABLE IF NOT EXISTS log(id INTEGER PRIMARY KEY AUTOINCREMENT,
         ts TEXT, author TEXT, text TEXT)""")
     c.execute("""CREATE TABLE IF NOT EXISTS session_record(id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -728,8 +728,7 @@ def init_db():
     conn.commit()
     # migration: ensure columns exist in databases created by older versions
     _ensure_columns(conn, "campaign", {"name": "TEXT", "tier": "INTEGER DEFAULT 2",
-                                       "ruin": "INTEGER DEFAULT 0", "session_no": "INTEGER DEFAULT 1",
-                                       "map_url": "TEXT DEFAULT ''"})
+                                       "ruin": "INTEGER DEFAULT 0", "session_no": "INTEGER DEFAULT 1"})
     had_wealth_column = "cur_wealth" in {r[1] for r in conn.execute("PRAGMA table_info(characters)").fetchall()}
     _ensure_columns(conn, "characters", {
         "user_id": "INTEGER", "kind": "TEXT DEFAULT 'player'", "name": "TEXT", "chapter": "TEXT",
@@ -2266,7 +2265,6 @@ def get_campaign():
     conn = get_conn(); row = conn.execute("SELECT * FROM campaign WHERE id=1").fetchone(); conn.close()
     c = dict(row) if row else {}
     c.setdefault("name", "The Crusade"); c.setdefault("tier", 2); c.setdefault("ruin", 0); c.setdefault("session_no", 1)
-    c.setdefault("map_url", "")
     return c
 
 
@@ -2274,12 +2272,6 @@ def save_campaign(name, tier, ruin, session_no):
     conn = get_conn()
     conn.execute("UPDATE campaign SET name=?,tier=?,ruin=?,session_no=? WHERE id=1",
                  (name, int(tier), int(ruin), int(session_no)))
-    conn.commit(); conn.close()
-
-
-def set_map_url(url):
-    conn = get_conn()
-    conn.execute("UPDATE campaign SET map_url=? WHERE id=1", (str(url or "").strip(),))
     conn.commit(); conn.close()
 
 
@@ -2564,6 +2556,7 @@ def inject_theme():
     .row{ border:1px solid #3a2e18; border-radius:3px; padding:6px 10px; margin-bottom:6px; background:var(--panel); }
     .fold{ display:inline-block; }
     .combat-arrow{ text-align:center; color:var(--gold); font-size:1rem; line-height:.8; margin:-2px 0 3px; opacity:.8; }
+    .combat-pos{ font-family:'Cinzel',serif; font-weight:900; color:var(--gold2); font-size:1.3rem; text-align:center; line-height:2.2; }
     /* Visão de Batalha */
     .hero{ background:linear-gradient(135deg,#20180d,#100b06); border:1px solid var(--gold);
         border-radius:4px; padding:14px 18px; margin-bottom:10px; }
@@ -4403,29 +4396,6 @@ def archetypes_view():
                 if ok: st.rerun()
 
 
-def render_map_section(gm_mode=False):
-    """Link to the campaign's Owlbear Rodeo room. Confirmed live: Owlbear
-    Rodeo refuses to be embedded in an iframe (it sends its own
-    X-Frame-Options/CSP to block that), so this only offers the join link —
-    each browser that opens it simply joins that Owlbear Rodeo room as its
-    own participant, the same as opening it directly. Owlbear Rodeo has no
-    API for auto-joining under a given name or bridging identity with this app."""
-    st.markdown("#### Map")
-    camp = get_campaign()
-    url = str(camp.get("map_url") or "").strip()
-    if gm_mode:
-        st.caption("Paste the Owlbear Rodeo room link. Every connected Player sees the same link below their own sheet.")
-        new_url = st.text_input("Owlbear Rodeo Room URL", value=url, key="map_url_input", placeholder="https://www.owlbear.rodeo/room/...")
-        if st.button("Save Room URL", key="map_url_save"):
-            set_map_url(new_url)
-            st.rerun()
-    if not url:
-        st.info("No map room configured yet." if gm_mode else "The Magister has not shared a map room yet.")
-        return
-    st.link_button("Open the Map (Owlbear Rodeo)", url, use_container_width=True)
-    st.caption("Owlbear Rodeo does not allow being embedded here, so this opens it in a new tab.")
-
-
 def gm_view():
     camp = get_campaign()
     st.markdown("<div class='banner'>✠ MAGISTER SANCTUM ✠<span class='sub'>Campaign Command</span></div>",
@@ -4441,7 +4411,7 @@ def gm_view():
             edit_view(cid, gm_mode=True)
         return
 
-    tabs = st.tabs(["Characters", "Players", "Craft", "Archetypes", "Vox", "Progression", "Session", "Combat", "Campaign", "Map", "Maintenance"])
+    tabs = st.tabs(["Characters", "Players", "Craft", "Archetypes", "Vox", "Progression", "Session", "Combat", "Campaign", "Maintenance"])
 
     # ---- Characters / Folders ----
     with tabs[0]:
@@ -4839,8 +4809,11 @@ def gm_view():
 
     # ---- Combat ----
     with tabs[7]:
-        st.markdown("#### Combat")
-        st.caption("Quick combat panel: arrange attack order, read vital values, and make fast NPC adjustments.")
+        head_row = st.columns([5, 1.3])
+        head_row[0].markdown("#### Combat")
+        if head_row[1].button("Clear Combat", use_container_width=True, key="combat_clear"):
+            clear_combat()
+            st.rerun()
 
         all_combat_chars = list_characters()
         folders = list_folders()
@@ -4848,45 +4821,10 @@ def gm_view():
         current = get_combatants()
         active = {c["id"] for c in current}
 
-        fc = st.columns([1.8, 2.5, 1])
-        folder_options = [None] + [f["id"] for f in folders]
-        selected_folder = fc[0].selectbox(
-            "Filter by Folder",
-            folder_options,
-            format_func=lambda x: "All Folders" if x is None else folder_map.get(x, "Folder"),
-            key="combat_folder",
-        )
-        search = fc[1].text_input(
-            "Search Character",
-            placeholder="Search by name, species, archetype, or faction",
-            key="combat_search",
-        )
-        if fc[2].button("Clear Combat", use_container_width=True, key="combat_clear"):
-            clear_combat()
-            st.rerun()
-
-        filtered = []
-        q = search.strip().lower()
-        for ch in all_combat_chars:
-            if selected_folder is not None and ch.get("folder_id") != selected_folder:
-                continue
-            hay = " ".join([
-                str(ch.get("name") or ""),
-                str(ch.get("species") or ""),
-                str(ch.get("archetype") or ""),
-                str(ch.get("chapter") or ""),
-                str(ch.get("faction") or ""),
-            ]).lower()
-            if q and q not in hay:
-                continue
-            filtered.append(ch)
-
-        st.markdown("#### Combatants")
         if not current:
             st.info("No characters are currently in combat. Add Players or NPCs below.")
         else:
-            st.caption("Use ↑ and ↓ to change the attack order. Select a combatant's name for full details.")
-
+            st.caption("↑ / ↓ reorder the attack sequence · click a name for Attributes and Skills.")
             user = st.session_state.user or {}
             for idx, ch in enumerate(current):
                 gear = equipped_wargear_modifiers(ch)
@@ -4897,9 +4835,10 @@ def gm_view():
                 folder_name = folder_map.get(ch.get("folder_id"), "No folder")
 
                 with st.container(border=True):
-                    # Name + expandable details popover, matching the Characters page.
-                    head = st.columns([4.2, 0.6, 1], gap="small")
-                    with head[0]:
+                    # Position number + name/details popover + reorder/remove, all in one row.
+                    head = st.columns([0.5, 3.7, 0.6, 1], gap="small")
+                    head[0].markdown(f"<div class='combat-pos'>{idx + 1}</div>", unsafe_allow_html=True)
+                    with head[1]:
                         with st.popover(ch.get("name") or "Unnamed", use_container_width=True, key=f"combat_pop_{ch['id']}"):
                             st.markdown(f"**{species_label(ch.get('species', ''))}** · T{ch.get('tier', 1)} · {rank_label(rank)}")
                             if ch.get("archetype"):
@@ -4907,21 +4846,18 @@ def gm_view():
                             attrs = effective_attributes(ch, gear); skills = effective_skills(ch, gear)
                             st.markdown("**Attributes**  " + " · ".join(f"{a[:3].upper()} {attrs.get(a, 1)}" for a in ATTRS))
                             st.markdown("**Skills**  " + " · ".join(f"{sk[:4]} {skills.get(sk, 0) + attrs.get(at, 1)}" for sk, at in SKILLS.items()))
-                            derived_order = [
-                                ("Defence", "Defence"), ("Resilience", "Resilience"), ("Soak", "Soak"),
-                                ("Determination", "Determination"), ("Resolve", "Resolve"), ("Conviction", "Conviction"),
-                                ("Passive Awareness", "Awareness"), ("Influence", "Influence"), ("Speed", "Speed"),
-                            ]
-                            st.markdown("**Derived Traits**  " + " · ".join(f"{lbl} {int(d.get(key, 0) or 0)}" for key, lbl in derived_order))
                         st.caption(f"{role_label} · {species_label(ch.get('species'))} · T{ch.get('tier', 1)} · {rank_label(rank)} · {folder_name}")
-                    with head[1]:
+                        # Combat-critical Traits stay visible at a glance instead of hiding behind the popover.
+                        st.caption(f"Defence {int(d.get('Defence', 0) or 0)} · Resilience {int(d.get('Resilience', 0) or 0)} "
+                                   f"· Speed {int(d.get('Speed', 0) or 0)} · Resolve {int(d.get('Resolve', 0) or 0)}")
+                    with head[2]:
                         if st.button("↑", key=f"combat_up_{ch['id']}", disabled=(idx == 0), use_container_width=True):
                             move_combatant(ch["id"], -1)
                             st.rerun()
                         if st.button("↓", key=f"combat_down_{ch['id']}", disabled=(idx == len(current) - 1), use_container_width=True):
                             move_combatant(ch["id"], 1)
                             st.rerun()
-                    if head[2].button("Remove", key=f"combat_current_remove_{ch['id']}", use_container_width=True):
+                    if head[3].button("Remove", key=f"combat_current_remove_{ch['id']}", use_container_width=True):
                         set_combatant(ch["id"], False)
                         st.rerun()
 
@@ -4945,26 +4881,55 @@ def gm_view():
                 if idx < len(current) - 1:
                     st.markdown("<div class='combat-arrow'>▼</div>", unsafe_allow_html=True)
 
-        st.divider()
-        st.markdown("#### Add Combatants")
-        st.caption("Players and NPCs are read-only here except for the manual attack order and NPC quick vitals.")
-        if not filtered:
-            st.caption("No characters match the current filter.")
-        else:
-            for ch in filtered:
-                in_combat = ch["id"] in active
-                cols = st.columns([5, 1.2, 2])
-                kind_label = "NPC" if ch["kind"] == "npc" else "PLAYER"
-                ncls = "npc" if ch["kind"] == "npc" else ""
-                cols[0].markdown(
-                    f"<span class='{ncls}'><b>{html.escape(ch.get('name') or 'Unnamed')}</b></span> · {kind_label} · "
-                    f"{species_label(ch.get('species'))} · T{ch.get('tier', 1)} · {rank_label(ch.get('rank', 1))}",
-                    unsafe_allow_html=True,
-                )
-                if cols[1].button("Remove" if in_combat else "Add", key=f"combat_toggle_{ch['id']}", use_container_width=True):
-                    set_combatant(ch["id"], not in_combat)
-                    st.rerun()
-                cols[2].caption("IN COMBAT" if in_combat else "")
+        with st.expander(f"Add Combatants · {len(current)} in combat", expanded=(not current)):
+            fc = st.columns([1.8, 2.5])
+            folder_options = [None] + [f["id"] for f in folders]
+            selected_folder = fc[0].selectbox(
+                "Filter by Folder",
+                folder_options,
+                format_func=lambda x: "All Folders" if x is None else folder_map.get(x, "Folder"),
+                key="combat_folder",
+            )
+            search = fc[1].text_input(
+                "Search Character",
+                placeholder="Search by name, species, archetype, or faction",
+                key="combat_search",
+            )
+
+            filtered = []
+            q = search.strip().lower()
+            for ch in all_combat_chars:
+                if selected_folder is not None and ch.get("folder_id") != selected_folder:
+                    continue
+                hay = " ".join([
+                    str(ch.get("name") or ""),
+                    str(ch.get("species") or ""),
+                    str(ch.get("archetype") or ""),
+                    str(ch.get("chapter") or ""),
+                    str(ch.get("faction") or ""),
+                ]).lower()
+                if q and q not in hay:
+                    continue
+                filtered.append(ch)
+
+            st.caption("Players and NPCs are read-only here except for the manual attack order and NPC quick vitals.")
+            if not filtered:
+                st.caption("No characters match the current filter.")
+            else:
+                for ch in filtered:
+                    in_combat = ch["id"] in active
+                    cols = st.columns([5, 1.2, 2])
+                    kind_label = "NPC" if ch["kind"] == "npc" else "PLAYER"
+                    ncls = "npc" if ch["kind"] == "npc" else ""
+                    cols[0].markdown(
+                        f"<span class='{ncls}'><b>{html.escape(ch.get('name') or 'Unnamed')}</b></span> · {kind_label} · "
+                        f"{species_label(ch.get('species'))} · T{ch.get('tier', 1)} · {rank_label(ch.get('rank', 1))}",
+                        unsafe_allow_html=True,
+                    )
+                    if cols[1].button("Remove" if in_combat else "Add", key=f"combat_toggle_{ch['id']}", use_container_width=True):
+                        set_combatant(ch["id"], not in_combat)
+                        st.rerun()
+                    cols[2].caption("IN COMBAT" if in_combat else "")
 
     # ---- Campaign ----
     with tabs[8]:
@@ -4995,12 +4960,8 @@ def gm_view():
         for lg in get_logs():
             st.markdown(f"<div class='row'><b>{lg['ts']}</b> - {lg['text']}</div>", unsafe_allow_html=True)
 
-    # ---- Map ----
-    with tabs[9]:
-        render_map_section(gm_mode=True)
-
     # ---- Maintenance ----
-    with tabs[10]:
+    with tabs[9]:
         st.markdown("#### File Maintenance")
         st.caption("The .db backup contains everything: players, NPCs, folders, XP, Vox, portraits. "
                    "On free hosting the disk may reset; download backups regularly.")
@@ -5025,13 +4986,11 @@ def player_view():
     if not cid:
         st.error("No character sheet linked. Contact the Magister.")
         return
-    t = st.tabs(["Battle View", "Character Sheet", "Map"])
+    t = st.tabs(["Battle View", "Character Sheet"])
     with t[0]:
         battle_view(cid)
     with t[1]:
         edit_view(cid, gm_mode=False)
-    with t[2]:
-        render_map_section(gm_mode=False)
 
 
 # ============================================================

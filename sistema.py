@@ -1356,7 +1356,7 @@ def assign_craft_to_character(cid, craft_id, kind, actor_name="", actor_user_id=
         conn.close()
 
 
-def adjust_wargear_quantity(cid, craft_id, delta, actor_name="", actor_user_id=None, source="Wargear Quantity Change"):
+def adjust_wargear_quantity(cid, craft_id, delta, actor_name="", actor_user_id=None, source="Wargear Quantity Change", actor_role="gm"):
     """Atomically add/remove one stackable Wargear unit (Ammo/Grenade/Missile)."""
     conn = get_conn()
     try:
@@ -1365,6 +1365,11 @@ def adjust_wargear_quantity(cid, craft_id, delta, actor_name="", actor_user_id=N
         if row is None or item is None:
             return False, "Character or Wargear item not found."
         ch = _decode(row)
+        if actor_role == "player":
+            if ch.get("kind") != "player" or int(ch.get("user_id") or -1) != int(actor_user_id or -2):
+                return False, "Players can only edit their own character sheet."
+            if int(delta) > 0:
+                return False, "Players cannot add Wargear or ammunition. Ask the Magister to assign it."
         current = normalize_wargear(ch.get("wargear", []))
         # Standard and special Ammo share one carrying pool. Grenades/Missiles do not.
         item_details = _gear_details_dict(item["details"] if "details" in item.keys() else {})
@@ -1457,6 +1462,39 @@ def save_craft_item(item, item_id=None):
 
 def delete_craft_item(item_id):
     conn = get_conn(); conn.execute("UPDATE craft_items SET active=0, updated_at=? WHERE id=?", (now_iso(), int(item_id))); conn.commit(); conn.close()
+
+
+def craft_description_html(row, kind="craft", name_color=None, title_text=""):
+    name = html.escape(str(row.get("name", "")))
+    effect = str(row.get("effect", "") or "").strip()
+    details = craft_details(row)
+    keywords = details.get("keywords", [])
+    if isinstance(keywords, str): keywords = _req_list(keywords)
+    keywords = [str(x).strip() for x in keywords if str(x).strip()]
+    req = details.get("requirements", {}) if isinstance(details.get("requirements", {}), dict) else {}
+    prereq = str(details.get("prerequisites", "") or "").strip()
+    if not prereq and isinstance(req, dict): prereq = str(req.get("prerequisites", "") or "").strip()
+    style = f" style=\"color:{name_color}\"" if name_color else ""
+    title = f" title=\"{html.escape(title_text, quote=True)}\"" if title_text else ""
+    body = []
+    if effect: body.append(f"<div class='craft-description-text'>{html.escape(effect).replace(chr(10), '<br>')}</div>")
+    if keywords: body.append(f"<div class='craft-description-meta'><b>Keywords:</b> {html.escape(', '.join(keywords))}</div>")
+    if prereq: body.append(f"<div class='craft-description-meta'><b>Prerequisites:</b> {html.escape(prereq)}</div>")
+    if not body: body.append("<div class='craft-description-meta'>No registered description.</div>")
+    return f"<details class='craft-details'><summary><span class='craft-details-name'{style}{title}>{name}</span></summary>{''.join(body)}</details>"
+
+
+def craft_keyword_values(row):
+    details = craft_details(row)
+    values = details.get("keywords", [])
+    if isinstance(values, str): values = _req_list(values)
+    return sorted({str(x).strip() for x in values if str(x).strip()}, key=str.lower)
+
+
+def craft_keyword_filter(rows, selected):
+    selected = {str(x).strip().lower() for x in (selected or []) if str(x).strip()}
+    if not selected: return list(rows)
+    return [row for row in rows if selected.issubset({x.lower() for x in craft_keyword_values(row)})]
 
 
 def craft_item_label(row):
@@ -1599,6 +1637,22 @@ def save_build(cid, name, chapter, species, tier, attributes, skills, talents, w
         conn.close(); return False, "Character not found."
     old = _decode(row)
     current_revision = int(old.get("revision", 0) or 0)
+    if actor_role == "player":
+        if old.get("kind") != "player" or int(old.get("user_id") or -1) != int(actor_user_id or -2):
+            conn.close(); return False, "Players can only edit their own character sheet."
+        old_wg = normalize_wargear(old.get("wargear", []))
+        new_wg = normalize_wargear(wargear)
+        old_counts = {}
+        for item in old_wg:
+            key = int(item.get("craft_id", -1) or -1) if int(item.get("craft_id", -1) or -1) > 0 else str(item.get("name", "")).strip().lower()
+            old_counts[key] = old_counts.get(key, 0) + max(1, int(item.get("quantity", 1) or 1))
+        new_counts = {}
+        for item in new_wg:
+            key = int(item.get("craft_id", -1) or -1) if int(item.get("craft_id", -1) or -1) > 0 else str(item.get("name", "")).strip().lower()
+            new_counts[key] = new_counts.get(key, 0) + max(1, int(item.get("quantity", 1) or 1))
+        for key, qty in new_counts.items():
+            if key not in old_counts or qty > old_counts[key]:
+                conn.close(); return False, "Players cannot add Wargear. Ask the Magister to assign new equipment."
     if expected_revision is not None and current_revision != int(expected_revision):
         conn.close(); return False, "This character sheet changed in another session. The latest version was loaded; review your edits before saving again."
     faction_value = str(faction if faction is not None else (old.get("faction", "") or "")).strip()
@@ -2160,6 +2214,14 @@ def inject_theme():
     .skrow .n{ letter-spacing:.02em; } .skrow .c{ text-align:center; opacity:.7; }
     .skrow .t{ text-align:center; font-family:'Cinzel',serif; color:var(--gold2); font-weight:700; }
     .tal,.wg{ background:var(--panel2); border:1px solid #3a2e18; border-radius:4px; padding:7px 10px; margin-bottom:6px; }
+    .resource-card{ background:linear-gradient(90deg,rgba(36,27,14,.96),rgba(24,18,10,.96)); border:1px solid #4a3719; border-left:3px solid var(--gold); border-radius:3px; padding:8px 11px; margin:4px 0 8px; }
+    .resource-head{ display:flex; justify-content:space-between; align-items:center; font-family:'Cinzel',serif; color:var(--gold2); letter-spacing:.06em; font-size:.8rem; }
+    .resource-note{ margin-top:3px; color:#b8af9d; font-size:.72rem; line-height:1.35; }
+    .resource-subtitle{ color:var(--gold); font-family:'Cinzel',serif; letter-spacing:.08em; font-size:.78rem; border-bottom:1px solid rgba(191,151,70,.3); padding:4px 0; margin:8px 0 3px; }
+    .resource-row{ min-height:34px; display:flex; flex-direction:column; justify-content:center; border-bottom:1px solid rgba(191,151,70,.13); padding:4px 3px; }
+    .resource-row .resource-name{ font-family:'Cinzel',serif; font-size:.84rem; color:#e8d9b5; }
+    .resource-row .resource-meta{ font-size:.69rem; color:#8f8778; margin-top:1px; }
+    .resource-row.consumable .resource-name{ color:#d8c28e; }
     .wgdesc,.taleffect{ margin-top:6px; padding-top:6px; border-top:1px solid rgba(191,151,70,.18); opacity:.82; line-height:1.42; font-size:.84rem; }
     .wgdesc{ color:#d8d0bf; } .taleffect{ color:#d8d0bf; }
     .tal .tn{ font-family:'Cinzel',serif; color:var(--gold2); letter-spacing:.03em; }
@@ -2169,6 +2231,16 @@ def inject_theme():
     .chapter-card .clabel{ color:var(--gold); font-family:'Cinzel',serif; font-size:.68rem; text-transform:uppercase; letter-spacing:.07em; margin-top:7px; }
     .chapter-card .ctext{ margin-top:2px; line-height:1.45; font-size:.88rem; }
     .tal .tc{ float:right; opacity:.6; font-size:.75rem; }
+    .craft-shop-name{ font-family:'Cinzel',serif; font-size:.76rem; font-weight:700; letter-spacing:.025em; line-height:1.05; }
+    .craft-shop-cost{ color:rgba(216,208,191,.52); font-size:.66rem; white-space:nowrap; }
+    .craft-details{ margin:0 0 3px; border-bottom:1px solid #342817; }
+    .craft-details summary{ cursor:pointer; list-style:none; padding:2px 0; font-family:'Cinzel',serif; font-size:.76rem; letter-spacing:.025em; }
+    .craft-details summary::-webkit-details-marker{ display:none; }
+    .craft-details summary:before{ content:'▸'; color:var(--gold); margin-right:6px; font-size:.65rem; }
+    .craft-details[open] summary:before{ content:'▾'; }
+    .craft-description-text{ padding:4px 8px 5px 18px; color:var(--bone); font-size:.78rem; line-height:1.25; }
+    .craft-description-meta{ padding:1px 8px 4px 18px; color:rgba(232,224,207,.62); font-size:.68rem; }
+    .sheet-banner{ background:linear-gradient(110deg,#21170c,#120c07); border:1px solid #5a4421; border-left:4px solid var(--gold); padding:7px 10px; margin:8px 0 9px; font-family:'Cinzel',serif; color:var(--gold2); letter-spacing:.08em; text-transform:uppercase; }
     .foot{ text-align:center; color:var(--gold); opacity:.5; font-family:'Cinzel',serif; letter-spacing:.3em;
         font-size:.75rem; margin-top:20px; }
     </style>
@@ -2403,6 +2475,25 @@ def ammo_inventory(ch):
     return stacks, total
 
 
+def _wargear_craft_id(w):
+    """Resolve the catalog id for legacy Wargear entries that predate craft_id."""
+    try:
+        cid = int(w.get("craft_id", -1) or -1)
+        if cid > 0:
+            return cid
+    except Exception:
+        pass
+    name = str(w.get("name", "")).strip().lower()
+    if not name:
+        return -1
+    try:
+        rows = list_craft_items("wargear", active_only=False)
+        row = next((r for r in rows if str(r.get("name", "")).strip().lower() == name), None)
+        return int(row["id"]) if row else -1
+    except Exception:
+        return -1
+
+
 def ammo_capacity(ch):
     """Core Rulebook Ammo carrying limit: max(3, half Strength), plus explicit container bonuses."""
     attrs = effective_attributes(ch)
@@ -2430,72 +2521,80 @@ def ammo_capacity(ch):
     return base + bonus
 
 
-def render_ammo_section(cid, ch, compact=False):
+def render_ammo_section(cid, ch, compact=False, gm_mode=False):
     ammo, ammo_total = ammo_inventory(ch)
-    explosive = [w for w in stackable_wargear(ch) if not _is_ammo_resource(w)]
-    if not ammo and not explosive:
+    consumables = [w for w in stackable_wargear(ch) if not _is_ammo_resource(w)]
+    if not ammo and not consumables:
         return
 
     capacity = ammo_capacity(ch)
-    st.markdown("<div class='sectionttl'>Ammunition & Grenades</div>", unsafe_allow_html=True)
-    st.markdown(
-        f"<div class='wg'><b>Ammo Pool</b> <span style='float:right'><b>{ammo_total} / {capacity}</b></span>"
-        f"<div style='opacity:.68;font-size:.78rem'>Ammo is tracked by type. Normal firing does not spend Ammo. Spend 1 point when Reloading, after a Salvo option, or when a Complication requires it.</div></div>",
-        unsafe_allow_html=True,
-    )
+    st.markdown("<div class='sectionttl'>Ammunition & Consumables</div>", unsafe_allow_html=True)
 
     if ammo:
-        st.markdown("**Ammo types**")
+        st.markdown(
+            f"<div class='resource-card'><div class='resource-head'><span>AMMUNITION POOL</span><b>{ammo_total} / {capacity}</b></div>"
+            f"<div class='resource-note'>Tracked by Ammo type. Spend Ammo when Reloading, using a Salvo option, or when a Complication requires it.</div></div>",
+            unsafe_allow_html=True,
+        )
+
         for idx, w in enumerate(ammo):
             d = _gear_details_dict(w.get("details", {}))
             qty = int(w.get("quantity", 1) or 1)
-            keywords = d.get("keywords", []) or []
             label = str(w.get("name", "Ammo"))
-            meta = ", ".join(str(x) for x in keywords) if keywords else "Compatible with its matching weapon type"
-            if compact:
-                st.markdown(f"<div class='wg'><b>{html.escape(label)}</b> <span style='float:right'>× {qty}</span><div style='opacity:.65;font-size:.75rem'>{html.escape(meta)}</div></div>", unsafe_allow_html=True)
-                continue
-            cols = st.columns([3.6, 1.1, 1.1, 2])
-            cols[0].markdown(f"**{html.escape(label)}**  × **{qty}**<br><small>{html.escape(meta)}</small>", unsafe_allow_html=True)
-            if cols[1].button("Spend 1", key=f"battle_ammo_use_{cid}_{idx}"):
-                result = adjust_wargear_quantity(cid, int(w.get("craft_id", -1) or -1), -1,
+            keywords = d.get("keywords", []) or []
+            meta = ", ".join(str(x) for x in keywords) if keywords else "Matching weapon type"
+            craft_id = _wargear_craft_id(w)
+            cols = st.columns([4.8, 1, 1])
+            cols[0].markdown(
+                f"<div class='resource-row'><span class='resource-name'>{html.escape(label)}</span>"
+                f"<span class='resource-meta'>{html.escape(meta)} · ×{qty}</span></div>",
+                unsafe_allow_html=True,
+            )
+            if cols[1].button("− 1" if gm_mode else "USE 1", key=f"battle_ammo_use_{cid}_{idx}", disabled=craft_id < 1 or qty <= 0):
+                result = adjust_wargear_quantity(cid, craft_id, -1,
                                                  actor_name=(st.session_state.get("user") or {}).get("username", ""),
                                                  actor_user_id=(st.session_state.get("user") or {}).get("id"),
-                                                 source="Player Ammo Used")
+                                                 source="Magister Ammo Used" if gm_mode else "Player Ammo Used",
+                                                 actor_role="gm" if gm_mode else "player")
                 if result[0]: st.rerun()
                 else: st.error(result[1])
-            if cols[2].button("Add 1", key=f"battle_ammo_add_{cid}_{idx}"):
-                result = adjust_wargear_quantity(cid, int(w.get("craft_id", -1) or -1), 1,
+            if gm_mode and cols[2].button("+ 1", key=f"battle_ammo_add_{cid}_{idx}", disabled=craft_id < 1):
+                result = adjust_wargear_quantity(cid, craft_id, 1,
                                                  actor_name=(st.session_state.get("user") or {}).get("username", ""),
                                                  actor_user_id=(st.session_state.get("user") or {}).get("id"),
-                                                 source="Player Ammo Added")
+                                                 source="Magister Ammo Added", actor_role="gm")
                 if result[0]: st.rerun()
                 else: st.error(result[1])
-            cols[3].caption("Special Ammo" if str(d.get("special", "")).lower() == "true" or "special" in label.lower() else "Ammo")
 
-    if explosive:
-        st.markdown("**Grenades & Missiles**")
-        for idx, w in enumerate(explosive):
+    if consumables:
+        st.markdown("<div class='resource-subtitle'>GRENADES & MISSILES</div>", unsafe_allow_html=True)
+        for idx, w in enumerate(consumables):
             d = _gear_details_dict(w.get("details", {}))
             qty = int(w.get("quantity", 1) or 1)
-            category = str(d.get("category", "Resource")).title()
-            cols = st.columns([3.6, 1.1, 1.1, 2])
-            cols[0].markdown(f"**{html.escape(str(w.get('name','')))}**  × **{qty}**<br><small>{html.escape(category)}</small>", unsafe_allow_html=True)
-            if cols[1].button("Use 1", key=f"battle_expl_use_{cid}_{idx}"):
-                result = adjust_wargear_quantity(cid, int(w.get("craft_id", -1) or -1), -1,
+            category = str(d.get("category", "Consumable")).title()
+            label = str(w.get("name", "Consumable"))
+            craft_id = _wargear_craft_id(w)
+            cols = st.columns([4.8, 1, 1])
+            cols[0].markdown(
+                f"<div class='resource-row consumable'><span class='resource-name'>{html.escape(label)}</span>"
+                f"<span class='resource-meta'>{html.escape(category)} · ×{qty}</span></div>",
+                unsafe_allow_html=True,
+            )
+            if cols[1].button("USE 1", key=f"battle_expl_use_{cid}_{idx}", disabled=craft_id < 1 or qty <= 0):
+                result = adjust_wargear_quantity(cid, craft_id, -1,
                                                  actor_name=(st.session_state.get("user") or {}).get("username", ""),
                                                  actor_user_id=(st.session_state.get("user") or {}).get("id"),
-                                                 source="Player Explosive Used")
+                                                 source="Magister Consumable Used" if gm_mode else "Player Consumable Used",
+                                                 actor_role="gm" if gm_mode else "player")
                 if result[0]: st.rerun()
                 else: st.error(result[1])
-            if cols[2].button("Add 1", key=f"battle_expl_add_{cid}_{idx}"):
-                result = adjust_wargear_quantity(cid, int(w.get("craft_id", -1) or -1), 1,
+            if gm_mode and cols[2].button("+ 1", key=f"battle_expl_add_{cid}_{idx}", disabled=craft_id < 1):
+                result = adjust_wargear_quantity(cid, craft_id, 1,
                                                  actor_name=(st.session_state.get("user") or {}).get("username", ""),
                                                  actor_user_id=(st.session_state.get("user") or {}).get("id"),
-                                                 source="Player Explosive Added")
+                                                 source="Magister Consumable Added", actor_role="gm")
                 if result[0]: st.rerun()
                 else: st.error(result[1])
-            cols[3].caption(category)
 
 
 @st.fragment(run_every=REFRESH_S)
@@ -2582,7 +2681,7 @@ def battle_view(cid):
         else:
             st.markdown("<div class='tal' style='opacity:.6'>No Psychic Powers.</div>", unsafe_allow_html=True)
 
-        render_ammo_section(cid, ch)
+        render_ammo_section(cid, ch, gm_mode=((st.session_state.get("user") or {}).get("role") == "gm"))
 
         st.markdown("<div class='sectionttl'>Wargear</div>", unsafe_allow_html=True)
         wargear_catalog = {str(r["name"]).strip().lower(): r for r in list_craft_items("wargear")}
@@ -2821,7 +2920,7 @@ def edit_view(cid, gm_mode=False):
     else:
         c[3].markdown(f"**Rank:** {rank_label(ch.get('rank', 1))}<br><small></small>", unsafe_allow_html=True)
 
-    st.markdown("#### Attributes")
+    st.markdown("<div class='sheet-banner'>Core Profile · Attributes</div>", unsafe_allow_html=True)
     acol = st.columns(4)
     attr_max = SPECIES_ATTRIBUTE_MAX.get(st.session_state.get(spk, ""), {a: 12 for a in ATTRS})
     for i, a in enumerate(ATTRS):
@@ -2857,7 +2956,7 @@ def edit_view(cid, gm_mode=False):
                 st.session_state[_k(cid, "s", choice)] = max(int(st.session_state[_k(cid, "s", choice)]), any_to)
 
 
-    st.markdown("#### Skills")
+    st.markdown("<div class='sheet-banner'>Core Profile · Skills</div>", unsafe_allow_html=True)
     scol = st.columns(3)
     for i, s in enumerate(SKILLS):
         with scol[i % 3]:
@@ -2889,6 +2988,8 @@ def edit_view(cid, gm_mode=False):
             for ability in abilities:
                 st.markdown(f"<div class='tal'><span class='tn'>{html.escape(str(ability))}</span></div>", unsafe_allow_html=True)
 
+    st.markdown("<div class='sheet-banner'>Arsenal · Wargear</div>", unsafe_allow_html=True)
+
     # Talents are purchased by Players when their Keywords/prerequisites allow them.
     # Wargear is assigned and equipped by the Magister.
     catalog_talents = list_craft_items("talent")
@@ -2906,7 +3007,7 @@ def edit_view(cid, gm_mode=False):
     available_xp = starting_xp(camp["tier"], advanced=(mode == "advanced")) + int(ch.get("earned_xp", 0)) - xp_spent(current_build)
     keys = sorted(character_keywords(current_build))
 
-    st.markdown("#### Talents")
+    st.markdown("<div class='sheet-banner'>Advancements · Talents</div>", unsafe_allow_html=True)
     st.caption("Purchase Talents by meeting their registered prerequisites and spending XP.")
     if keys:
         st.caption("Keywords: " + ", ".join(k.title() for k in keys))
@@ -2914,44 +3015,39 @@ def edit_view(cid, gm_mode=False):
     if not gm_mode:
         owned_ids = {int(t.get("craft_id", -1) or -1) for t in normalize_talents(ch.get("talents", []))}
         visible = [r for r in catalog_talents if int(r["id"]) not in owned_ids and craft_keyword_match(current_build, r)]
-        with st.expander(f"Available Talents ({len(visible)})", expanded=False):
-            talent_query = st.text_input("Search Talents", key=f"talent_search_{cid}", placeholder="Type a Talent name...")
+        with st.expander(f"Available Talents  ·  {len(visible)}", expanded=False):
+            talent_query = st.text_input("", key=f"talent_search_{cid}", placeholder="Search Talents...", label_visibility="collapsed")
             if talent_query.strip():
                 q = talent_query.strip().lower()
                 visible = [r for r in visible if q in str(r.get("name", "")).lower()]
-            st.caption(f"{len(visible)} Talent(s) shown")
             if visible:
                 for r in visible:
                     rid = int(r["id"])
                     status, reason = craft_purchase_status(current_build, r, available_xp)
                     color = craft_status_color(status)
-                    name = html.escape(str(r.get("name", "")))
                     cost = int(r.get("cost", 0) or 0)
-                    cols = st.columns([5.5, 1.4, 1.6])
-                    cols[0].markdown(f"<span style='color:{color};font-weight:700;font-size:1rem'>{name}</span>", unsafe_allow_html=True)
-                    cols[1].caption(f"{cost} XP")
+                    cols = st.columns([7, 1.25, 1.55])
+                    cols[0].markdown(craft_description_html(r, "craft", name_color=color, title_text=craft_status_text(status, reason)), unsafe_allow_html=True)
+                    cols[1].markdown(f"<span class='craft-shop-cost'>{cost} XP</span>", unsafe_allow_html=True)
                     if cols[2].button("Purchase", key=f"talent_buy_{cid}_{rid}", disabled=status != "green", use_container_width=True):
                         result = assign_craft_to_character(cid, rid, "talent", actor_name=(st.session_state.get("user") or {}).get("username", ""), actor_user_id=(st.session_state.get("user") or {}).get("id"), source="Talent Purchase")
                         if result[0]: st.rerun()
                         st.error(result[1])
-                    if r.get("effect"):
-                        st.caption(str(r.get("effect", "")))
-                    if status == "orange": st.warning(craft_status_text(status, reason))
-                    elif status == "red": st.error(craft_status_text(status, reason))
-                    else: st.success(craft_status_text(status, reason))
             else:
-                st.info("No Talents match the search.")
+                st.caption("No Talents match the search.")
     else:
         if catalog_talents:
-            with st.expander(f"Assign Talent ({len(catalog_talents)})", expanded=False):
-                talent_query = st.text_input("Search Talents", key=f"gm_talent_search_{cid}", placeholder="Type a Talent name...")
+            with st.expander(f"Assign Talent  ·  {len(catalog_talents)}", expanded=False):
+                talent_query = st.text_input("", key=f"gm_talent_search_{cid}", placeholder="Search Talents...", label_visibility="collapsed")
                 filtered_talents = [r for r in catalog_talents if talent_query.strip().lower() in str(r.get("name", "")).lower()] if talent_query.strip() else catalog_talents
-                labels = {int(r["id"]): craft_item_label(r) for r in filtered_talents}
-                gm_tid = st.selectbox("Talent", [None] + [int(r["id"]) for r in filtered_talents], format_func=lambda x: "Select Talent..." if x is None else labels[x], key=f"gm_talent_{cid}")
-                if gm_tid is not None and st.button("Assign Talent", key=f"gm_talent_add_{cid}", use_container_width=True):
-                    result = assign_craft_to_character(cid, gm_tid, "talent", source="Magister Talent Assignment")
-                    if result[0]: st.rerun()
-                    st.error(result[1])
+                for r in filtered_talents:
+                    rid = int(r["id"]); cols = st.columns([7, 1.55])
+                    cols[0].markdown(craft_description_html(r, "talent"), unsafe_allow_html=True)
+                    if cols[1].button("Assign", key=f"gm_talent_add_{cid}_{rid}", use_container_width=True):
+                        result = assign_craft_to_character(cid, rid, "talent", source="Magister Talent Assignment")
+                        if result[0]: st.rerun()
+                        st.error(result[1])
+                if not filtered_talents: st.caption("No Talents match the search.")
 
     owned_talents = normalize_talents(ch.get("talents", []))
     if owned_talents:
@@ -2963,173 +3059,139 @@ def edit_view(cid, gm_mode=False):
     else:
         st.caption("No talents purchased.")
 
-    st.markdown("#### Psychic Powers")
+    st.markdown("<div class='sheet-banner'>Advancements · Psychic Powers</div>", unsafe_allow_html=True)
     owned_powers = normalize_powers(ch.get("powers", []))
     if not gm_mode:
         catalog_powers = list_craft_items("power")
         owned_power_ids = {int(x.get("craft_id", -1) or -1) for x in owned_powers}
         visible_powers = [r for r in catalog_powers if int(r["id"]) not in owned_power_ids and craft_keyword_match(current_build, r)]
-        with st.expander(f"Available Psychic Powers ({len(visible_powers)})", expanded=False):
-            power_query = st.text_input("Search Psychic Powers", key=f"power_search_{cid}", placeholder="Type a Psychic Power name...")
+        with st.expander(f"Available Psychic Powers  ·  {len(visible_powers)}", expanded=False):
+            power_query = st.text_input("", key=f"power_search_{cid}", placeholder="Search Psychic Powers...", label_visibility="collapsed")
             if power_query.strip():
                 q = power_query.strip().lower()
                 visible_powers = [r for r in visible_powers if q in str(r.get("name", "")).lower()]
-            st.caption(f"{len(visible_powers)} Psychic Power(s) shown")
             if visible_powers:
                 for r in visible_powers:
                     rid = int(r["id"])
                     status, reason = craft_purchase_status(current_build, r, available_xp)
                     color = craft_status_color(status)
-                    name = html.escape(str(r.get("name", "")))
                     cost = int(r.get("cost", 0) or 0)
-                    cols = st.columns([5.5, 1.4, 1.6])
-                    cols[0].markdown(f"<span style='color:{color};font-weight:700;font-size:1rem'>{name}</span>", unsafe_allow_html=True)
-                    cols[1].caption(f"{cost} XP")
+                    cols = st.columns([7, 1.25, 1.55])
+                    cols[0].markdown(craft_description_html(r, "craft", name_color=color, title_text=craft_status_text(status, reason)), unsafe_allow_html=True)
+                    cols[1].markdown(f"<span class='craft-shop-cost'>{cost} XP</span>", unsafe_allow_html=True)
                     if cols[2].button("Purchase", key=f"power_buy_{cid}_{rid}", disabled=status != "green", use_container_width=True):
                         result = assign_craft_to_character(cid, rid, "power", actor_name=(st.session_state.get("user") or {}).get("username", ""), actor_user_id=(st.session_state.get("user") or {}).get("id"), source="Psychic Power Purchase")
                         if result[0]: st.rerun()
                         st.error(result[1])
-                    if r.get("effect"):
-                        st.caption(str(r.get("effect", "")))
-                    if status == "orange": st.warning(craft_status_text(status, reason))
-                    elif status == "red": st.error(craft_status_text(status, reason))
-                    else: st.success(craft_status_text(status, reason))
             else:
-                st.info("No Psychic Powers match the search.")
+                st.caption("No Psychic Powers match the search.")
     else:
         catalog_powers = list_craft_items("power")
         if catalog_powers:
-            with st.expander(f"Assign Psychic Power ({len(catalog_powers)})", expanded=False):
-                power_query = st.text_input("Search Psychic Powers", key=f"gm_power_search_{cid}", placeholder="Type a Psychic Power name...")
+            with st.expander(f"Assign Psychic Power  ·  {len(catalog_powers)}", expanded=False):
+                power_query = st.text_input("", key=f"gm_power_search_{cid}", placeholder="Search Psychic Powers...", label_visibility="collapsed")
                 filtered_powers = [r for r in catalog_powers if power_query.strip().lower() in str(r.get("name", "")).lower()] if power_query.strip() else catalog_powers
-                labels = {int(r["id"]): craft_item_label(r) for r in filtered_powers}
-                pid = st.selectbox("Psychic Power", [None] + [int(r["id"]) for r in filtered_powers], format_func=lambda x: "Select Psychic Power..." if x is None else labels[x], key=f"gm_power_{cid}")
-                if pid is not None and st.button("Assign Psychic Power", key=f"gm_power_add_{cid}", use_container_width=True):
-                    result = assign_craft_to_character(cid, pid, "power", source="Magister Psychic Power Assignment")
-                    if result[0]: st.rerun()
-                    st.error(result[1])
-    if owned_powers:
-        for pwr in owned_powers:
-            pc = st.columns([2.2, 5.2, 1])
-            pc[0].markdown(f"**{html.escape(str(pwr.get('name','')))}**")
-            pc[1].caption(str(pwr.get("effect", "")))
-            pc[2].caption(f"{int(pwr.get('cost',0) or 0)} XP")
-            if gm_mode and pc[2].button("Remove", key=f"power_rm_{cid}_{pwr.get('craft_id',pwr.get('name'))}"):
-                owned_powers = [x for x in owned_powers if x is not pwr]
-                result = save_build(cid, ch["name"], ch.get("chapter",""), st.session_state[spk], int(st.session_state[_k(cid,"n","tier")]),
-                                    cur_attr, cur_skill, normalize_talents(ch.get("talents",[])), json.dumps(normalize_wargear(ch.get("wargear",[])), ensure_ascii=False),
-                                    int(st.session_state[_k(cid,"n","armour")]), ch.get("notes",""), int(st.session_state[_k(cid,"n","other")]),
-                                    st.session_state.get(ark,""), mode, actor_role="gm", actor_user_id=(st.session_state.get("user") or {}).get("id"),
-                                    actor_name=(st.session_state.get("user") or {}).get("username", ""), source="Magister Psychic Power Removal",
-                                    expected_revision=int(ch.get("revision",0) or 0), powers=owned_powers)
-                if result[0]: st.rerun()
-    else:
-        st.caption("No Psychic Powers assigned.")
+                for r in filtered_powers:
+                    rid = int(r["id"]); cols = st.columns([7, 1.55])
+                    cols[0].markdown(craft_description_html(r, "power"), unsafe_allow_html=True)
+                    if cols[1].button("Assign", key=f"gm_power_add_{cid}_{rid}", use_container_width=True):
+                        result = assign_craft_to_character(cid, rid, "power", source="Magister Psychic Power Assignment")
+                        if result[0]: st.rerun()
+                        st.error(result[1])
+                if not filtered_powers: st.caption("No Psychic Powers match the search.")
 
-    st.markdown("#### Wargear")
-    if gm_mode:
-        _ammo_stacks_gm, _ammo_total_gm = ammo_inventory(ch)
-        st.markdown(f"<div class='wg'><b>Ammo Capacity</b> <span style='float:right'>{ammo_capacity(ch)} total Ammo</span><div style='opacity:.65;font-size:.76rem'>The Magister controls the maximum Ammo pool, not the quantity of each Ammo type.</div></div>", unsafe_allow_html=True)
-        if catalog_wargear:
-            with st.expander(f"Assign Wargear ({len(catalog_wargear)})", expanded=False):
-                gear_query = st.text_input("Search Wargear", key=f"gm_gear_search_{cid}", placeholder="Type a Wargear name...")
-                filtered_wargear = [r for r in catalog_wargear if gear_query.strip().lower() in str(r.get("name", "")).lower()] if gear_query.strip() else catalog_wargear
-                labels = {int(r["id"]): craft_item_label(r) for r in filtered_wargear}
-                gid = st.selectbox("Wargear", [None] + [int(r["id"]) for r in filtered_wargear],
-                                   format_func=lambda x: "Select Wargear..." if x is None else labels[x], key=f"gm_gear_{cid}")
-                if gid is not None and st.button("Assign Wargear", key=f"gm_gear_add_{cid}", use_container_width=True):
-                    result = assign_wargear_to_character(
-                        cid, gid,
-                        actor_name=(st.session_state.get("user") or {}).get("username", ""),
-                        actor_user_id=(st.session_state.get("user") or {}).get("id"),
-                    )
+    if gm_mode and catalog_wargear:
+        with st.expander(f"Assign Wargear  ·  {len(catalog_wargear)}", expanded=False):
+            gear_query = st.text_input("", key=f"gm_gear_search_{cid}", placeholder="Search Wargear...", label_visibility="collapsed")
+            gear_keywords = sorted({kw for row in catalog_wargear for kw in craft_keyword_values(row)}, key=str.lower)
+            selected_gear_keywords = st.multiselect("Keywords", gear_keywords, key=f"gm_gear_keywords_{cid}", placeholder="Filter by Keyword...", label_visibility="collapsed")
+            filtered_gear = [r for r in catalog_wargear if gear_query.strip().lower() in str(r.get("name", "")).lower()] if gear_query.strip() else list(catalog_wargear)
+            filtered_gear = craft_keyword_filter(filtered_gear, selected_gear_keywords)
+            for r in filtered_gear:
+                rid = int(r["id"]); cols = st.columns([7, 1.55])
+                cols[0].markdown(craft_description_html(r, "wargear"), unsafe_allow_html=True)
+                if cols[1].button("Assign", key=f"gm_gear_add_{cid}_{rid}", use_container_width=True):
+                    result = assign_craft_to_character(cid, rid, "wargear", source="Magister Wargear Assignment")
                     if result[0]: st.rerun()
                     st.error(result[1])
-    else:
-        st.caption("The Magister may assign Wargear at any time. During Advanced Character Creation, you may also select Wargear within the Core Rulebook Tier limits.")
-        if mode == "advanced" and catalog_wargear:
-            rarity_rank = {"common": 1, "uncommon": 2, "rare": 3, "very rare": 4, "unique": 5}
-            tier_now = int(st.session_state[_k(cid, "n", "tier")])
-            max_total = {1: 15, 2: 20, 3: 25, 4: 30}.get(tier_now, 30)
-            max_item = {1: 7, 2: 9, 3: 10, 4: 999999}.get(tier_now, 30)
-            current_gear_for_buy = normalize_wargear(ch.get("wargear", []))
-            current_value = sum(int(_gear_details_dict(w.get("details", {})).get("value", 0) or 0) * int(w.get("quantity", 1) or 1) for w in current_gear_for_buy if not _is_ammo_resource(w))
-            allowed_rarity = 2 if tier_now == 1 else 3 if tier_now == 2 else 4 if tier_now == 3 else 5
-            gear_choices = []
-            for r in catalog_wargear:
-                rd = craft_details(r); rarity = str(rd.get("rarity", "Common") or "Common").strip().lower(); value = int(rd.get("value", 0) or 0)
-                if value <= max_item and current_value + value < max_total and rarity_rank.get(rarity, 99) <= allowed_rarity and not any(int(w.get("craft_id", -1) or -1) == int(r["id"]) for w in current_gear_for_buy):
-                    gear_choices.append(r)
-            if gear_choices:
-                glabels = {int(r["id"]): f"{r['name']} · Value {int(craft_details(r).get('value', 0) or 0)} · {craft_details(r).get('rarity', 'Common')}" for r in gear_choices}
-                buy_gid = st.selectbox("Advanced Creation Wargear", [None] + [int(r["id"]) for r in gear_choices], format_func=lambda x: "Select Wargear..." if x is None else glabels[x], key=f"player_gear_shop_{cid}")
-                if buy_gid is not None and st.button("Take Wargear", key=f"player_gear_buy_{cid}", use_container_width=True):
-                    result = assign_wargear_to_character(cid, buy_gid, actor_name=(st.session_state.get("user") or {}).get("username", ""), actor_user_id=(st.session_state.get("user") or {}).get("id"))
-                    if result[0]: st.rerun()
-                    st.error(result[1])
+            if not filtered_gear: st.caption("No Wargear matches the current filters.")
 
     wdf = normalize_wargear(st.session_state.get(_k(cid, "meta", "archetype_starting_wargear"), ch.get("wargear", [])))
-    # Archetype Creation includes the Archetype's starting Wargear package.
-    # If an older/incomplete character has no Wargear yet, populate it here so
-    # the normal auto-save immediately persists the complete package.
     if mode == "archetype" and st.session_state.get(ark, "") and not wdf:
         starting_wdf = archetype_starting_wargear(st.session_state.get(ark, ""))
         if starting_wdf:
             wdf = normalize_wargear(starting_wdf + starting_ammo_for_wargear(starting_wdf))
+
     if wdf:
-        catalog_all = list_craft_items("wargear", active_only=False)
+        st.markdown("<div class='arsenal-panel'>", unsafe_allow_html=True)
+        st.markdown("<div class='resource-subtitle'>INVENTORY</div>", unsafe_allow_html=True)
         for idx, w in enumerate(wdf):
-            wc2 = st.columns([2.1, 4.4, 1.1, 1])
-            qty = int(w.get("quantity", 1) or 1)
-            display_name = html.escape(str(w.get("name", "")))
+            qty = max(1, int(w.get("quantity", 1) or 1))
             details_w = _gear_details_dict(w.get("details", {}))
             stackable_w = bool(details_w.get("stackable", False))
             ammo_w = _is_ammo_resource(w)
-            if gm_mode and ammo_w:
-                # The Magister sees the capacity only; current Ammo type quantities are player-managed.
-                continue
-            else:
-                wc2[0].markdown(f"**{display_name}**" + (f" × {qty}" if qty > 1 or stackable_w else ""))
-            wc2[1].caption(str(w.get("effect", "")))
-            if gm_mode:
-                if stackable_w and not ammo_w:
+            display_name = html.escape(str(w.get("name", "")))
+            effect = html.escape(str(w.get("effect", "") or ""))
+            category = html.escape(str(details_w.get("category", details_w.get("type", "Wargear")) or "Wargear").title())
+            wc2 = st.columns([3.2, 5.2, 1.15, 1.15])
+            wc2[0].markdown(
+                f"<div class='inventory-name'>{display_name} <span class='inventory-qty'>{('× ' + str(qty)) if stackable_w else ''}</span></div>"
+                f"<div class='inventory-meta'>{category}</div>", unsafe_allow_html=True)
+            wc2[1].markdown(f"<div class='inventory-effect'>{effect}</div>", unsafe_allow_html=True)
+
+            if stackable_w:
+                if gm_mode:
                     qcols = wc2[2].columns(2)
-                    if qcols[0].button("−", key=f"gear_qm_{cid}_{idx}"):
-                        result = adjust_wargear_quantity(cid, int(w.get("craft_id", -1) or -1), -1,
+                    if qcols[0].button("−", key=f"sheet_qm_{cid}_{idx}"):
+                        result = adjust_wargear_quantity(cid, _wargear_craft_id(w), -1,
                                                          actor_name=(st.session_state.get("user") or {}).get("username", ""),
-                                                         actor_user_id=(st.session_state.get("user") or {}).get("id"), source="Magister Wargear Stack -1")
+                                                         actor_user_id=(st.session_state.get("user") or {}).get("id"),
+                                                         source="Magister Wargear Stack -1", actor_role="gm")
                         if result[0]: st.rerun()
-                    if qcols[1].button("+", key=f"gear_qp_{cid}_{idx}"):
-                        result = adjust_wargear_quantity(cid, int(w.get("craft_id", -1) or -1), 1,
+                        else: st.error(result[1])
+                    if qcols[1].button("+", key=f"sheet_qp_{cid}_{idx}"):
+                        result = adjust_wargear_quantity(cid, _wargear_craft_id(w), 1,
                                                          actor_name=(st.session_state.get("user") or {}).get("username", ""),
-                                                         actor_user_id=(st.session_state.get("user") or {}).get("id"), source="Magister Wargear Stack +1")
+                                                         actor_user_id=(st.session_state.get("user") or {}).get("id"),
+                                                         source="Magister Wargear Stack +1", actor_role="gm")
                         if result[0]: st.rerun()
+                        else: st.error(result[1])
+                else:
+                    if wc2[2].button("USE 1", key=f"sheet_use_{cid}_{idx}", disabled=qty <= 0 or _wargear_craft_id(w) < 1):
+                        result = adjust_wargear_quantity(cid, _wargear_craft_id(w), -1,
+                                                         actor_name=(st.session_state.get("user") or {}).get("username", ""),
+                                                         actor_user_id=(st.session_state.get("user") or {}).get("id"),
+                                                         source="Player Wargear Used", actor_role="player")
+                        if result[0]: st.rerun()
+                        else: st.error(result[1])
+            else:
                 equipped = bool(w.get("equipped", True))
-                if wc2[2].button("Equipped" if equipped else "Stowed", key=f"gear_eq_{cid}_{idx}"):
+                if wc2[2].button("EQUIPPED" if equipped else "STOWED", key=f"sheet_eq_{cid}_{idx}"):
                     wdf[idx]["equipped"] = not equipped
                     result = save_build(cid, ch["name"], ch.get("chapter", ""), st.session_state[spk], int(st.session_state[_k(cid, "n", "tier")]),
                                         cur_attr, cur_skill, normalize_talents(ch.get("talents", [])), json.dumps(wdf, ensure_ascii=False),
                                         int(st.session_state[_k(cid, "n", "armour")]), ch.get("notes", ""), int(st.session_state[_k(cid, "n", "other")]),
-                                        st.session_state.get(ark, ""), mode, actor_role="gm",
+                                        st.session_state.get(ark, ""), mode, actor_role=("gm" if gm_mode else "player"),
                                         actor_user_id=(st.session_state.get("user") or {}).get("id"),
                                         actor_name=(st.session_state.get("user") or {}).get("username", ""), source="Wargear Equip Toggle",
                                         expected_revision=int(ch.get("revision", 0) or 0))
                     if result[0]: st.rerun()
-                if wc2[3].button("Remove", key=f"gear_rm_{cid}_{idx}"):
-                    wdf.pop(idx)
-                    result = save_build(cid, ch["name"], ch.get("chapter", ""), st.session_state[spk], int(st.session_state[_k(cid, "n", "tier")]),
-                                        cur_attr, cur_skill, normalize_talents(ch.get("talents", [])), json.dumps(wdf, ensure_ascii=False),
-                                        int(st.session_state[_k(cid, "n", "armour")]), ch.get("notes", ""), int(st.session_state[_k(cid, "n", "other")]),
-                                        st.session_state.get(ark, ""), mode, actor_role="gm",
-                                        actor_user_id=(st.session_state.get("user") or {}).get("id"),
-                                        actor_name=(st.session_state.get("user") or {}).get("username", ""), source="Magister Wargear Removal",
-                                        expected_revision=int(ch.get("revision", 0) or 0))
-                    if result[0]: st.rerun()
-            else:
-                wc2[2].caption("Equipped" if bool(w.get("equipped", True)) else "Stowed")
-                wc2[3].caption("")
+                    else: st.error(result[1])
+
+            if wc2[3].button("REMOVE", key=f"sheet_rm_{cid}_{idx}"):
+                wdf.pop(idx)
+                result = save_build(cid, ch["name"], ch.get("chapter", ""), st.session_state[spk], int(st.session_state[_k(cid, "n", "tier")]),
+                                    cur_attr, cur_skill, normalize_talents(ch.get("talents", [])), json.dumps(wdf, ensure_ascii=False),
+                                    int(st.session_state[_k(cid, "n", "armour")]), ch.get("notes", ""), int(st.session_state[_k(cid, "n", "other")]),
+                                    st.session_state.get(ark, ""), mode, actor_role=("gm" if gm_mode else "player"),
+                                    actor_user_id=(st.session_state.get("user") or {}).get("id"),
+                                    actor_name=(st.session_state.get("user") or {}).get("username", ""), source="Wargear Removal",
+                                    expected_revision=int(ch.get("revision", 0) or 0))
+                if result[0]: st.rerun()
+                else: st.error(result[1])
+        st.markdown("</div>", unsafe_allow_html=True)
     else:
-        st.caption("No wargear assigned.")
+        st.caption("No Wargear assigned.")
 
     talents = normalize_talents(ch.get("talents", []))
     wargear = normalize_wargear(wdf)

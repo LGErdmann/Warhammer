@@ -399,11 +399,11 @@ def derived_traits(ch):
     a, sk = effective_attributes(ch), effective_skills(ch)
     tier = int(ch.get("tier", 1)); base_armour = 0; sp = ch.get("species", "")
     gear = equipped_wargear_modifiers(ch)
-    T = int(a.get("Toughness", 1)) + gear.get("toughness", 0)
-    I = int(a.get("Initiative", 1)) + gear.get("initiative", 0)
-    Wil = int(a.get("Willpower", 1)) + gear.get("willpower", 0)
-    Intl = int(a.get("Intellect", 1)) + gear.get("intellect", 0)
-    Fel = int(a.get("Fellowship", 1)) + gear.get("fellowship", 0)
+    T = int(a.get("Toughness", 1))
+    I = int(a.get("Initiative", 1))
+    Wil = int(a.get("Willpower", 1))
+    Intl = int(a.get("Intellect", 1))
+    Fel = int(a.get("Fellowship", 1))
     defence = I - 1 + gear.get("defence", 0)
     armour = base_armour + gear.get("armour", 0)
     resilience = T + 1 + armour + gear.get("resilience", 0)
@@ -2648,6 +2648,7 @@ def battle_view(cid):
         st.error("Character sheet not found.")
         return
     d = derived_traits(ch)
+    gear_mods = equipped_wargear_modifiers(ch)
     rank = int(ch.get("rank", 1) or 1)
     ncls = "npc" if ch["kind"] == "npc" else ""
     st.markdown(f"<div class='hero'><div class='nm {ncls}'>{ch['name'] or 'Character'}</div>"

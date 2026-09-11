@@ -1429,6 +1429,10 @@ def craft_modifiers(row):
     for rating in re.findall(r"powered\s*\(\s*(\d+)\s*\)", trait_text, re.I):
         mods["strength"] = max(mods.get("strength", 0), int(rating))
 
+    # Bulk (X): reduce Speed by X while the armour is worn.
+    for rating in re.findall(r"bulk\s*\(\s*(\d+)\s*\)", trait_text, re.I):
+        mods["speed"] = mods.get("speed", 0) - int(rating)
+
     # Shield: its AR is added to Defence and Resilience, rather than being
     # treated as ordinary body armour. Keep it separate to avoid double count.
     if re.search(r"(?:^|[,;])\s*shield\s*(?:[,;]|$)", trait_text, re.I):
@@ -2271,59 +2275,102 @@ def remove_combat_participant(character_id):
 
 
 def get_combatants():
+    """Return the characters in the active encounter, in manual attack order."""
+    eid = _current_combat_id(False)
+    if not eid:
+        return []
     conn = get_conn()
-    rows = conn.execute("""SELECT c.*, cb.initiative_order, cb.initiative_modifier
-                          FROM characters c JOIN combatant cb ON cb.character_id=c.id
-                          ORDER BY cb.initiative_order ASC, c.name ASC, c.id ASC""").fetchall()
-    conn.close(); return [_decode(r) for r in rows]
+    rows = conn.execute("""SELECT c.*, cp.initiative_mod AS initiative_modifier,
+                                 cp.turn_order AS initiative_order
+                          FROM characters c
+                          JOIN combat_participant cp ON cp.character_id=c.id
+                          WHERE cp.encounter_id=?
+                          ORDER BY cp.turn_order ASC, c.name ASC, c.id ASC""", (int(eid),)).fetchall()
+    conn.close()
+    return [_decode(r) for r in rows]
 
 
 def set_combatant(cid, active=True):
-    before = get_combatants()
-    current_id = before[combat_state().get("current", 0)]["id"] if before and int(combat_state().get("current", 0)) < len(before) else None
-    conn = get_conn()
-    if active:
-        row = conn.execute("SELECT COALESCE(MAX(initiative_order), 0) + 1 FROM combatant").fetchone()
-        next_order = int(row[0] or 1)
-        conn.execute("INSERT OR REPLACE INTO combatant(character_id,added_at,initiative_order,initiative_modifier) VALUES(?,?,?,0)",
-                     (int(cid), now_iso(), next_order))
-    else:
-        conn.execute("DELETE FROM combatant WHERE character_id=?", (int(cid),))
-    conn.commit(); conn.close()
-    after = get_combatants()
-    if not after:
+    """Add or remove a character from the active combat encounter."""
+    eid = _current_combat_id(create=bool(active))
+    if not eid:
         return
-    if current_id is not None:
-        ids = [int(x["id"]) for x in after]
-        if current_id in ids:
-            set_combat_turn(ids.index(current_id))
-    else:
-        set_combat_turn(0)
+    conn = get_conn()
+    try:
+        if active:
+            exists = conn.execute(
+                "SELECT 1 FROM combat_participant WHERE encounter_id=? AND character_id=?",
+                (int(eid), int(cid)),
+            ).fetchone()
+            if not exists:
+                row = conn.execute(
+                    "SELECT COALESCE(MAX(turn_order), 0) + 1 FROM combat_participant WHERE encounter_id=?",
+                    (int(eid),),
+                ).fetchone()
+                next_order = int(row[0] or 1)
+                ch = conn.execute("SELECT kind FROM characters WHERE id=?", (int(cid),)).fetchone()
+                if ch:
+                    conn.execute(
+                        """INSERT INTO combat_participant(encounter_id,character_id,side,turn_order,added_at)
+                           VALUES(?,?,?,?,?)""",
+                        (int(eid), int(cid), str(ch[0] or "npc"), next_order, now_iso()),
+                    )
+        else:
+            conn.execute(
+                "DELETE FROM combat_participant WHERE encounter_id=? AND character_id=?",
+                (int(eid), int(cid)),
+            )
+            rows = conn.execute(
+                "SELECT id FROM combat_participant WHERE encounter_id=? ORDER BY turn_order ASC, id ASC",
+                (int(eid),),
+            ).fetchall()
+            for order, row in enumerate(rows, 1):
+                conn.execute("UPDATE combat_participant SET turn_order=? WHERE id=?", (order, int(row[0])))
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def set_combat_modifier(cid, modifier):
+    eid = _current_combat_id(False)
+    if not eid:
+        return
     conn = get_conn()
-    conn.execute("UPDATE combatant SET initiative_modifier=? WHERE character_id=?", (int(modifier), int(cid)))
-    conn.commit(); conn.close()
+    conn.execute(
+        "UPDATE combat_participant SET initiative_mod=? WHERE encounter_id=? AND character_id=?",
+        (int(modifier), int(eid), int(cid)),
+    )
+    conn.commit()
+    conn.close()
 
 
 def move_combatant(cid, direction):
-    current = get_combatants()
-    state = combat_state()
-    current_id = current[int(state.get("current", 0))]["id"] if current and int(state.get("current", 0)) < len(current) else None
-    ids = [int(c["id"]) for c in current]
-    if int(cid) not in ids:
+    """Move a combatant up or down in the manual attack order."""
+    eid = _current_combat_id(False)
+    if not eid:
         return
-    i = ids.index(int(cid)); j = i + int(direction)
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT id, character_id FROM combat_participant WHERE encounter_id=? ORDER BY turn_order ASC, id ASC",
+        (int(eid),),
+    ).fetchall()
+    ids = [int(r[1]) for r in rows]
+    if int(cid) not in ids:
+        conn.close()
+        return
+    i = ids.index(int(cid))
+    j = i + int(direction)
     if j < 0 or j >= len(ids):
+        conn.close()
         return
     ids[i], ids[j] = ids[j], ids[i]
-    conn = get_conn()
     for order, char_id in enumerate(ids, 1):
-        conn.execute("UPDATE combatant SET initiative_order=? WHERE character_id=?", (order, char_id))
-    conn.commit(); conn.close()
-    if current_id is not None and current_id in ids:
-        set_combat_turn(ids.index(int(current_id)), int(state.get("round", 1)))
+        conn.execute(
+            "UPDATE combat_participant SET turn_order=? WHERE encounter_id=? AND character_id=?",
+            (order, int(eid), int(char_id)),
+        )
+    conn.commit()
+    conn.close()
 
 
 def combat_state():
@@ -2351,7 +2398,14 @@ def advance_combat_turn(delta=1):
     set_combat_turn(idx, rnd)
 
 def clear_combat():
-    conn = get_conn(); conn.execute("DELETE FROM combatant"); conn.execute("UPDATE combat_encounter SET current_turn=0,round_no=1 WHERE status='active'"); conn.commit(); conn.close()
+    eid = _current_combat_id(False)
+    if not eid:
+        return
+    conn = get_conn()
+    conn.execute("DELETE FROM combat_participant WHERE encounter_id=?", (int(eid),))
+    conn.execute("UPDATE combat_encounter SET current_turn=0,round_no=1 WHERE id=?", (int(eid),))
+    conn.commit()
+    conn.close()
 
 
 # ============================================================
@@ -2916,16 +2970,21 @@ def battle_view(cid):
 
         st.markdown("<div class='sectionttl'>Skills &nbsp;<small style='opacity:.6;letter-spacing:0'>Total = Skill + Attribute</small></div>", unsafe_allow_html=True)
         rows = "<div class='skhead'><span>Skill</span><span>Rank</span><span>Attr</span><span>Total</span></div>"
-        eff_sk = effective_skills(ch); eff_attr = effective_attributes(ch)
+        base_sk = {str(k): int(v) for k, v in (ch.get("skills", {}) or {}).items()}
+        base_attr = {str(k): int(v) for k, v in (ch.get("attributes", {}) or {}).items()}
         for s in SKILLS:
-            r = eff_sk[s]; av = eff_attr[SKILLS[s]]
-            skill_mod = int(gear_mods.get(str(s).lower(), 0) or 0)
-            skill_badge = f"<span class='gear-mod'>{skill_mod:+d}</span>" if skill_mod else ""
             attr_name = SKILLS[s]
+            skill_base = int(base_sk.get(s, 0))
+            attr_base = int(base_attr.get(attr_name, 0))
+            skill_mod = int(gear_mods.get(str(s).lower(), 0) or 0)
             attr_mod = int(gear_mods.get(str(attr_name).lower(), 0) or 0)
+            skill_total = skill_base + skill_mod
+            attr_total = attr_base + attr_mod
+            total = skill_total + attr_total
+            skill_badge = f"<span class='gear-mod'>{skill_mod:+d}</span>" if skill_mod else ""
             attr_badge = f"<span class='gear-mod'>{attr_mod:+d}</span>" if attr_mod else ""
-            rows += (f"<div class='skrow'><span class='n'>{s}</span><span class='c'>{r}{skill_badge}</span>"
-                     f"<span class='c'>+{av}{attr_badge}</span><span class='t'>{r+av}</span></div>")
+            rows += (f"<div class='skrow'><span class='n'>{s}</span><span class='c'>{skill_total}{skill_badge}</span>"
+                     f"<span class='c'>+{attr_total}{attr_badge}</span><span class='t'>{total}</span></div>")
         st.markdown(rows, unsafe_allow_html=True)
 
     with right:
@@ -3666,236 +3725,105 @@ def _req_list(value):
     return [x.strip() for x in re.split(r",|;", str(value or "")) if x.strip()]
 
 
-def _render_craft_requirements(prefix, details, kind):
-    details = dict(details or {})
-    req = details.get("requirements", {})
-    if not isinstance(req, dict):
-        req = {}
-    old_kw_all = ", ".join(req.get("keywords_all", details.get("keywords", [])) if isinstance(req.get("keywords_all", details.get("keywords", [])), list) else _req_list(req.get("keywords_all", details.get("keywords", ""))))
-    old_kw_any = ", ".join(req.get("keywords_any", []) if isinstance(req.get("keywords_any", []), list) else _req_list(req.get("keywords_any", "")))
-    kw_all = st.text_input("Required Keywords (all)", value=old_kw_all, key=f"{prefix}_req_kw_all", placeholder="Imperium, Adeptus Astartes")
-    kw_any = st.text_input("Required Keywords (one of)", value=old_kw_any, key=f"{prefix}_req_kw_any", placeholder="Aeldari, Ork")
-
-    rc = st.columns(2)
-    rank_min = rc[0].number_input("Minimum Rank", 0, 3, int(req.get("rank_min", 0) or 0), key=f"{prefix}_req_rank")
-    tier_min = rc[1].number_input("Minimum Tier", 0, MAX_TIER, int(req.get("tier_min", 0) or 0), key=f"{prefix}_req_tier")
-
-    species_options = PLAYER_SPECIES + [x for x in NPC_SPECIES if x not in PLAYER_SPECIES]
-    old_species = req.get("species", [])
-    if isinstance(old_species, str): old_species = _req_list(old_species)
-    species = st.multiselect("Required Species", species_options, default=[x for x in old_species if x in species_options], key=f"{prefix}_req_species")
-
-    arch_options = list(ARCHETYPES.keys())
-    old_arch = req.get("archetypes", [])
-    if isinstance(old_arch, str): old_arch = _req_list(old_arch)
-    archetypes = st.multiselect("Required Archetype", arch_options, default=[x for x in old_arch if x in arch_options], key=f"{prefix}_req_arch")
-
-    old_talents = req.get("talents", [])
-    if isinstance(old_talents, str): old_talents = _req_list(old_talents)
-    talents = st.text_input("Required Talents", value=", ".join(old_talents), key=f"{prefix}_req_talents", placeholder="Talent A, Talent B")
-
-    with st.expander("Attribute and Skill Requirements"):
-        attrs = {}
-        st.caption("Use 0 for no requirement. The value is a minimum rating.")
-        ac = st.columns(4)
-        for i, attr in enumerate(ATTRS):
-            val = int((req.get("attributes", {}) or {}).get(attr, 0) or 0)
-            n = ac[i % 4].number_input(attr, 0, 12, val, key=f"{prefix}_req_attr_{i}")
-            if n: attrs[attr] = int(n)
-        skills = {}
-        sc = st.columns(3)
-        for i, skill in enumerate(SKILLS):
-            val = int((req.get("skills", {}) or {}).get(skill, 0) or 0)
-            n = sc[i % 3].number_input(skill, 0, 8, val, key=f"{prefix}_req_skill_{i}")
-            if n: skills[skill] = int(n)
-
-    result = {
-        "keywords_all": _req_list(kw_all),
-        "keywords_any": _req_list(kw_any),
-        "rank_min": int(rank_min),
-        "tier_min": int(tier_min),
-        "species": species,
-        "archetypes": archetypes,
-        "talents": _req_list(talents),
-        "attributes": attrs,
-        "skills": skills,
-    }
-    return result
+CRAFT_TRAITS = [
+    "Assault", "Blast", "Brutal", "Combi", "Dakka", "Felling", "Force", "Force Shield",
+    "Flame", "Heavy", "Melta", "Parry", "Penetrating", "Pistol", "Powered", "Rapid Fire",
+    "Reliable", "Rending", "Shield", "Sniper", "Steadfast", "Toxic", "Unwieldy", "Warp Weapon",
+    "Waaagh!", "’Ere We Go", "2-Handed", "Bulk"
+]
+CRAFT_TRAIT_PARAMETER = {
+    "Blast": "Blast size", "Dakka": "Dakka rating", "Felling": "Felling rating", "Penetrating": "Penetrating rating",
+    "Rapid Fire": "Rapid Fire rating", "Rending": "Rending rating", "Sniper": "Sniper rating", "Bulk": "Bulk rating", "Powered": "Powered rating"
+}
 
 
-def _render_wargear_details(prefix, details):
-    details = dict(details or {})
-    mods_old = details.get("modifiers", {}) or {}
-    with st.expander("Equipment Bonuses / Mechanical Data", expanded=True):
-        st.caption("Bonuses are applied automatically while this Wargear is equipped. Leave a value at 0 when it does not modify that statistic.")
-        mods = {}
-        for group in (ATTRS, list(SKILLS.keys()), ["armour", "defence", "resilience", "wounds", "shock", "speed", "willpower", "intellect", "fellowship", "strength", "toughness", "agility", "initiative"]):
-            cols = st.columns(4)
-            for i, key in enumerate(group):
-                if key in mods:
-                    continue
-                value = int(mods_old.get(key, 0) or 0)
-                mods[key] = int(cols[i % 4].number_input(key, -20, 20, value, key=f"{prefix}_mod_{key}"))
-        m = st.columns(4)
-        rarity = m[0].text_input("Rarity", str(details.get("rarity", "")), key=f"{prefix}_rarity")
-        value = m[1].number_input("Value", 0, 1000000, int(details.get("value", 0) or 0), key=f"{prefix}_value")
-        wtype = m[2].text_input("Type", str(details.get("type", "")), key=f"{prefix}_type")
-        traits = m[3].text_input("Traits", ", ".join(details.get("traits", []) if isinstance(details.get("traits", []), list) else _req_list(details.get("traits", ""))), key=f"{prefix}_traits")
-        dc = st.columns(4)
-        damage = dc[0].text_input("Damage", str(details.get("damage", "")), key=f"{prefix}_damage")
-        ed = dc[1].text_input("ED", str(details.get("ed", "")), key=f"{prefix}_ed")
-        ap = dc[2].text_input("AP", str(details.get("ap", "")), key=f"{prefix}_ap")
-        rng = dc[3].text_input("Range", str(details.get("range", "")), key=f"{prefix}_range")
-        salvo = st.text_input("Salvo", str(details.get("salvo", "")), key=f"{prefix}_salvo")
-    return mods, {"rarity": rarity, "value": int(value), "type": wtype, "traits": _req_list(traits), "damage": damage, "ed": ed, "ap": ap, "range": rng, "salvo": salvo}
-
-
-def _craft_keyword_options():
-    return [
-        "Imperium", "Adeptus Astartes", "Primaris", "Adepta Sororitas",
-        "Adeptus Ministorum", "Astra Militarum", "Inquisition",
-        "Adeptus Mechanicus", "Adeptus Astra Telepathica", "Psyker",
-        "Aeldari", "Asuryani", "Drukhari", "Anhrathe", "Outcast",
-        "Ork", "Chaos", "Rogue Trader", "Scum", "Genestealer",
-        "Tyranid", "Necron", "T'au", "Human", "Abhuman",
-    ]
-
-
-def _render_craft_requirements(prefix, details=None):
+def _render_craft_requirements(prefix, details=None, kind="talent"):
     details = dict(details or {})
     req = _requirement_data({"details": details})
     st.markdown("**Prerequisites**")
-
     c1, c2 = st.columns(2)
     rank_min = c1.number_input("Minimum Rank", 0, 3, int(req.get("rank_min", 0) or 0), key=f"{prefix}_rank")
     tier_min = c2.number_input("Minimum Tier", 0, MAX_TIER, int(req.get("tier_min", 0) or 0), key=f"{prefix}_tier")
-
-    old_kw = _req_list(req.get("keywords_all", []))
     kw_options = _craft_keyword_options()
+    old_kw = _req_list(req.get("keywords_all", []))
     kw_default = [x for x in kw_options if x.lower() in {str(v).lower() for v in old_kw}]
-    keywords = st.multiselect("Required Keywords", kw_options, default=kw_default,
-                              key=f"{prefix}_keywords",
-                              help="Select every Keyword that the character must have.")
-    custom_kw_default = [x for x in old_kw if x.lower() not in {v.lower() for v in kw_options}]
-    custom_kw = st.text_input("Other Required Keywords", ", ".join(custom_kw_default),
-                              key=f"{prefix}_custom_keywords", placeholder="Custom keyword, another keyword")
-
-    species_options = PLAYER_SPECIES + [x for x in NPC_SPECIES if x not in PLAYER_SPECIES]
+    keywords = st.multiselect("Required Keywords", kw_options, default=kw_default, key=f"{prefix}_keywords")
+    custom_kw = st.text_input("Other Required Keywords", ", ".join(x for x in old_kw if x.lower() not in {v.lower() for v in kw_options}), key=f"{prefix}_custom_keywords")
+    species_options = list(dict.fromkeys(PLAYER_SPECIES + [x for x in NPC_SPECIES if x not in PLAYER_SPECIES]))
     old_species = _req_list(req.get("species", []))
-    species = st.multiselect("Required Species", species_options,
-                             default=[x for x in old_species if x in species_options],
-                             key=f"{prefix}_species")
-
+    species = st.multiselect("Required Species", species_options, default=[x for x in old_species if x in species_options], key=f"{prefix}_species")
     arch_options = list(ARCHETYPES.keys())
     old_arch = _req_list(req.get("archetypes", []))
-    archetypes = st.multiselect("Required Archetype", arch_options,
-                                default=[x for x in old_arch if x in arch_options],
-                                key=f"{prefix}_archetypes")
-
+    archetypes = st.multiselect("Required Archetype", arch_options, default=[x for x in old_arch if x in arch_options], key=f"{prefix}_archetypes")
     talent_names = [r["name"] for r in list_craft_items("talent")]
     old_talents = _req_list(req.get("talents", []))
-    required_talents = st.multiselect("Required Talents", talent_names,
-                                      default=[x for x in old_talents if x in talent_names],
-                                      key=f"{prefix}_talents")
-    extra_talents = [x for x in old_talents if x not in talent_names]
-    extra_required = st.text_input("Other Required Talents", ", ".join(extra_talents),
-                                   key=f"{prefix}_other_talents", placeholder="Talent name")
-
-    with st.expander("Attribute and Skill Requirements"):
-        attrs = {}
-        ac = st.columns(4)
-        old_attrs = req.get("attributes", {}) or {}
+    required_talents = st.multiselect("Required Talents", talent_names, default=[x for x in old_talents if x in talent_names], key=f"{prefix}_talents")
+    extra_required = st.text_input("Other Required Talents", ", ".join(x for x in old_talents if x not in talent_names), key=f"{prefix}_other_talents")
+    with st.expander("Attribute and Skill Requirements", expanded=False):
+        attrs = {}; ac = st.columns(4); old_attrs = req.get("attributes", {}) or {}
         for i, attr in enumerate(ATTRS):
-            val = int(old_attrs.get(attr, 0) or 0)
-            n = ac[i % 4].number_input(f"{attr} minimum", 0, 12, val, key=f"{prefix}_attr_{i}")
-            if n:
-                attrs[attr] = int(n)
-        skills = {}
-        sc = st.columns(3)
-        old_skills = req.get("skills", {}) or {}
+            n = ac[i % 4].number_input(f"{attr} minimum", 0, 12, int(old_attrs.get(attr, 0) or 0), key=f"{prefix}_attr_{i}")
+            if n: attrs[attr] = int(n)
+        skills = {}; sc = st.columns(3); old_skills = req.get("skills", {}) or {}
         for i, skill in enumerate(SKILLS):
-            val = int(old_skills.get(skill, 0) or 0)
-            n = sc[i % 3].number_input(f"{skill} minimum", 0, 8, val, key=f"{prefix}_skill_{i}")
-            if n:
-                skills[skill] = int(n)
-
-    return {
-        "keywords_all": _req_list(keywords) + _req_list(custom_kw),
-        "keywords_any": [],
-        "rank_min": int(rank_min),
-        "tier_min": int(tier_min),
-        "species": species,
-        "archetypes": archetypes,
-        "talents": required_talents + _req_list(extra_required),
-        "attributes": attrs,
-        "skills": skills,
-    }
+            n = sc[i % 3].number_input(f"{skill} minimum", 0, 8, int(old_skills.get(skill, 0) or 0), key=f"{prefix}_skill_{i}")
+            if n: skills[skill] = int(n)
+    return {"keywords_all": _req_list(keywords) + _req_list(custom_kw), "keywords_any": [], "rank_min": int(rank_min), "tier_min": int(tier_min),
+            "species": species, "archetypes": archetypes, "talents": required_talents + _req_list(extra_required), "attributes": attrs, "skills": skills}
 
 
-def _render_craft_modifiers(prefix, details=None):
-    details = dict(details or {})
-    old = details.get("modifiers", {}) or {}
-    st.markdown("**Bonuses / Modifiers**")
-    st.caption("Leave a value at 0 when this item does not modify the statistic.")
-    mods = {}
-    all_stats = list(dict.fromkeys(list(ATTRS) + list(SKILLS.keys()) + [
-        "armour", "defence", "resilience", "wounds", "shock", "speed", "initiative"
-    ]))
-    cols = st.columns(4)
-    for i, stat in enumerate(all_stats):
-        old_value = int(old.get(stat, old.get(str(stat).lower(), 0)) or 0)
-        value = cols[i % 4].number_input(stat, -20, 20, old_value, key=f"{prefix}_mod_{i}")
-        if value:
-            mods[stat] = int(value)
+def _render_craft_modifiers(prefix, details=None, wargear_only=False):
+    details = dict(details or {}); old = details.get("modifiers", {}) or {}; mods = {}
+    st.markdown("**Automatic Sheet Modifiers**")
+    st.caption("These are only direct numeric changes to the character sheet. Use Traits for rule effects such as Pistol, Blast or Parry.")
+    groups = [("Attributes", list(ATTRS)), ("Skills", list(SKILLS.keys())), ("Derived Traits", ["defence", "resilience", "speed", "initiative"]), ("Vitals / Capacity", ["wounds", "shock", "wrath", "ammo"]), ("Armour Rating", ["armour"])]
+    for title, keys in groups:
+        with st.expander(title, expanded=False):
+            cols = st.columns(4)
+            for i, key in enumerate(keys):
+                n = cols[i % 4].number_input(key.replace("_", " ").title(), -20, 20, int(old.get(key, 0) or 0), key=f"{prefix}_mod_{key}")
+                if n: mods[key] = int(n)
     return mods
 
 
 def _render_wargear_data(prefix, details=None):
-    details = dict(details or {})
-    st.markdown("**Wargear Data**")
-    a = st.columns(5)
-    rarity = a[0].selectbox("Rarity", ["Common", "Uncommon", "Rare", "Very Rare", "Unique"],
-                            index=( ["Common", "Uncommon", "Rare", "Very Rare", "Unique"].index(str(details.get("rarity")))
-                                    if str(details.get("rarity")) in ["Common", "Uncommon", "Rare", "Very Rare", "Unique"] else 0),
-                            key=f"{prefix}_rarity")
-    value = a[1].number_input("Value", 0, 1000000, int(details.get("value", 0) or 0), key=f"{prefix}_value",
-                              help="Base Value used by Requisition/Influence tests.")
-    wtype = a[2].text_input("Type", str(details.get("type", "")), key=f"{prefix}_type", placeholder="Weapon, Armour, Ammo, Grenade...")
-    category_options = ["", "weapon", "armour", "gear", "ammo", "grenade", "missile", "reload", "upgrade"]
-    old_category = str(details.get("category", "")).lower()
-    category = a[3].selectbox("Category", category_options, index=(category_options.index(old_category) if old_category in category_options else 0), key=f"{prefix}_category")
-    stackable = a[4].checkbox("Stackable", value=bool(details.get("stackable", False)), key=f"{prefix}_stackable",
-                                help="Use a quantity stack instead of separate inventory entries.")
-    traits_old = details.get("traits", [])
-    traits = st.text_input("Traits", ", ".join(traits_old if isinstance(traits_old, list) else _req_list(traits_old)), key=f"{prefix}_traits")
+    details = dict(details or {}); a = st.columns(4)
+    rarity_options = ["Common", "Uncommon", "Rare", "Very Rare", "Unique"]; old_rarity = str(details.get("rarity", "Common"))
+    rarity = a[0].selectbox("Rarity", rarity_options, index=rarity_options.index(old_rarity) if old_rarity in rarity_options else 0, key=f"{prefix}_rarity")
+    value = a[1].number_input("Value", 0, 1000000, int(details.get("value", 0) or 0), key=f"{prefix}_value")
+    wtype = a[2].text_input("Type", str(details.get("type", "")), key=f"{prefix}_type")
+    category_options = ["", "weapon", "armour", "gear", "ammo", "grenade", "missile", "reload", "upgrade"]; old_category = str(details.get("category", "")).lower()
+    category = a[3].selectbox("Category", category_options, index=category_options.index(old_category) if old_category in category_options else 0, key=f"{prefix}_category")
+    old_traits = details.get("traits", []) or []; old_traits = _req_list(old_traits) if isinstance(old_traits, str) else [str(x) for x in old_traits]
+    selected_base = [t for t in CRAFT_TRAITS if any(x.lower().startswith(t.lower()) for x in old_traits)]
+    with st.expander("Traits", expanded=bool(selected_base)):
+        selected = st.multiselect("Wargear Traits", CRAFT_TRAITS, default=selected_base, key=f"{prefix}_trait_select")
+        trait_values = {}
+        for trait in selected:
+            if trait in CRAFT_TRAIT_PARAMETER:
+                old_value = ""
+                for x in old_traits:
+                    m = re.match(rf"{re.escape(trait)}\s*\(([^)]*)\)", x, re.I)
+                    if m: old_value = m.group(1)
+                trait_values[trait] = st.text_input(CRAFT_TRAIT_PARAMETER[trait], old_value, key=f"{prefix}_trait_value_{re.sub(r'[^a-z0-9]+','_',trait.lower())}")
+    traits = [f"{t} ({str(trait_values.get(t, '')).strip()})" if t in CRAFT_TRAIT_PARAMETER and str(trait_values.get(t, '')).strip() else t for t in selected]
     b = st.columns(5)
     damage = b[0].text_input("Damage", str(details.get("damage", "")), key=f"{prefix}_damage")
     ed = b[1].number_input("ED", 0, 20, int(details.get("ed", 0) or 0), key=f"{prefix}_ed")
     ap = b[2].number_input("AP", -20, 20, int(details.get("ap", 0) or 0), key=f"{prefix}_ap")
     rng = b[3].text_input("Range", str(details.get("range", "")), key=f"{prefix}_range")
     salvo = b[4].number_input("Salvo", 0, 20, int(details.get("salvo", 0) or 0), key=f"{prefix}_salvo")
-    kw_options = _craft_keyword_options() + ["Explosive", "Bolt", "Las", "Flame", "Plasma", "Melta", "Shuriken", "Projectile", "Fire"]
-    old_kw = [str(x) for x in (details.get("keywords", []) or [])]
-    kw_default = [x for x in kw_options if x.lower() in {v.lower() for v in old_kw}]
-    keywords = st.multiselect("Wargear Keywords", sorted(set(kw_options)), default=kw_default, key=f"{prefix}_keywords")
+    kw_options = sorted(set(_craft_keyword_options() + ["Explosive", "Bolt", "Las", "Flame", "Plasma", "Melta", "Shuriken", "Projectile", "Fire"]))
+    old_kw = [str(x) for x in (details.get("keywords", []) or [])]; old_lower = {x.lower() for x in old_kw}
+    keywords = st.multiselect("Wargear Keywords", kw_options, default=[x for x in kw_options if x.lower() in old_lower], key=f"{prefix}_gear_keywords")
     custom_kw = st.text_input("Other Wargear Keywords", ", ".join(x for x in old_kw if x.lower() not in {v.lower() for v in kw_options}), key=f"{prefix}_custom_keywords")
-    stack_group = st.text_input("Stack Group", str(details.get("stack_group", "")), key=f"{prefix}_stack_group",
-                                help="Items with the same Craft ID already stack. This field is used for custom stackable resources.")
-    if category in {"ammo", "grenade", "missile", "reload"} and not stack_group.strip():
-        stack_group = str(details.get("stack_group") or "")
-    return {
-        "rarity": rarity, "value": int(value), "type": wtype, "category": category,
-        "stackable": bool(stackable), "stack_group": stack_group.strip(),
-        "keywords": _req_list(keywords) + _req_list(custom_kw),
-        "traits": _req_list(traits), "damage": damage, "ed": int(ed),
-        "ap": int(ap), "range": rng, "salvo": int(salvo),
-    }
+    stackable = st.checkbox("Stackable", value=bool(details.get("stackable", False)), key=f"{prefix}_stackable")
+    stack_group = st.text_input("Stack Group", str(details.get("stack_group", "")), key=f"{prefix}_stack_group")
+    return {"rarity": rarity, "value": int(value), "type": wtype, "category": category, "stackable": bool(stackable), "stack_group": stack_group.strip(), "keywords": _req_list(keywords) + _req_list(custom_kw), "traits": traits, "damage": damage, "ed": int(ed), "ap": int(ap), "range": rng, "salvo": int(salvo)}
 
 
 def _render_power_data(prefix, details=None):
-    details = dict(details or {})
-    st.markdown("**Psychic Power Data**")
-    a = st.columns(4)
+    details = dict(details or {}); a = st.columns(4)
     dn = a[0].number_input("DN", 0, 20, int(details.get("dn", 0) or 0), key=f"{prefix}_dn")
     activation = a[1].text_input("Activation", str(details.get("activation", "")), key=f"{prefix}_activation")
     potency = a[2].number_input("Potency", 0, 20, int(details.get("potency", 0) or 0), key=f"{prefix}_potency")
@@ -3909,116 +3837,79 @@ def _craft_kind_label(kind):
 
 def craft_view():
     st.markdown("#### Craft")
-    st.caption("Campaign rules are entered manually. Name and Description are text; mechanical rules use structured controls.")
+    st.caption("Talents and Psychic Powers are purchased with XP. Wargear is equipment and never has an XP purchase cost.")
     all_items = list_craft_items(active_only=False)
-
-    talent_items = [r for r in all_items if r["kind"] == "talent"]
-    power_items = [r for r in all_items if r["kind"] == "power"]
-    wargear_items = [r for r in all_items if r["kind"] == "wargear"]
-
-    tabs = st.tabs([f"Talents ({len(talent_items)})", f"Psychic Powers ({len(power_items)})", f"Wargear ({len(wargear_items)})"])
+    sets = {k: [r for r in all_items if r["kind"] == k] for k in ("talent", "power", "wargear")}
+    tabs = st.tabs([f"Talents ({len(sets['talent'])})", f"Psychic Powers ({len(sets['power'])})", f"Wargear ({len(sets['wargear'])})"])
 
     def render_catalog(kind, rows, title):
-        st.markdown(f"### {title}")
-        search = st.text_input("Search", key=f"craft_search_{kind}", placeholder="Search by name...")
+        search = st.text_input("Search", key=f"craft_search_{kind}", placeholder=f"Search {title.lower()}...")
         show_disabled = st.checkbox("Show disabled entries", value=False, key=f"craft_disabled_{kind}")
         visible = rows if show_disabled else [r for r in rows if int(r.get("active", 1))]
         if search.strip():
-            q = search.lower()
-            visible = [r for r in visible if q in str(r.get("name", "")).lower() or q in str(r.get("effect", "")).lower()]
-        for r in visible:
-            details = craft_details(r); req = _requirement_data(r)
-            with st.container(border=True):
-                h = st.columns([4, 1.2, 1.2, 1])
-                h[0].markdown(f"**{html.escape(r['name'])}**")
-                h[1].caption(_craft_kind_label(r["kind"]))
-                h[2].caption(f"{int(r.get('cost',0) or 0)} XP" if r["kind"] in ("talent","power") else "Equipment")
-                h[3].caption("Enabled" if int(r.get("active",1)) else "Disabled")
-                if r.get("effect"): st.write(r["effect"])
-                bits=[]
-                if req.get("keywords_all"): bits.append("Keywords: " + ", ".join(req["keywords_all"]))
-                if req.get("rank_min"): bits.append(f"Rank {req['rank_min']}+")
-                if req.get("tier_min"): bits.append(f"Tier {req['tier_min']}+")
-                if req.get("attributes"): bits.append("Attributes: " + ", ".join(f"{k} {v}+" for k,v in req["attributes"].items()))
-                if req.get("skills"): bits.append("Skills: " + ", ".join(f"{k} {v}+" for k,v in req["skills"].items()))
-                if req.get("species"): bits.append("Species: " + ", ".join(req["species"]))
-                if req.get("archetypes"): bits.append("Archetype: " + ", ".join(req["archetypes"]))
-                if req.get("talents"): bits.append("Talents: " + ", ".join(req["talents"]))
-                if bits: st.caption(" · ".join(bits))
-                if details.get("modifiers"): st.caption("Bonuses: " + ", ".join(f"{k} {int(v):+d}" for k,v in details["modifiers"].items() if v))
-                if kind == "wargear":
-                    extra = [f"{label}: {details.get(key)}" for key,label in (("value","Value"),("rarity","Rarity"),("category","Category"),("damage","Damage"),("ed","ED"),("ap","AP"),("range","Range"),("salvo","Salvo"),("traits","Traits")) if details.get(key) not in (None,"")]
-                    if details.get("keywords"): extra.append("Keywords: " + ", ".join(details.get("keywords", [])))
-                    if details.get("stackable"): extra.append("Stackable")
-                    if extra: st.caption(" · ".join(extra))
-                if kind == "power":
-                    extra = [f"{label}: {details.get(key)}" for key,label in (("dn","DN"),("activation","Activation"),("potency","Potency"),("discipline","Discipline")) if details.get(key) not in (None,"")]
-                    if extra: st.caption(" · ".join(extra))
-                b = st.columns(3)
-                if b[0].button("Disable" if int(r.get("active",1)) else "Enable", key=f"ct_{kind}_{r['id']}"):
-                    conn=get_conn(); conn.execute("UPDATE craft_items SET active=?,updated_at=? WHERE id=?", (0 if int(r.get("active",1)) else 1, now_iso(), int(r["id"]))); conn.commit(); conn.close(); st.rerun()
-                if b[1].button("Edit", key=f"ce_{kind}_{r['id']}"):
-                    st.session_state["craft_edit_id"] = int(r["id"]); st.rerun()
-                if b[2].button("Delete", key=f"cd_{kind}_{r['id']}"):
-                    conn=get_conn(); conn.execute("DELETE FROM craft_items WHERE id=?", (int(r["id"]),)); conn.commit(); conn.close(); st.rerun()
+            q = search.lower(); visible = [r for r in visible if q in str(r.get("name", "")).lower() or q in str(r.get("effect", "")).lower()]
+        with st.expander(f"Catalog · {len(visible)} entries", expanded=False):
+            for r in visible:
+                details = craft_details(r); req = _requirement_data(r)
+                label = f"{r['name']} · {int(r.get('cost',0) or 0)} XP · #{r['id']}" if kind in ("talent", "power") else f"{r['name']} · #{r['id']}"
+                with st.expander(label, expanded=False):
+                    if r.get("effect"): st.write(r["effect"])
+                    if req.get("keywords_all"): st.caption("Required Keywords: " + ", ".join(req["keywords_all"]))
+                    if details.get("modifiers"): st.caption("Automatic modifiers: " + ", ".join(f"{k} {int(v):+d}" for k,v in details["modifiers"].items() if v))
+                    if kind == "wargear":
+                        extra = [f"{lab}: {details.get(key)}" for key,lab in (("category","Category"),("damage","Damage"),("ed","ED"),("ap","AP"),("range","Range"),("salvo","Salvo"),("traits","Traits"),("keywords","Keywords")) if details.get(key) not in (None,"",[])]
+                        if extra: st.caption(" · ".join(extra))
+                    if kind == "power":
+                        extra = [f"{lab}: {details.get(key)}" for key,lab in (("dn","DN"),("activation","Activation"),("potency","Potency"),("discipline","Discipline")) if details.get(key) not in (None,"",0)]
+                        if extra: st.caption(" · ".join(extra))
+                    b = st.columns(3)
+                    if b[0].button("Disable" if int(r.get("active",1)) else "Enable", key=f"ct_{kind}_{r['id']}"):
+                        conn=get_conn(); conn.execute("UPDATE craft_items SET active=?,updated_at=? WHERE id=?", (0 if int(r.get("active",1)) else 1, now_iso(), int(r["id"]))); conn.commit(); conn.close(); st.rerun()
+                    if b[1].button("Edit", key=f"ce_{kind}_{r['id']}"): st.session_state["craft_edit_id"] = int(r["id"]); st.rerun()
+                    if b[2].button("Delete", key=f"cd_{kind}_{r['id']}"):
+                        conn=get_conn(); conn.execute("DELETE FROM craft_items WHERE id=?", (int(r["id"]),)); conn.commit(); conn.close(); st.rerun()
 
     def register_form(kind, title):
-        st.divider(); st.markdown(f"### Register {title}")
-        cname = st.text_input("Name", key=f"craft_new_name_{kind}")
-        cdesc = st.text_area("Description / Effect", key=f"craft_new_effect_{kind}", height=130)
-        if cname.strip() and cdesc.strip():
-            cost = st.number_input("XP Cost", 0, 10000, 0, key=f"craft_new_cost_{kind}")
-            req = _render_craft_requirements(f"craft_new_{kind}")
-            details = {"requirements": req}
-            if kind == "wargear":
-                details["modifiers"] = _render_craft_modifiers(f"craft_new_{kind}", details)
-                details.update(_render_wargear_data(f"craft_new_{kind}", details))
-            elif kind == "power":
-                details.update(_render_power_data(f"craft_new_{kind}", details))
-                details["modifiers"] = _render_craft_modifiers(f"craft_new_{kind}_mods", details)
+        with st.expander(f"Register {title}", expanded=False):
+            cname = st.text_input("Name", key=f"craft_new_name_{kind}")
+            cdesc = st.text_area("Description / Effect", key=f"craft_new_effect_{kind}", height=100)
+            if kind in ("talent", "power"):
+                cost = st.number_input("XP Cost", 0, 10000, 0, key=f"craft_new_cost_{kind}")
             else:
-                details["modifiers"] = _render_craft_modifiers(f"craft_new_{kind}", details)
+                cost = 0; st.caption("Wargear has no XP cost. Value is recorded separately.")
+            req = _render_craft_requirements(f"craft_new_{kind}_req", {}, kind); details = {"requirements": req}
+            if kind == "wargear":
+                details["modifiers"] = _render_craft_modifiers(f"craft_new_{kind}_mods", details, True)
+                details.update(_render_wargear_data(f"craft_new_{kind}_gear", details))
+            elif kind == "power": details.update(_render_power_data(f"craft_new_{kind}_power", details))
             source = st.text_input("Source / Book", key=f"craft_new_source_{kind}")
             if st.button(f"Register {title}", type="primary", use_container_width=True, key=f"craft_register_{kind}"):
-                save_craft_item({"kind":kind,"name":cname.strip(),"effect":cdesc.strip(),"cost":int(cost),"source":source.strip(),"details":{**details,"structured_rules":True,"custom":True,"official":False}})
-                st.success(f"{title} registered."); st.rerun()
+                if not cname.strip() or not cdesc.strip(): st.error("Name and Description / Effect are required.")
+                else:
+                    save_craft_item({"kind":kind,"name":cname.strip(),"effect":cdesc.strip(),"cost":int(cost),"source":source.strip(),"details":{**details,"structured_rules":True,"custom":True,"official":False}}); st.rerun()
 
-    with tabs[0]:
-        render_catalog("talent", talent_items, "Talents")
-        register_form("talent", "Talent")
-    with tabs[1]:
-        render_catalog("power", power_items, "Psychic Powers")
-        register_form("power", "Psychic Power")
-    with tabs[2]:
-        render_catalog("wargear", wargear_items, "Wargear")
-        register_form("wargear", "Wargear")
+    for i, (kind, title) in enumerate((("talent","Talent"),("power","Psychic Power"),("wargear","Wargear"))):
+        with tabs[i]: render_catalog(kind, sets[kind], title); register_form(kind, title)
 
     edit_id = st.session_state.get("craft_edit_id")
     if edit_id:
         row = next((r for r in all_items if int(r["id"]) == int(edit_id)), None)
         if row:
-            st.divider(); st.markdown(f"### Edit: {html.escape(row['name'])}")
-            details = craft_details(row)
-            ename = st.text_input("Name", row["name"], key=f"edit_name_{edit_id}")
-            eeffect = st.text_area("Description / Effect", row.get("effect", ""), height=130, key=f"edit_effect_{edit_id}")
-            ecost = st.number_input("XP Cost", 0, 10000, int(row.get("cost",0) or 0), key=f"edit_cost_{edit_id}")
-            ereq = _render_craft_requirements(f"edit_req_{edit_id}", details)
-            newdetails = {"requirements": ereq}
-            if row["kind"] == "wargear":
-                newdetails["modifiers"] = _render_craft_modifiers(f"edit_wargear_mod_{edit_id}", details)
-                newdetails.update(_render_wargear_data(f"edit_wargear_{edit_id}", details))
-            elif row["kind"] == "power":
-                newdetails.update(_render_power_data(f"edit_{edit_id}", details))
-                newdetails["modifiers"] = _render_craft_modifiers(f"edit_power_{edit_id}", details)
-            else:
-                newdetails["modifiers"] = _render_craft_modifiers(f"edit_talent_mod_{edit_id}", details)
-            esource = st.text_input("Source / Book", row.get("source", ""), key=f"edit_source_{edit_id}")
-            b1,b2=st.columns(2)
-            if b1.button("Save Changes", type="primary", use_container_width=True, key=f"edit_save_{edit_id}"):
-                save_craft_item({**row,"name":ename.strip(),"effect":eeffect.strip(),"cost":int(ecost),"source":esource.strip(),"details":{**newdetails,"structured_rules":True,"custom":True,"official":False}}, int(edit_id))
-                st.session_state.pop("craft_edit_id",None); st.rerun()
-            if b2.button("Cancel", use_container_width=True, key=f"edit_cancel_{edit_id}"):
-                st.session_state.pop("craft_edit_id",None); st.rerun()
+            with st.expander(f"Edit: {row['name']}", expanded=True):
+                details = craft_details(row)
+                ename = st.text_input("Name", row["name"], key=f"edit_name_{edit_id}")
+                eeffect = st.text_area("Description / Effect", row.get("effect", ""), height=100, key=f"edit_effect_{edit_id}")
+                ecost = st.number_input("XP Cost", 0, 10000, int(row.get("cost",0) or 0), key=f"edit_cost_{edit_id}") if row["kind"] in ("talent","power") else 0
+                if row["kind"] == "wargear": st.caption("Wargear has no XP cost.")
+                ereq = _render_craft_requirements(f"edit_req_{edit_id}", details, row["kind"]); newdetails = {"requirements": ereq}
+                if row["kind"] == "wargear":
+                    newdetails["modifiers"] = _render_craft_modifiers(f"edit_wargear_mod_{edit_id}", details, True); newdetails.update(_render_wargear_data(f"edit_wargear_{edit_id}", details))
+                elif row["kind"] == "power": newdetails.update(_render_power_data(f"edit_power_{edit_id}", details))
+                esource = st.text_input("Source / Book", row.get("source", ""), key=f"edit_source_{edit_id}")
+                b1,b2=st.columns(2)
+                if b1.button("Save Changes", type="primary", use_container_width=True, key=f"edit_save_{edit_id}"):
+                    save_craft_item({**row,"name":ename.strip(),"effect":eeffect.strip(),"cost":int(ecost),"source":esource.strip(),"details":{**newdetails,"structured_rules":True,"custom":True,"official":False}}, int(edit_id)); st.session_state.pop("craft_edit_id",None); st.rerun()
+                if b2.button("Cancel", use_container_width=True, key=f"edit_cancel_{edit_id}"): st.session_state.pop("craft_edit_id",None); st.rerun()
 
 def archetypes_view():
     st.markdown("#### Archetypes")
@@ -4548,91 +4439,177 @@ def gm_view():
     # ---- Combat ----
     with tabs[7]:
         st.markdown("#### Combat")
-        st.caption("The Magister controls the combat order manually. Add Players and NPCs, apply initiative modifiers, and arrange the turn order.")
+        st.caption("Quick combat panel: arrange attack order, read vital values, and make fast NPC adjustments.")
+
         all_combat_chars = list_characters()
         folders = list_folders()
         folder_map = {f["id"]: f["name"] for f in folders}
-        active = {c["id"] for c in get_combatants()}
+        current = get_combatants()
+        active = {c["id"] for c in current}
 
         fc = st.columns([1.8, 2.5, 1])
         folder_options = [None] + [f["id"] for f in folders]
-        selected_folder = fc[0].selectbox("Filter by Folder", folder_options,
-            format_func=lambda x: "All Folders" if x is None else folder_map.get(x, "Folder"), key="combat_folder")
-        search = fc[1].text_input("Search Character", placeholder="Search by name, species, archetype, or faction", key="combat_search")
+        selected_folder = fc[0].selectbox(
+            "Filter by Folder",
+            folder_options,
+            format_func=lambda x: "All Folders" if x is None else folder_map.get(x, "Folder"),
+            key="combat_folder",
+        )
+        search = fc[1].text_input(
+            "Search Character",
+            placeholder="Search by name, species, archetype, or faction",
+            key="combat_search",
+        )
         if fc[2].button("Clear Combat", use_container_width=True, key="combat_clear"):
-            clear_combat(); st.rerun()
+            clear_combat()
+            st.rerun()
 
         filtered = []
         q = search.strip().lower()
         for ch in all_combat_chars:
             if selected_folder is not None and ch.get("folder_id") != selected_folder:
                 continue
-            hay = " ".join([str(ch.get("name") or ""), str(ch.get("species") or ""), str(ch.get("archetype") or ""), str(ch.get("chapter") or "")]).lower()
+            hay = " ".join([
+                str(ch.get("name") or ""),
+                str(ch.get("species") or ""),
+                str(ch.get("archetype") or ""),
+                str(ch.get("chapter") or ""),
+                str(ch.get("faction") or ""),
+            ]).lower()
             if q and q not in hay:
                 continue
             filtered.append(ch)
 
-        st.markdown(f"**Available Characters:** {len(filtered)}")
-        for ch in filtered:
-            cols = st.columns([4, 1.2, 1.2, 1.2])
-            in_combat = ch["id"] in active
-            folder_name = folder_map.get(ch.get("folder_id"), "No folder")
-            kind_label = "NPC" if ch["kind"] == "npc" else "PLAYER"
-            ncls = "npc" if ch["kind"] == "npc" else ""
-            cols[0].markdown(f"**<span class='{ncls}'>{ch['name'] or 'Unnamed'}</span>** · {kind_label} · {species_label(ch['species'])} · T{ch['tier']} · {rank_label(ch['rank'])}<br><small>{folder_name}</small>", unsafe_allow_html=True)
-            if cols[1].button("Remove" if in_combat else "Add", key=f"combat_toggle_{ch['id']}", use_container_width=True):
-                set_combatant(ch["id"], not in_combat); st.rerun()
-            if cols[2].button("Open", key=f"combat_open_{ch['id']}", use_container_width=True):
-                st.session_state.editing = ch["id"]; st.rerun()
-            cols[3].markdown("**IN COMBAT**" if in_combat else "")
+        st.markdown("#### Combatants")
+        if not current:
+            st.info("No characters are currently in combat. Add Players or NPCs below.")
+        else:
+            st.caption("Use ↑ and ↓ to change the attack order. Select a combatant to view combat details.")
+
+            for idx, ch in enumerate(current):
+                max_values = derived_traits(ch)
+                wounds = max(0, int(ch.get("cur_wounds", 0) or 0))
+                shock = max(0, int(ch.get("cur_shock", 0) or 0))
+                ammo = current_ammo(ch)
+                wrath = max(0, int(ch.get("cur_wrath", 0) or 0))
+                max_wounds = int(max_values.get("Max Wounds", 0) or 0)
+                max_shock = int(max_values.get("Max Shock", 0) or 0)
+                max_wrath = int(max_values.get("Max Wrath", 0) or 0)
+                max_ammo = ammo_capacity(ch)
+                is_npc = ch.get("kind") == "npc"
+                role_label = "NPC" if is_npc else "PLAYER"
+                role_cls = "npc" if is_npc else "player"
+                folder_name = folder_map.get(ch.get("folder_id"), "No folder")
+
+                with st.expander(
+                    f"{idx + 1:02d}  {ch.get('name') or 'Unnamed'}  ·  {role_label}  ·  "
+                    f"W {wounds}/{max_wounds}  ·  S {shock}/{max_shock}  ·  A {ammo}/{max_ammo}  ·  Wr {wrath}/{max_wrath}",
+                    expanded=(idx == 0),
+                ):
+                    head = st.columns([4, 1, 1, 1])
+                    head[0].markdown(
+                        f"<div class='combat-card {role_cls}'><div class='combat-name'>{html.escape(ch.get('name') or 'Unnamed')} "
+                        f"<span class='combat-kind {role_cls}'>{role_label}</span></div>"
+                        f"<div class='combat-meta'>{species_label(ch.get('species'))} · Tier {ch.get('tier', 1)} · "
+                        f"{rank_label(ch.get('rank', 1))} · {html.escape(folder_name)}</div></div>",
+                        unsafe_allow_html=True,
+                    )
+                    if head[1].button("↑", key=f"combat_up_{ch['id']}", disabled=(idx == 0), use_container_width=True):
+                        move_combatant(ch["id"], -1)
+                        st.rerun()
+                    if head[2].button("↓", key=f"combat_down_{ch['id']}", disabled=(idx == len(current) - 1), use_container_width=True):
+                        move_combatant(ch["id"], 1)
+                        st.rerun()
+                    if head[3].button("Remove", key=f"combat_current_remove_{ch['id']}", use_container_width=True):
+                        set_combatant(ch["id"], False)
+                        st.rerun()
+
+                    if is_npc:
+                        st.markdown("**Quick NPC Vitals**")
+                        vc = st.columns(12)
+                        vc[0].markdown("Wounds")
+                        if vc[1].button("−", key=f"combat_wm_{ch['id']}", use_container_width=True):
+                            adjust_vital(ch["id"], "cur_wounds", -1, actor_role="gm", actor_name=st.session_state.user.get("username", "Magister"), source="Combat Quick Panel")
+                            st.rerun()
+                        vc[2].metric("", f"{wounds}/{max_wounds}")
+                        if vc[3].button("+", key=f"combat_wp_{ch['id']}", use_container_width=True):
+                            adjust_vital(ch["id"], "cur_wounds", 1, actor_role="gm", actor_name=st.session_state.user.get("username", "Magister"), source="Combat Quick Panel")
+                            st.rerun()
+                        vc[4].markdown("Shock")
+                        if vc[5].button("−", key=f"combat_sm_{ch['id']}", use_container_width=True):
+                            adjust_vital(ch["id"], "cur_shock", -1, actor_role="gm", actor_name=st.session_state.user.get("username", "Magister"), source="Combat Quick Panel")
+                            st.rerun()
+                        vc[6].metric("", f"{shock}/{max_shock}")
+                        if vc[7].button("+", key=f"combat_sp_{ch['id']}", use_container_width=True):
+                            adjust_vital(ch["id"], "cur_shock", 1, actor_role="gm", actor_name=st.session_state.user.get("username", "Magister"), source="Combat Quick Panel")
+                            st.rerun()
+                        vc[8].markdown("Ammo")
+                        if vc[9].button("−", key=f"combat_am_{ch['id']}", use_container_width=True):
+                            adjust_ammo_pool(ch["id"], -1, actor_role="gm", actor_name=st.session_state.user.get("username", "Magister"), source="Combat Quick Panel")
+                            st.rerun()
+                        vc[10].metric("", f"{ammo}/{max_ammo}")
+                        if vc[11].button("+", key=f"combat_ap_{ch['id']}", use_container_width=True):
+                            adjust_ammo_pool(ch["id"], 1, actor_role="gm", actor_name=st.session_state.user.get("username", "Magister"), source="Combat Quick Panel")
+                            st.rerun()
+
+                    gear_mods = equipped_wargear_modifiers(ch)
+                    d = derived_traits(ch)
+                    st.markdown("**Derived Traits**")
+                    derived_order = [
+                        ("Defence", "Defence"), ("Resilience", "Resilience"), ("Soak", "Soak"),
+                        ("Determination", "Determination"), ("Resolve", "Resolve"), ("Conviction", "Conviction"),
+                        ("Passive Awareness", "Passive Awareness"), ("Influence", "Influence"), ("Speed", "Speed"),
+                    ]
+                    dc = st.columns(3)
+                    for n, (key, label) in enumerate(derived_order):
+                        dc[n % 3].metric(label, int(d.get(key, 0) or 0))
+
+                    st.markdown("**Skills**")
+                    base_sk = {str(k): int(v) for k, v in (ch.get("skills", {}) or {}).items()}
+                    base_attr = {str(k): int(v) for k, v in (ch.get("attributes", {}) or {}).items()}
+                    skill_rows = []
+                    for skill_name in SKILLS:
+                        attr_name = SKILLS[skill_name]
+                        skill_base = int(base_sk.get(skill_name, 0))
+                        attr_base = int(base_attr.get(attr_name, 0))
+                        skill_mod = int(gear_mods.get(str(skill_name).lower(), 0) or 0)
+                        attr_mod = int(gear_mods.get(str(attr_name).lower(), 0) or 0)
+                        skill_total = skill_base + skill_mod
+                        attr_total = attr_base + attr_mod
+                        total = skill_total + attr_total
+                        skill_rows.append((skill_name, skill_total, attr_total, total))
+                    sc = st.columns(4)
+                    sc[0].markdown("**Skill**")
+                    sc[1].markdown("**Rank**")
+                    sc[2].markdown("**Attr**")
+                    sc[3].markdown("**Total**")
+                    for skill_name, skill_total, attr_total, total in skill_rows:
+                        sc = st.columns(4)
+                        sc[0].write(skill_name)
+                        sc[1].write(skill_total)
+                        sc[2].write(f"+{attr_total}")
+                        sc[3].write(total)
 
         st.divider()
-        current = get_combatants()
-        state = combat_state()
-        st.markdown("<div class='combat-header'><div class='title'>⚔ Combat Order</div><div class='sub'>The Magister controls the sequence of turns</div></div>", unsafe_allow_html=True)
-        st.markdown("<div class='combat-legend'><span class='p'>● Player</span><span class='n'>● NPC</span><span>↑↓ Reorder</span></div>", unsafe_allow_html=True)
-        if not current:
-            st.info("No characters are currently in combat. Add Players or NPCs above.")
+        st.markdown("#### Add Combatants")
+        st.caption("Players and NPCs are read-only here except for the manual attack order and NPC quick vitals.")
+        if not filtered:
+            st.caption("No characters match the current filter.")
         else:
-            cur_idx = min(int(state.get("current", 0)), len(current)-1)
-            current_ch = current[cur_idx]
-            st.markdown(f"<div class='combat-card player' style='border-width:3px'><div class='combat-name'>ROUND {int(state.get('round',1))} · CURRENT TURN: {html.escape(current_ch['name'] or 'Unnamed')}</div><div class='combat-meta'>{species_label(current_ch['species'])} · {('PLAYER' if current_ch['kind'] != 'npc' else 'NPC')}</div></div>", unsafe_allow_html=True)
-            tc = st.columns([1.1,1.1,1.1,1.2,2.4])
-            if tc[0].button("◀ Previous", use_container_width=True, key="combat_prev_turn"): advance_combat_turn(-1); st.rerun()
-            if tc[1].button("Next ▶", use_container_width=True, key="combat_next_turn"): advance_combat_turn(1); st.rerun()
-            if tc[2].button("End Turn", use_container_width=True, key="combat_end_turn"): advance_combat_turn(1); st.rerun()
-            if tc[3].button("Next Round", use_container_width=True, key="combat_next_round"): set_combat_turn(0, int(state.get("round",1))+1); st.rerun()
-            jump = tc[4].selectbox("Jump to Turn", list(range(len(current))), index=cur_idx, format_func=lambda i: f"{i+1:02d} · {current[i]['name'] or 'Unnamed'}", key="combat_jump")
-            if int(jump) != cur_idx: set_combat_turn(int(jump), int(state.get("round",1))); st.rerun()
-            st.divider()
-            for idx, ch in enumerate(current):
-                kind_label = "PLAYER" if ch["kind"] != "npc" else "NPC"
-                role_cls = "player" if ch["kind"] != "npc" else "npc"
-                name = ch["name"] or "Unnamed"
-                modifier_value = int(ch.get("initiative_modifier", 0))
-                sign = "+" if modifier_value >= 0 else ""
-                st.markdown(
-                    f"<div class='combat-card {role_cls}'><div style='display:flex;align-items:center;gap:12px'>"
-                    f"<div class='combat-pos'>{idx + 1:02d}</div>"
-                    f"<div style='flex:1'><div class='combat-name'>{name}<span class='combat-kind {role_cls}'>{kind_label}</span></div>"
-                    f"<div class='combat-meta'>{species_label(ch['species'])} · Tier {ch['tier']} · {rank_label(ch['rank'])}</div></div>"
-                    f"<div class='combat-mod'>INIT {sign}{modifier_value}</div></div></div>",
+            for ch in filtered:
+                in_combat = ch["id"] in active
+                cols = st.columns([5, 1.2, 2])
+                kind_label = "NPC" if ch["kind"] == "npc" else "PLAYER"
+                ncls = "npc" if ch["kind"] == "npc" else ""
+                cols[0].markdown(
+                    f"<span class='{ncls}'><b>{html.escape(ch.get('name') or 'Unnamed')}</b></span> · {kind_label} · "
+                    f"{species_label(ch.get('species'))} · T{ch.get('tier', 1)} · {rank_label(ch.get('rank', 1))}",
                     unsafe_allow_html=True,
                 )
-                controls = st.columns([1.1, 1.1, 1.1, 1.1, 1.6])
-                if controls[0].button("↑ Move Up", key=f"combat_up_{ch['id']}", disabled=(idx == 0), use_container_width=True):
-                    move_combatant(ch["id"], -1); st.rerun()
-                if controls[1].button("↓ Move Down", key=f"combat_down_{ch['id']}", disabled=(idx == len(current) - 1), use_container_width=True):
-                    move_combatant(ch["id"], 1); st.rerun()
-                modifier = controls[2].number_input("Init Mod", -100, 100, modifier_value, step=1, key=f"combat_mod_{ch['id']}")
-                if modifier != modifier_value:
-                    set_combat_modifier(ch["id"], modifier)
-                if controls[3].button("Open Sheet", key=f"combat_current_open_{ch['id']}", use_container_width=True):
-                    st.session_state.editing = ch["id"]; st.rerun()
-                if controls[4].button("Remove", key=f"combat_current_remove_{ch['id']}", use_container_width=True):
-                    set_combatant(ch["id"], False); st.rerun()
-                if idx < len(current) - 1:
-                    st.markdown("<div class='combat-arrow'>▼</div>", unsafe_allow_html=True)
+                if cols[1].button("Remove" if in_combat else "Add", key=f"combat_toggle_{ch['id']}", use_container_width=True):
+                    set_combatant(ch["id"], not in_combat)
+                    st.rerun()
+                cols[2].caption("IN COMBAT" if in_combat else "")
 
     # ---- Campaign ----
     with tabs[8]:

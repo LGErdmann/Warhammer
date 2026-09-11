@@ -396,12 +396,15 @@ def rank_from_xp(xp, current_rank=1):
     return rank, xp >= 100
 
 
-def derived_traits(ch):
+def derived_traits(ch, gear_mods=None):
     # Compute the equipped-Wargear modifiers once and thread them through,
     # instead of effective_attributes()/effective_skills() each recomputing
     # them independently — this function runs on every render of every
     # character sheet, popover and Combat row for every connected user.
-    gear = equipped_wargear_modifiers(ch)
+    # Callers that already have gear_mods (most call sites do, since they
+    # also need it for their own display) should pass it in to skip the
+    # rebuild entirely.
+    gear = gear_mods if gear_mods is not None else equipped_wargear_modifiers(ch)
     a, sk = effective_attributes(ch, gear), effective_skills(ch, gear)
     tier = int(ch.get("tier", 1)); base_armour = 0; sp = ch.get("species", "")
     T = int(a.get("Toughness", 1))
@@ -1635,7 +1638,7 @@ def assign_wargear_to_character(cid, craft_id, actor_name="", actor_user_id=None
     return assign_craft_to_character(cid, craft_id, "wargear", actor_name, actor_user_id, "Magister Wargear Assignment")
 
 
-@st.cache_data(ttl=5, show_spinner=False)
+@st.cache_data(show_spinner=False)
 def _cached_craft_items(kind, active_only):
     conn = get_conn()
     if kind:
@@ -1652,12 +1655,15 @@ def list_craft_items(kind=None, active_only=True):
     """Cached read of the Craft catalog (Talents/Powers/Wargear).
 
     This is looked up on every effective-attribute/skill/derived-trait
-    computation for every character, on every auto-refresh of every open
-    Battle Sheet/Combat panel — with a GM and several Players connected at
-    once that adds up fast. The catalog only changes when the GM edits it in
-    the Craft tab, so a short cache with explicit invalidation on write
-    (invalidate_craft_cache(), called from save/delete) avoids re-querying
-    SQLite on every read while still reflecting GM edits immediately.
+    computation for every character, on every render of every open Battle
+    Sheet/Combat panel — with a GM and several Players connected at once
+    that adds up fast. The cache has no time-based expiry: it is exact and
+    permanent until the catalog actually changes, at which point every
+    write path (save_craft_item, delete_craft_item, and the Craft tab's
+    enable/disable/delete actions) calls invalidate_craft_cache() so the
+    next read is forced back to SQLite. This keeps every dependent
+    computation in sync with the instant something changes, rather than
+    within some polling window.
     """
     return _cached_craft_items(kind, active_only)
 
@@ -1872,6 +1878,13 @@ def get_player_audit(character_id, limit=300):
     rows = conn.execute("SELECT * FROM player_audit WHERE character_id=? ORDER BY id DESC LIMIT ?",
                         (int(character_id), int(limit))).fetchall()
     conn.close(); return [dict(r) for r in rows]
+
+
+def count_player_audit(character_id):
+    """Row count only — avoids pulling every audit row (old/new value text) just to call len()."""
+    conn = get_conn()
+    row = conn.execute("SELECT COUNT(*) FROM player_audit WHERE character_id=?", (int(character_id),)).fetchone()
+    conn.close(); return int(row[0] or 0)
 
 
 
@@ -2488,22 +2501,7 @@ def inject_theme():
     .vdead{ color:var(--red); font-weight:700; }
     .row{ border:1px solid #3a2e18; border-radius:3px; padding:6px 10px; margin-bottom:6px; background:var(--panel); }
     .fold{ display:inline-block; }
-    .combat-header{ background:linear-gradient(135deg,#2a1b0e,#100a06); border:2px solid var(--gold); border-radius:6px; padding:12px 16px; margin:10px 0 12px; text-align:center; }
-    .combat-header .title{ font-family:'Cinzel',serif; font-size:1.25rem; font-weight:900; color:var(--gold2); letter-spacing:.14em; text-transform:uppercase; }
-    .combat-header .sub{ font-size:.8rem; opacity:.75; letter-spacing:.08em; text-transform:uppercase; margin-top:3px; }
-    .combat-card{ background:linear-gradient(110deg,#21170c,#120c07); border:1px solid #5a4421; border-radius:6px; padding:9px 12px; margin:0 0 7px; box-shadow:0 2px 5px #0008; }
-    .combat-card.player{ border-left:6px solid var(--gold); }
-    .combat-card.npc{ border-left:6px solid var(--npc); }
-    .combat-pos{ font-family:'Cinzel',serif; font-size:1.55rem; font-weight:900; color:var(--gold2); text-align:center; line-height:1; }
-    .combat-name{ font-family:'Cinzel',serif; font-size:1.05rem; font-weight:700; color:var(--bone); letter-spacing:.04em; }
-    .combat-kind{ display:inline-block; font-family:'Cinzel',serif; font-size:.62rem; font-weight:700; letter-spacing:.08em; padding:2px 6px; border-radius:2px; margin-left:6px; vertical-align:middle; }
-    .combat-kind.player{ color:#171209; background:var(--gold2); }
-    .combat-kind.npc{ color:#fff; background:#754b9c; }
-    .combat-meta{ font-size:.72rem; opacity:.72; text-transform:uppercase; letter-spacing:.05em; margin-top:2px; }
     .combat-arrow{ text-align:center; color:var(--gold); font-size:1rem; line-height:.8; margin:-2px 0 3px; opacity:.8; }
-    .combat-mod{ font-family:'Cinzel',serif; font-size:.68rem; color:var(--gold2); text-transform:uppercase; letter-spacing:.04em; }
-    .combat-legend{ display:flex; gap:14px; justify-content:center; font-size:.7rem; text-transform:uppercase; letter-spacing:.06em; opacity:.8; margin:5px 0 10px; }
-    .combat-legend .p{ color:var(--gold2); } .combat-legend .n{ color:var(--npc); }
     /* Visão de Batalha */
     .hero{ background:linear-gradient(135deg,#20180d,#100b06); border:1px solid var(--gold);
         border-radius:4px; padding:14px 18px; margin-bottom:10px; }
@@ -2726,10 +2724,10 @@ def _vital_stat_block(col, label, value, maximum, cid=None, field=None, editable
 
 
 def _ammo_stat_block(col, cid, ch, editable=False, actor_role="gm", actor_user_id=None,
-                      actor_name="", key_prefix="", source_prefix="Ammo", cap_mod=None):
+                      actor_name="", key_prefix="", source_prefix="Ammo", cap_mod=None, gear_mods=None):
     """Render the Ammo Pool using the same compact metric + stacked −/+ pattern."""
-    ammo_total = current_ammo(ch)
-    ammo_max = ammo_capacity(ch)
+    ammo_total = current_ammo(ch, gear_mods)
+    ammo_max = ammo_capacity(ch, gear_mods)
     with col:
         if editable:
             acols = st.columns([5, 1], gap="small")
@@ -2782,7 +2780,7 @@ def live_vitals(cid):
     _ammo_stat_block(cols[3], cid, ch, editable=True, actor_role=actor_role, actor_user_id=actor_user_id,
                      actor_name=actor_name, key_prefix=f"lvammo{cid}",
                      source_prefix="Player Ammo" if is_player else "Magister Ammo",
-                     cap_mod=ammo_capacity_bonus(ch, gear))
+                     cap_mod=ammo_capacity_bonus(ch, gear), gear_mods=gear)
 
     if asc:
         st.warning("100+ Earned XP - this character may ascend to the next Tier.")
@@ -2882,11 +2880,11 @@ def _wargear_craft_id(w):
         return -1
 
 
-def current_ammo(ch):
+def current_ammo(ch, gear_mods=None):
     """Return the character's abstract Ammo Pool, independent of ammo type stacks."""
     try:
         raw = max(0, int(ch.get("cur_ammo", 0) or 0))
-        return min(raw, ammo_capacity(ch))
+        return min(raw, ammo_capacity(ch, gear_mods))
     except Exception:
         return 0
 
@@ -2951,9 +2949,9 @@ def ammo_capacity_bonus(ch, gear=None):
     return bonus
 
 
-def ammo_capacity(ch):
+def ammo_capacity(ch, gear_mods=None):
     """Core Rulebook Ammo carrying limit: max(3, half Strength), plus explicit container bonuses."""
-    gear = equipped_wargear_modifiers(ch)
+    gear = gear_mods if gear_mods is not None else equipped_wargear_modifiers(ch)
     attrs = effective_attributes(ch, gear)
     strength = max(0, int(attrs.get("Strength", 0) or 0))
     # The rulebook gives a whole-number inventory resource. For odd Strength values,
@@ -3028,8 +3026,8 @@ def battle_view(cid):
     if not ch:
         st.error("Character sheet not found.")
         return
-    d = derived_traits(ch)
     gear_mods = equipped_wargear_modifiers(ch)
+    d = derived_traits(ch, gear_mods)
     rank = int(ch.get("rank", 1) or 1)
     ncls = "npc" if ch["kind"] == "npc" else ""
     st.markdown(f"<div class='hero'><div class='nm {ncls}'>{ch['name'] or 'Character'}</div>"
@@ -3756,7 +3754,12 @@ def char_row(ch, folders):
     fresh = load_character(int(ch["id"]))
     if fresh is not None:
         ch = fresh
-    rank = int(ch.get("rank", 1) or 1); d = derived_traits(ch)
+    # Compute the Wargear modifiers once for this row and thread them through
+    # every derived computation below, instead of each one rebuilding the
+    # same lookup independently — this row re-renders every REFRESH_S for
+    # every character the GM has open, across every connected session.
+    gear = equipped_wargear_modifiers(ch)
+    rank = int(ch.get("rank", 1) or 1); d = derived_traits(ch, gear)
     ncls = "npc" if ch["kind"] == "npc" else ""
     vs = ("<span class='vlive'>ACTIVE</span>" if ch["comms_on"]
           else ("<span class='vdead'>CUT</span>" if secs_since(ch["comms_changed_at"]) < COMMS_FADE_S else ""))
@@ -3766,13 +3769,13 @@ def char_row(ch, folders):
         with st.popover(label, use_container_width=True):
             st.markdown(f"**{species_label(ch.get('species',''))}** · T{ch.get('tier',1)} · {rank_label(rank)}")
             if ch.get("archetype"): st.caption(str(ch.get("archetype")))
-            attrs = effective_attributes(ch); skills = effective_skills(ch)
+            attrs = effective_attributes(ch, gear); skills = effective_skills(ch, gear)
             st.markdown("**Attributes**  " + " · ".join(f"{a[:3].upper()} {attrs.get(a,1)}" for a in ATTRS))
             st.markdown("**Skills**  " + " · ".join(f"{sk[:4]} {skills.get(sk,0)+attrs.get(at,1)}" for sk, at in SKILLS.items()))
             st.caption(f"Wounds {int(ch.get('cur_wounds',0))}/{d['Max Wounds']} · Shock {int(ch.get('cur_shock',0))}/{d['Max Shock']} · Wrath {int(ch.get('cur_wrath',0))}/{d['Max Wrath']}")
-        c[0].caption(f"{ch['species']} · T{ch['tier']} · Rank {rank} {vs}")
-    _ammo_total = current_ammo(ch)
-    ammo_text = f"{_ammo_total}/{ammo_capacity(ch)}"
+        c[0].caption(f"{ch['species']} · T{ch['tier']} · Rank {rank} {vs}", unsafe_allow_html=True)
+    _ammo_total = current_ammo(ch, gear)
+    ammo_text = f"{_ammo_total}/{ammo_capacity(ch, gear)}"
     c[1].markdown(f"<small>Wounds {ch['cur_wounds']}/{d['Max Wounds']}<br>Shock {ch['cur_shock']}/{d['Max Shock']}<br>Wrath {ch['cur_wrath']}/{d['Max Wrath']}<br>Ammo {ammo_text}</small>", unsafe_allow_html=True)
     c[2].button("Open", key=f"op_{ch['id']}", on_click=cb_open, args=(ch["id"],))
     if ch["comms_on"]:
@@ -3803,7 +3806,7 @@ def players_audit_view():
     if not players:
         st.info("No Players are registered."); return
     for c in players:
-        count = len(get_player_audit(c["id"], 10000))
+        count = count_player_audit(c["id"])
         cols = st.columns([3.5, 1, 1.5, 1.2])
         cols[0].markdown(f"**{c['name'] or 'Unnamed'}** · `{c.get('username') or 'unlinked'}`")
         cols[1].caption(f"T{c['tier']} · {rank_label(c['rank'])}")
@@ -4271,7 +4274,7 @@ def gm_view():
                                        format_func=lambda x: folder_map.get(x, "No folder") if x is not None else "No folder",
                                        label_visibility="collapsed",
                                        on_change=lambda cid=ch["id"]: set_folder(cid, st.session_state[f"mv_{cid}"]))
-                        a[2].markdown("📡 **Vox**")
+                        a[2].markdown("✠ **Vox**")
                         if ch["comms_on"]:
                             if a[3].button("Cut Vox", key=f"gmvc_{ch['id']}"):
                                 set_comms(ch["id"], 0); st.rerun()
@@ -4295,7 +4298,7 @@ def gm_view():
                                format_func=lambda x: folder_map.get(x, "No folder") if x is not None else "No folder",
                                label_visibility="collapsed",
                                on_change=lambda cid=ch["id"]: set_folder(cid, st.session_state[f"mva_{cid}"]))
-                a[2].markdown("📡" + (" ON" if ch["comms_on"] else " OFF"))
+                a[2].markdown("✠" + (" ON" if ch["comms_on"] else " OFF"))
 
     # ---- Players / Audit ----
     with tabs[1]:
@@ -4601,7 +4604,7 @@ def gm_view():
             user = st.session_state.user or {}
             for idx, ch in enumerate(current):
                 gear = equipped_wargear_modifiers(ch)
-                d = derived_traits(ch)
+                d = derived_traits(ch, gear)
                 is_npc = ch.get("kind") == "npc"
                 role_label = "NPC" if is_npc else "PLAYER"
                 rank = int(ch.get("rank", 1) or 1)
@@ -4649,7 +4652,7 @@ def gm_view():
                     _ammo_stat_block(vcols[2], ch["id"], ch, editable=is_npc, actor_role="gm",
                                      actor_user_id=user.get("id"), actor_name=user.get("username", "Magister"),
                                      key_prefix=f"combat_a_{ch['id']}", source_prefix="Combat Quick Panel",
-                                     cap_mod=ammo_capacity_bonus(ch, gear))
+                                     cap_mod=ammo_capacity_bonus(ch, gear), gear_mods=gear)
                     _vital_stat_block(vcols[3], "Wrath", max(0, int(ch.get("cur_wrath", 0) or 0)), int(d.get("Max Wrath", 0) or 0),
                                       max_mod=int(gear.get("wrath", 0) or 0))
 
@@ -4757,13 +4760,13 @@ def main():
         st.write(f"User: {st.session_state.user['username']}")
         st.write("Role: " + ("Magister" if role == "gm" else "Battle-Brother"))
         if role == "gm":
-            st.markdown("**Ruin**")
-            ruin_cols = st.columns([1, 2, 1])
-            if ruin_cols[0].button("−", key="sidebar_ruin_minus", use_container_width=True):
-                adjust_ruin(-1); st.rerun()
-            ruin_cols[1].metric("", camp["ruin"])
-            if ruin_cols[2].button("+", key="sidebar_ruin_plus", use_container_width=True):
-                adjust_ruin(+1); st.rerun()
+            # Same compact metric + stacked −/+ pattern as the Battle Sheet
+            # vitals and the Campaign tab's Ruin counter.
+            ruin_cols = st.columns([5, 1], gap="small")
+            ruin_cols[0].metric("Ruin", camp["ruin"])
+            with ruin_cols[1]:
+                st.button("+", key="sidebar_ruin_plus", on_click=adjust_ruin, args=(+1,), use_container_width=True)
+                st.button("−", key="sidebar_ruin_minus", on_click=adjust_ruin, args=(-1,), use_container_width=True)
         st.divider()
         if st.button("Sign Out"):
             st.session_state.user = None; st.session_state.editing = None; st.rerun()

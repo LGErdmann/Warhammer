@@ -326,6 +326,7 @@ ARCHETYPES = {
     "Inquisitor": {"tier": 4, "species": "Human", "xp": 110, "faction": "Inquisition"},
     "Primaris Intercessor": {"tier": 4, "species": "Primaris Astartes", "xp": 300, "faction": "Adeptus Astartes"},
 }
+CORE_ARCHETYPE_NAMES = frozenset(ARCHETYPES.keys())
 
 def rank_eligible_from_xp(xp):
     xp = int(xp or 0)
@@ -404,15 +405,16 @@ def derived_traits(ch):
     Wil = int(a.get("Willpower", 1))
     Intl = int(a.get("Intellect", 1))
     Fel = int(a.get("Fellowship", 1))
-    defence = I - 1 + gear.get("defence", 0)
+    shield_armour = gear.get("shield_armour", 0)
+    defence = I - 1 + gear.get("defence", 0) + shield_armour
     armour = base_armour + gear.get("armour", 0)
-    resilience = T + 1 + armour + gear.get("resilience", 0)
+    resilience = T + 1 + armour + gear.get("resilience", 0) + shield_armour
     max_wounds = T + 2 * tier + (3 if sp == "Primaris Astartes" else 0) + gear.get("wounds", 0)
     max_shock = Wil + tier + gear.get("shock", 0)
     speed = species_speed(sp) + gear.get("speed", 0)
     return {
         "Defence": defence, "Resilience": resilience, "Soak": T,
-        "Max Wounds": max_wounds, "Max Shock": max_shock, "Max Wrath": tier,
+        "Max Wounds": max_wounds, "Max Shock": max_shock, "Max Wrath": tier + gear.get("wrath", 0),
         "Determination": T, "Resolve": max(0, Wil - 1) + (1 if is_loyal_astartes(sp) else 0),
         "Conviction": Wil, "Passive Awareness": math.ceil((Intl + sk.get("Awareness", 0)) / 2),
         "Influence": max(0, Fel - 1), "Speed": speed,
@@ -520,6 +522,126 @@ def _ensure_columns(conn, table, cols):
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}")
 
 
+def _load_custom_archetypes(conn=None):
+    """Load campaign-defined Archetypes into the same runtime registries as Core Archetypes."""
+    global ARCHETYPES, ARCHETYPE_PACKAGES, ARCHETYPE_ABILITIES, ARCHETYPE_STARTING_WARGEAR
+    own = conn is None
+    if own:
+        conn = get_conn()
+    try:
+        rows = conn.execute("SELECT * FROM custom_archetypes ORDER BY name").fetchall()
+        for r in rows:
+            name = str(r["name"]).strip()
+            if not name:
+                continue
+            def j(field, fallback):
+                try:
+                    value = json.loads(r[field] or fallback)
+                    return value if value is not None else fallback
+                except Exception:
+                    return fallback
+            attrs = j("attributes", "{}")
+            skills = j("skills", "{}")
+            gear = j("starting_wargear", "[]")
+            keywords = j("keywords", "[]")
+            ARCHETYPES[name] = {
+                "tier": max(1, min(MAX_TIER, int(r["tier"] or 1))),
+                "species": str(r["species"] or "Human"),
+                "xp": int(r["xp"] or 0),
+                "faction": str(r["faction"] or ""),
+                "custom": True,
+                "keywords": keywords if isinstance(keywords, list) else [],
+            }
+            ARCHETYPE_PACKAGES[name] = {
+                "attributes": attrs if isinstance(attrs, dict) else {},
+                "skills": skills if isinstance(skills, dict) else {},
+            }
+            ARCHETYPE_ABILITIES[name] = str(r["ability"] or "")
+            ARCHETYPE_STARTING_WARGEAR[name] = gear if isinstance(gear, list) else []
+    finally:
+        if own:
+            conn.close()
+
+
+def _custom_archetype_rows():
+    conn = get_conn()
+    rows = conn.execute("SELECT * FROM custom_archetypes ORDER BY name").fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def save_custom_archetype(data, archetype_id=None):
+    name = str(data.get("name", "")).strip()
+    if not name:
+        return False, "Archetype name is required."
+    if name in CORE_ARCHETYPE_NAMES:
+        return False, "That name is reserved for a Core Rulebook Archetype."
+    conn = get_conn()
+    try:
+        old_name = None
+        if archetype_id:
+            old = conn.execute("SELECT name FROM custom_archetypes WHERE id=?", (int(archetype_id),)).fetchone()
+            if not old:
+                return False, "Archetype not found."
+            old_name = str(old["name"])
+        attrs = data.get("attributes", {}) or {}
+        skills = data.get("skills", {}) or {}
+        gear = data.get("starting_wargear", []) or []
+        keywords = data.get("keywords", []) or []
+        payload = (name, int(data.get("tier", 1)), str(data.get("species", "Human")),
+                   str(data.get("faction", "")), int(data.get("xp", 0)), str(data.get("ability", "")),
+                   json.dumps(attrs, ensure_ascii=False), json.dumps(skills, ensure_ascii=False),
+                   json.dumps(gear, ensure_ascii=False), json.dumps(keywords, ensure_ascii=False), now_iso())
+        if archetype_id:
+            conn.execute("""UPDATE custom_archetypes SET name=?,tier=?,species=?,faction=?,xp=?,ability=?,
+                           attributes=?,skills=?,starting_wargear=?,keywords=?,updated_at=? WHERE id=?""", payload + (int(archetype_id),))
+            if old_name and old_name != name:
+                conn.execute("UPDATE characters SET archetype=? WHERE archetype=?", (name, old_name))
+                for registry in (ARCHETYPES, ARCHETYPE_PACKAGES, ARCHETYPE_ABILITIES, ARCHETYPE_STARTING_WARGEAR):
+                    registry.pop(old_name, None)
+        else:
+            conn.execute("""INSERT INTO custom_archetypes(name,tier,species,faction,xp,ability,attributes,skills,starting_wargear,keywords,updated_at)
+                           VALUES(?,?,?,?,?,?,?,?,?,?,?)""", payload)
+        conn.commit()
+        _load_custom_archetypes(conn)
+        return True, "Archetype saved."
+    except sqlite3.IntegrityError:
+        conn.rollback()
+        return False, "An Archetype with that name already exists."
+    except Exception as exc:
+        conn.rollback()
+        return False, f"Could not save Archetype: {exc}"
+    finally:
+        conn.close()
+
+
+
+def delete_custom_archetype(archetype_id):
+    conn = get_conn()
+    try:
+        row = conn.execute("SELECT name FROM custom_archetypes WHERE id=?", (int(archetype_id),)).fetchone()
+        if not row:
+            return False, "Archetype not found."
+        name = str(row["name"])
+        used = conn.execute("SELECT COUNT(*) FROM characters WHERE archetype=?", (name,)).fetchone()[0]
+        if int(used) > 0:
+            return False, "This Archetype is assigned to a character and cannot be deleted."
+        conn.execute("DELETE FROM custom_archetypes WHERE id=?", (int(archetype_id),))
+        conn.commit()
+        for registry in (ARCHETYPES, ARCHETYPE_PACKAGES, ARCHETYPE_ABILITIES, ARCHETYPE_STARTING_WARGEAR):
+            registry.pop(name, None)
+        return True, "Archetype deleted."
+    finally:
+        conn.close()
+
+
+def _custom_archetype_id_by_name(name):
+    conn = get_conn()
+    row = conn.execute("SELECT id FROM custom_archetypes WHERE name=?", (str(name),)).fetchone()
+    conn.close()
+    return int(row[0]) if row else None
+
+
 def init_db():
     conn = get_conn(); c = conn.cursor()
     c.execute("""CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -530,7 +652,7 @@ def init_db():
         user_id INTEGER, kind TEXT DEFAULT 'player', name TEXT, chapter TEXT, species TEXT, archetype TEXT, creation_mode TEXT DEFAULT 'archetype', archetype_history TEXT DEFAULT '[]',
         tier INTEGER DEFAULT 2, starting_tier INTEGER DEFAULT 2, rank INTEGER DEFAULT 1, earned_xp INTEGER DEFAULT 0, other_xp INTEGER DEFAULT 0, faction TEXT DEFAULT '', keywords TEXT DEFAULT '[]', archetype_choices TEXT DEFAULT '{}',
         attributes TEXT, skills TEXT, talents TEXT, powers TEXT, wargear TEXT, armour INTEGER DEFAULT 0,
-        cur_wounds INTEGER DEFAULT 0, cur_shock INTEGER DEFAULT 0, cur_wrath INTEGER DEFAULT 0,
+        cur_wounds INTEGER DEFAULT 0, cur_shock INTEGER DEFAULT 0, cur_wrath INTEGER DEFAULT 0, cur_ammo INTEGER DEFAULT 3,
         notes TEXT, folder_id INTEGER, portrait BLOB, comms_on INTEGER DEFAULT 1, comms_changed_at TEXT, updated_at TEXT, revision INTEGER DEFAULT 0)""")
     c.execute("""CREATE TABLE IF NOT EXISTS campaign(id INTEGER PRIMARY KEY CHECK (id=1),
         name TEXT, tier INTEGER DEFAULT 2, ruin INTEGER DEFAULT 0, session_no INTEGER DEFAULT 1)""")
@@ -554,6 +676,11 @@ def init_db():
         id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL, name TEXT NOT NULL,
         effect TEXT DEFAULT '', cost INTEGER DEFAULT 0, source TEXT DEFAULT '', source_url TEXT DEFAULT '',
         details TEXT DEFAULT '{}', active INTEGER DEFAULT 1, created_at TEXT, updated_at TEXT)""")
+    c.execute("""CREATE TABLE IF NOT EXISTS custom_archetypes(
+        id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL, tier INTEGER DEFAULT 1,
+        species TEXT DEFAULT 'Human', faction TEXT DEFAULT '', xp INTEGER DEFAULT 0, ability TEXT DEFAULT '',
+        attributes TEXT DEFAULT '{}', skills TEXT DEFAULT '{}', starting_wargear TEXT DEFAULT '[]',
+        keywords TEXT DEFAULT '[]', created_at TEXT, updated_at TEXT)""")
     _ensure_columns(conn, "combatant", {"added_at": "TEXT", "initiative_order": "INTEGER DEFAULT 9999", "initiative_modifier": "INTEGER DEFAULT 0"})
     c.execute("""CREATE TABLE IF NOT EXISTS combat_encounter(
         id INTEGER PRIMARY KEY AUTOINCREMENT, session_no INTEGER, title TEXT, notes TEXT,
@@ -573,7 +700,7 @@ def init_db():
         "species": "TEXT", "archetype": "TEXT", "creation_mode": "TEXT DEFAULT 'archetype'", "archetype_history": "TEXT DEFAULT '[]'", "tier": "INTEGER DEFAULT 2", "starting_tier": "INTEGER DEFAULT 2", "rank": "INTEGER DEFAULT 1", "earned_xp": "INTEGER DEFAULT 0",
         "other_xp": "INTEGER DEFAULT 0", "faction": "TEXT DEFAULT ''", "keywords": "TEXT DEFAULT '[]'", "archetype_choices": "TEXT DEFAULT '{}'", "attributes": "TEXT", "skills": "TEXT", "talents": "TEXT", "powers": "TEXT",
         "wargear": "TEXT", "armour": "INTEGER DEFAULT 0", "cur_wounds": "INTEGER DEFAULT 0",
-        "cur_shock": "INTEGER DEFAULT 0", "cur_wrath": "INTEGER DEFAULT 0", "notes": "TEXT",
+        "cur_shock": "INTEGER DEFAULT 0", "cur_wrath": "INTEGER DEFAULT 0", "cur_ammo": "INTEGER DEFAULT 3", "notes": "TEXT",
         "folder_id": "INTEGER", "portrait": "BLOB", "comms_on": "INTEGER DEFAULT 1",
         "comms_changed_at": "TEXT", "updated_at": "TEXT", "revision": "INTEGER DEFAULT 0"})
     _ensure_columns(conn, "folders", {"name": "TEXT"})
@@ -606,7 +733,9 @@ def init_db():
                 conn.execute("INSERT OR IGNORE INTO combat_participant(encounter_id,character_id,side,added_at) VALUES(?,?,?,?)",
                              (eid, r[0], ch[0], now_iso()))
         conn.execute("DELETE FROM combatant")
-    conn.commit(); conn.close()
+    conn.commit()
+    _load_custom_archetypes(conn)
+    conn.close()
 
 
 STANDARD_AMMO_CATALOG = {
@@ -1011,6 +1140,9 @@ def character_keywords(ch):
         "Primaris Intercessor": {"Adeptus Astartes", "Primaris"},
     }
     keys.update(archetype_keywords.get(arch, set()))
+    custom_arch_keywords = ARCHETYPES.get(arch, {}).get("keywords", [])
+    if isinstance(custom_arch_keywords, list):
+        keys.update(str(x).strip() for x in custom_arch_keywords if str(x).strip())
 
     chapter = str(ch.get("chapter", "") or "").strip()
     if chapter and chapter != "Other / Successor Chapter":
@@ -1268,9 +1400,51 @@ def craft_status_text(status, reason):
     return str(reason)
 
 def craft_modifiers(row):
+    """Return only automatic numeric modifiers granted by an equipped Wargear item.
+
+    Armour Traits from the Core Rulebook are normalized here so every Wargear
+    bonus has one source of truth and cannot be applied twice. Conditional text
+    such as Cameleoline's cover/shadow bonus is deliberately not automatic.
+    """
     details = craft_details(row)
-    mods = details.get("modifiers", {}) or {}
-    return {str(k).strip().lower(): int(v) for k, v in mods.items() if str(v).lstrip("-+").isdigit()}
+    mods = {}
+    raw = details.get("modifiers", {}) or {}
+    if isinstance(raw, dict):
+        for k, v in raw.items():
+            text = str(v).strip()
+            if re.fullmatch(r"[+-]?\d+", text):
+                mods[str(k).strip().lower()] = int(text)
+
+    traits = details.get("traits", []) or []
+    if isinstance(traits, str):
+        traits = _req_list(traits)
+    effect = str(row.get("effect", "") if isinstance(row, dict) else "")
+    trait_text = ", ".join(str(x) for x in traits)
+    if effect:
+        m = re.search(r"traits?\s*:\s*(.+?)(?:\.|$)", effect, re.I)
+        if m:
+            trait_text += ", " + m.group(1)
+
+    # Powered (X): gain X Strength while wearing the armour.
+    for rating in re.findall(r"powered\s*\(\s*(\d+)\s*\)", trait_text, re.I):
+        mods["strength"] = max(mods.get("strength", 0), int(rating))
+
+    # Shield: its AR is added to Defence and Resilience, rather than being
+    # treated as ordinary body armour. Keep it separate to avoid double count.
+    if re.search(r"(?:^|[,;])\s*shield\s*(?:[,;]|$)", trait_text, re.I):
+        ar = mods.get("armour")
+        if ar is not None:
+            mods["shield_armour"] = max(mods.get("shield_armour", 0), int(ar))
+            mods.pop("armour", None)
+
+    if "armour" not in mods and "shield_armour" not in mods and details.get("armour_rating") not in (None, ""):
+        try:
+            numeric = re.search(r"[0-9]+", str(details.get("armour_rating")))
+            if numeric:
+                mods["armour"] = int(numeric.group(0))
+        except Exception:
+            pass
+    return mods
 
 
 def effective_attributes(ch):
@@ -1287,21 +1461,29 @@ def effective_skills(ch):
 
 def equipped_wargear_modifiers(ch):
     mods = {}
+    catalog = list_craft_items("wargear", active_only=False)
+    by_id = {int(r["id"]): r for r in catalog}
+    by_name = {str(r.get("name", "")).strip().lower(): r for r in catalog}
     for w in normalize_wargear(ch.get("wargear", [])):
         if not w.get("equipped", True):
             continue
         row = None
-        cid = w.get("craft_id")
-        if cid:
-            rows = list_craft_items("wargear", active_only=False)
-            row = next((r for r in rows if int(r["id"]) == int(cid)), None)
-        if row:
+        try:
+            cid = int(w.get("craft_id", -1) or -1)
+            if cid > 0:
+                row = by_id.get(cid)
+        except Exception:
+            row = None
+        if row is None:
+            row = by_name.get(str(w.get("name", "")).strip().lower())
+        if row is not None:
             source_mods = craft_modifiers(row)
         else:
-            details = w.get("details", {}) or {}
-            source_mods = {str(k).strip().lower(): int(v) for k, v in (details.get("modifiers", {}) or {}).items() if str(v).lstrip("-+").isdigit()}
+            details = _gear_details_dict(w.get("details", {}))
+            source_mods = craft_modifiers({"details": details})
         for k, v in source_mods.items():
-            mods[k] = mods.get(k, 0) + int(v)
+            key = str(k).strip().lower()
+            mods[key] = mods.get(key, 0) + int(v)
     return mods
 
 def assign_craft_to_character(cid, craft_id, kind, actor_name="", actor_user_id=None, source="Craft Assignment"):
@@ -1586,7 +1768,7 @@ def _decode(row):
     for s in SKILLS:
         ch["skills"].setdefault(s, 0)
     for k, dv in {"tier": 2, "starting_tier": 2, "rank": 1, "earned_xp": 0, "other_xp": 0, "armour": 0, "cur_wounds": 0,
-                  "cur_shock": 0, "cur_wrath": 0, "comms_on": 1, "kind": "player",
+                  "cur_shock": 0, "cur_wrath": 0, "cur_ammo": 3, "comms_on": 1, "kind": "player",
                   "name": "", "chapter": "", "species": "", "archetype": "", "faction": "", "keywords": [], "archetype_choices": {}, "creation_mode": "archetype", "archetype_history": "[]", "powers": "", "wargear": "", "notes": "", "updated_at": "", "revision": 0}.items():
         if ch.get(k) is None:
             ch[k] = dv
@@ -1696,10 +1878,14 @@ def save_build(cid, name, chapter, species, tier, attributes, skills, talents, w
     if not any(_audit_value(a) != _audit_value(b) for _, a, b in changes):
         conn.close(); return True, "No changes."
     new_revision = current_revision + 1
+    capacity_snapshot = dict(old)
+    capacity_snapshot["attributes"] = attributes
+    capacity_snapshot["wargear"] = normalize_wargear(wargear)
+    ammo_after = min(current_ammo(old), ammo_capacity(capacity_snapshot))
     cur = conn.execute("""UPDATE characters SET name=?,chapter=?,species=?,archetype=?,faction=?,keywords=?,archetype_choices=?,creation_mode=?,tier=?,attributes=?,skills=?,
-                    talents=?,powers=?,wargear=?,armour=?,notes=?,other_xp=?,updated_at=?,revision=? WHERE id=? AND revision=?""",
+                    talents=?,powers=?,wargear=?,armour=?,notes=?,other_xp=?,cur_ammo=?,updated_at=?,revision=? WHERE id=? AND revision=?""",
                  (name, chapter, species, archetype, faction_value, json.dumps(keyword_value, ensure_ascii=False), json.dumps(archetype_choice_value, ensure_ascii=False), creation_mode, int(tier), json.dumps(attributes), json.dumps(skills),
-                  json.dumps(talents), json.dumps(new_values["powers"], ensure_ascii=False), wargear, int(armour), notes, int(other_xp), now_iso(), new_revision, int(cid), current_revision))
+                  json.dumps(talents), json.dumps(new_values["powers"], ensure_ascii=False), wargear, int(armour), notes, int(other_xp), ammo_after, now_iso(), new_revision, int(cid), current_revision))
     if cur.rowcount != 1:
         conn.rollback(); conn.close(); return False, "Concurrent change detected. The latest version was not overwritten."
     conn.commit(); conn.close()
@@ -1714,7 +1900,9 @@ def adjust_vital(cid, field, delta, actor_role="gm", actor_user_id=None, actor_n
     conn = get_conn(); row = conn.execute("SELECT * FROM characters WHERE id=?", (int(cid),)).fetchone()
     if row is None:
         conn.close(); return False
-    old = _decode(row); old_val = int(old.get(field, 0) or 0); new_val = max(0, old_val + int(delta))
+    old = _decode(row); old_val = int(old.get(field, 0) or 0)
+    maximums = {"cur_wounds": derived_traits(old)["Max Wounds"], "cur_shock": derived_traits(old)["Max Shock"], "cur_wrath": derived_traits(old)["Max Wrath"]}
+    new_val = max(0, min(int(maximums[field]), old_val + int(delta)))
     new_rev = int(old.get("revision", 0) or 0) + 1
     conn.execute("UPDATE characters SET %s=?, updated_at=?, revision=? WHERE id=?" % field,
                  (new_val, now_iso(), new_rev, int(cid)))
@@ -2415,7 +2603,7 @@ def live_vitals(cid):
     d = derived_traits(ch)
     gear_mods = equipped_wargear_modifiers(ch)
     rank, asc = rank_from_xp(ch["earned_xp"], ch.get("rank", 1))
-    ammo_stacks, ammo_total = ammo_inventory(ch)
+    ammo_total = current_ammo(ch)
     ammo_max = ammo_capacity(ch)
     user = st.session_state.get("user") or {}
     is_player = user.get("role") != "gm"
@@ -2436,32 +2624,21 @@ def live_vitals(cid):
         st.markdown("<div class='vital-label'>AMMO</div>", unsafe_allow_html=True)
         acols = st.columns([1, 3, 1])
         if acols[0].button("−", key=f"lvammo{cid}minus", disabled=ammo_total <= 0):
-            if ammo_stacks:
-                target = ammo_stacks[0]
-                craft_id = _wargear_craft_id(target)
-                result = adjust_wargear_quantity(
-                    cid, craft_id, -1,
-                    actor_name=user.get("username", ""),
-                    actor_user_id=user.get("id"),
-                    source="Magister Ammo -1" if not is_player else "Player Ammo -1",
-                    actor_role="gm" if not is_player else "player",
-                )
-                if result[0]: st.rerun()
-                else: st.error(result[1])
+            result = adjust_ammo_pool(
+                cid, -1, actor_name=user.get("username", ""), actor_user_id=user.get("id"),
+                source="Magister Ammo -1" if not is_player else "Player Ammo -1",
+                actor_role="gm" if not is_player else "player")
+            if result[0]: st.rerun()
+            else: st.error(result[1])
         acols[1].markdown(
             f"<div class='ammo-vital-value'><b>{ammo_total}</b> / {ammo_max}</div>",
             unsafe_allow_html=True,
         )
-        if acols[2].button("+", key=f"lvammo{cid}plus", disabled=(ammo_total >= ammo_max or not ammo_stacks)):
-            target = ammo_stacks[0]
-            craft_id = _wargear_craft_id(target)
-            result = adjust_wargear_quantity(
-                cid, craft_id, 1,
-                actor_name=user.get("username", ""),
-                actor_user_id=user.get("id"),
+        if acols[2].button("+", key=f"lvammo{cid}plus", disabled=ammo_total >= ammo_max):
+            result = adjust_ammo_pool(
+                cid, 1, actor_name=user.get("username", ""), actor_user_id=user.get("id"),
                 source="Magister Ammo +1" if not is_player else "Player Ammo +1",
-                actor_role="gm" if not is_player else "player",
-            )
+                actor_role="gm" if not is_player else "player")
             if result[0]: st.rerun()
             else: st.error(result[1])
         st.caption("Capacity")
@@ -2564,6 +2741,48 @@ def _wargear_craft_id(w):
         return -1
 
 
+def current_ammo(ch):
+    """Return the character's abstract Ammo Pool, independent of ammo type stacks."""
+    try:
+        raw = max(0, int(ch.get("cur_ammo", 0) or 0))
+        return min(raw, ammo_capacity(ch))
+    except Exception:
+        return 0
+
+
+def adjust_ammo_pool(cid, delta, actor_role="gm", actor_user_id=None, actor_name="", source="Ammo Pool"):
+    """Adjust the abstract Ammo Pool freely between 0 and the current carrying capacity."""
+    conn = get_conn()
+    try:
+        row = conn.execute("SELECT * FROM characters WHERE id=?", (int(cid),)).fetchone()
+        if row is None:
+            return False, "Character not found."
+        ch = _decode(row)
+        if actor_role == "player":
+            if ch.get("kind") != "player" or int(ch.get("user_id") or -1) != int(actor_user_id or -2):
+                return False, "Players can only edit their own character sheet."
+        maximum = ammo_capacity(ch)
+        old_val = current_ammo(ch)
+        new_val = max(0, min(maximum, old_val + int(delta)))
+        if new_val == old_val:
+            return True, "Ammo Pool unchanged."
+        new_rev = int(ch.get("revision", 0) or 0) + 1
+        cur = conn.execute("UPDATE characters SET cur_ammo=?, updated_at=?, revision=? WHERE id=? AND revision=?",
+                           (new_val, now_iso(), new_rev, int(cid), int(ch.get("revision", 0) or 0)))
+        if cur.rowcount != 1:
+            conn.rollback()
+            return False, "Concurrent change detected."
+        conn.commit()
+        if actor_role == "player" and actor_user_id:
+            record_player_audit(cid, actor_user_id, actor_name, source, [("cur_ammo", old_val, new_val)])
+        return True, "Ammo Pool updated."
+    except Exception as exc:
+        conn.rollback()
+        return False, f"Could not update Ammo Pool: {exc}"
+    finally:
+        conn.close()
+
+
 def ammo_capacity(ch):
     """Core Rulebook Ammo carrying limit: max(3, half Strength), plus explicit container bonuses."""
     attrs = effective_attributes(ch)
@@ -2592,7 +2811,8 @@ def ammo_capacity(ch):
 
 
 def render_ammo_section(cid, ch, compact=False, gm_mode=False):
-    ammo, ammo_total = ammo_inventory(ch)
+    ammo, _ammo_inventory_total = ammo_inventory(ch)
+    ammo_total = current_ammo(ch)
     consumables = [w for w in stackable_wargear(ch) if not _is_ammo_resource(w)]
     if not ammo and not consumables:
         return
@@ -2613,29 +2833,11 @@ def render_ammo_section(cid, ch, compact=False, gm_mode=False):
             label = str(w.get("name", "Ammo"))
             keywords = d.get("keywords", []) or []
             meta = ", ".join(str(x) for x in keywords) if keywords else "Matching weapon type"
-            craft_id = _wargear_craft_id(w)
-            cols = st.columns([4.8, 1, 1])
-            cols[0].markdown(
+            st.markdown(
                 f"<div class='resource-row'><span class='resource-name'>{html.escape(label)}</span>"
                 f"<span class='resource-meta'>{html.escape(meta)} · ×{qty}</span></div>",
                 unsafe_allow_html=True,
             )
-            if cols[1].button("− 1", key=f"battle_ammo_use_{cid}_{idx}", disabled=craft_id < 1 or qty <= 0):
-                result = adjust_wargear_quantity(cid, craft_id, -1,
-                                                 actor_name=(st.session_state.get("user") or {}).get("username", ""),
-                                                 actor_user_id=(st.session_state.get("user") or {}).get("id"),
-                                                 source="Magister Ammo -1" if gm_mode else "Player Ammo -1",
-                                                 actor_role="gm" if gm_mode else "player")
-                if result[0]: st.rerun()
-                else: st.error(result[1])
-            if cols[2].button("+ 1", key=f"battle_ammo_add_{cid}_{idx}", disabled=craft_id < 1 or ammo_total >= capacity):
-                result = adjust_wargear_quantity(cid, craft_id, 1,
-                                                 actor_name=(st.session_state.get("user") or {}).get("username", ""),
-                                                 actor_user_id=(st.session_state.get("user") or {}).get("id"),
-                                                 source="Magister Ammo +1" if gm_mode else "Player Ammo +1",
-                                                 actor_role="gm" if gm_mode else "player")
-                if result[0]: st.rerun()
-                else: st.error(result[1])
 
     if consumables:
         st.markdown("<div class='resource-subtitle'>GRENADES & MISSILES</div>", unsafe_allow_html=True)
@@ -3383,7 +3585,11 @@ def folder_label(fid, folders):
     return "No folder"
 
 
+@st.fragment(run_every=REFRESH_S)
 def char_row(ch, folders):
+    fresh = load_character(int(ch["id"]))
+    if fresh is not None:
+        ch = fresh
     rank = int(ch.get("rank", 1) or 1); d = derived_traits(ch)
     ncls = "npc" if ch["kind"] == "npc" else ""
     vs = ("<span class='vlive'>ACTIVE</span>" if ch["comms_on"]
@@ -3399,9 +3605,8 @@ def char_row(ch, folders):
             st.markdown("**Skills**  " + " · ".join(f"{sk[:4]} {skills.get(sk,0)+attrs.get(at,1)}" for sk, at in SKILLS.items()))
             st.caption(f"Wounds {int(ch.get('cur_wounds',0))}/{d['Max Wounds']} · Shock {int(ch.get('cur_shock',0))}/{d['Max Shock']} · Wrath {int(ch.get('cur_wrath',0))}/{d['Max Wrath']}")
         c[0].caption(f"{ch['species']} · T{ch['tier']} · Rank {rank} {vs}")
-    _ammo_stacks, _ammo_total = ammo_inventory(ch)
-    _is_gm_view = (st.session_state.get("user") or {}).get("role") == "gm"
-    ammo_text = str(ammo_capacity(ch)) if _is_gm_view else f"{_ammo_total}/{ammo_capacity(ch)}"
+    _ammo_total = current_ammo(ch)
+    ammo_text = f"{_ammo_total}/{ammo_capacity(ch)}"
     c[1].markdown(f"<small>Wounds {ch['cur_wounds']}/{d['Max Wounds']}<br>Shock {ch['cur_shock']}/{d['Max Shock']}<br>Wrath {ch['cur_wrath']}/{d['Max Wrath']}<br>Ammo {ammo_text}</small>", unsafe_allow_html=True)
     c[2].button("Open", key=f"op_{ch['id']}", on_click=cb_open, args=(ch["id"],))
     if ch["comms_on"]:
@@ -3815,6 +4020,120 @@ def craft_view():
             if b2.button("Cancel", use_container_width=True, key=f"edit_cancel_{edit_id}"):
                 st.session_state.pop("craft_edit_id",None); st.rerun()
 
+def archetypes_view():
+    st.markdown("#### Archetypes")
+    st.caption("Create campaign-specific Archetypes. Custom Archetypes use the same creation, progression and starting-equipment systems as Core Archetypes.")
+
+    custom_rows = _custom_archetype_rows()
+    custom_by_id = {int(r["id"]): r for r in custom_rows}
+    edit_id = st.session_state.get("archetype_edit_id")
+    edit_row = custom_by_id.get(int(edit_id)) if edit_id else None
+
+    with st.container(border=True):
+        st.markdown("### " + ("Edit Custom Archetype" if edit_row else "Create Custom Archetype"))
+        name = st.text_input("Name", value=str(edit_row["name"]) if edit_row else "", key="arch_editor_name")
+        c = st.columns(4)
+        tier = c[0].number_input("Tier", 1, MAX_TIER, int(edit_row["tier"]) if edit_row else 1, key="arch_editor_tier")
+        species_options = list(dict.fromkeys(PLAYER_SPECIES + NPC_SPECIES))
+        old_species = str(edit_row["species"]) if edit_row else "Human"
+        species = c[1].selectbox("Species", species_options, index=species_options.index(old_species) if old_species in species_options else 0, format_func=species_label, key="arch_editor_species")
+        faction_options = list(dict.fromkeys(FACTION_OPTIONS + ["", "Custom"]))
+        old_faction = str(edit_row["faction"]) if edit_row else ""
+        faction = c[2].selectbox("Faction", faction_options, index=faction_options.index(old_faction) if old_faction in faction_options else 0, key="arch_editor_faction")
+        xp = c[3].number_input("XP Cost", 0, 10000, int(edit_row["xp"]) if edit_row else 0, key="arch_editor_xp")
+        ability = st.text_input("Archetype Ability", value=str(edit_row["ability"]) if edit_row else "", key="arch_editor_ability")
+        old_kw = []
+        if edit_row:
+            try: old_kw = json.loads(edit_row["keywords"] or "[]")
+            except Exception: old_kw = []
+        keywords = st.text_input("Archetype Keywords", value=", ".join(old_kw), key="arch_editor_keywords", placeholder="Example: Astartes, Psyker, Rogue Trader")
+
+        st.markdown("**Attribute Package**")
+        old_attrs = {}
+        old_skills = {}
+        if edit_row:
+            try: old_attrs = json.loads(edit_row["attributes"] or "{}")
+            except Exception: old_attrs = {}
+            try: old_skills = json.loads(edit_row["skills"] or "{}")
+            except Exception: old_skills = {}
+        attrs = {}
+        ac = st.columns(4)
+        for i, attr in enumerate(ATTRS):
+            value = ac[i % 4].number_input(attr, 1, 12, int(old_attrs.get(attr, 1)), key=f"arch_editor_attr_{i}")
+            if value > 1: attrs[attr] = int(value)
+
+        st.markdown("**Skill Package**")
+        skills = {}
+        sc = st.columns(4)
+        for i, skill in enumerate(SKILLS):
+            value = sc[i % 4].number_input(skill, 0, 8, int(old_skills.get(skill, 0)), key=f"arch_editor_skill_{i}")
+            if value > 0: skills[skill] = int(value)
+
+        old_gear = []
+        if edit_row:
+            try: old_gear = json.loads(edit_row["starting_wargear"] or "[]")
+            except Exception: old_gear = []
+        gear_rows = list_craft_items("wargear")
+        gear_names = [str(r["name"]) for r in gear_rows]
+        gear_default = [x for x in old_gear if x in gear_names]
+        starting_gear_selected = st.multiselect("Starting Wargear", gear_names, default=gear_default, key="arch_editor_gear")
+        qty_lines = st.text_area("Starting Wargear Quantities", value="\n".join(
+            str(x) for x in old_gear if x not in gear_default
+        ), key="arch_editor_gear_qty", placeholder="Optional extra entries, one per line. Example: Frag Grenade x3")
+        starting_gear = list(starting_gear_selected)
+        for line in _split_requirement_tokens(qty_lines.replace("\n", ",")):
+            base = _gear_quantity_name(line)[1]
+            if _catalog_gear_row(gear_rows, base) is not None:
+                starting_gear.append(line.strip())
+            elif line.strip():
+                st.warning(f"Starting Wargear not found in catalog: {base}")
+        st.caption("Starting equipment is resolved against the Wargear catalog. Quantities can be written as 'Frag Grenade x3'.")
+
+        buttons = st.columns(2)
+        if buttons[0].button("Save Archetype", type="primary", use_container_width=True, key="arch_editor_save"):
+            data = {
+                "name": name, "tier": tier, "species": species, "faction": faction, "xp": xp, "ability": ability,
+                "keywords": _req_list(keywords), "attributes": attrs, "skills": skills, "starting_wargear": starting_gear
+            }
+            ok, msg = save_custom_archetype(data, int(edit_id) if edit_id else None)
+            (st.success if ok else st.error)(msg)
+            if ok:
+                st.session_state.pop("archetype_edit_id", None)
+                st.rerun()
+        if buttons[1].button("Cancel", use_container_width=True, key="arch_editor_cancel"):
+            st.session_state.pop("archetype_edit_id", None); st.rerun()
+
+    st.divider()
+    st.markdown("### Custom Archetypes")
+    if not custom_rows:
+        st.info("No custom Archetypes have been created yet.")
+        return
+    for row in custom_rows:
+        with st.container(border=True):
+            h = st.columns([4, 1, 1, 1])
+            h[0].markdown(f"**{html.escape(str(row['name']))}** · T{int(row['tier'])} · {species_label(row['species'])}")
+            h[1].caption(f"{int(row['xp'])} XP")
+            h[2].caption(str(row['faction'] or "No Faction"))
+            if h[3].button("Edit", key=f"arch_edit_{row['id']}"):
+                st.session_state["archetype_edit_id"] = int(row["id"]); st.rerun()
+            details = []
+            if row["ability"]: details.append("Ability: " + str(row["ability"]))
+            try:
+                kw = json.loads(row["keywords"] or "[]")
+                if kw: details.append("Keywords: " + ", ".join(kw))
+            except Exception: pass
+            try:
+                gear = json.loads(row["starting_wargear"] or "[]")
+                if gear: details.append("Wargear: " + ", ".join(gear))
+            except Exception: pass
+            if details: st.caption(" · ".join(details))
+            dc = st.columns([1, 5])
+            if dc[0].button("Delete", key=f"arch_del_{row['id']}"):
+                ok, msg = delete_custom_archetype(int(row["id"]))
+                (st.success if ok else st.error)(msg)
+                if ok: st.rerun()
+
+
 def gm_view():
     camp = get_campaign()
     st.markdown("<div class='banner'>✠ MAGISTER SANCTUM ✠<span class='sub'>Campaign Command</span></div>",
@@ -3830,7 +4149,7 @@ def gm_view():
             edit_view(cid, gm_mode=True)
         return
 
-    tabs = st.tabs(["Characters", "Players", "Craft", "Vox", "Progression", "Session", "Combat", "Campaign", "Maintenance"])
+    tabs = st.tabs(["Characters", "Players", "Craft", "Archetypes", "Vox", "Progression", "Session", "Combat", "Campaign", "Maintenance"])
 
     # ---- Characters / Folders ----
     with tabs[0]:
@@ -3983,8 +4302,12 @@ def gm_view():
     with tabs[2]:
         craft_view()
 
-    # ---- Vox ----
+    # ---- Archetypes ----
     with tabs[3]:
+        archetypes_view()
+
+    # ---- Vox ----
+    with tabs[4]:
         folders = list_folders()
         chars = list_characters()
         folder_map = {f["id"]: f["name"] for f in folders}
@@ -4035,7 +4358,7 @@ def gm_view():
         vox_live()
 
     # ---- Progression ----
-    with tabs[4]:
+    with tabs[5]:
         st.markdown("#### Progression")
         st.caption("Rank and Tier are controlled by the Magister. XP thresholds unlock normal advancement; the Magister may also approve an early advancement.")
 
@@ -4148,7 +4471,7 @@ def gm_view():
                         st.caption("No progression corrections or advancement changes have been recorded yet.")
 
     # ---- Session ----
-    with tabs[5]:
+    with tabs[6]:
         st.markdown("#### Session")
         st.caption("Close the session, award table XP and individual bonuses, record notes, and mark the NPCs involved.")
         current_session = int(camp.get("session_no", 1))
@@ -4223,7 +4546,7 @@ def gm_view():
                         st.markdown(f"**{aw['name']}** · +{aw['total_xp']} XP (base {aw['base_xp']} + bonus {aw['bonus_xp']})")
 
     # ---- Combat ----
-    with tabs[6]:
+    with tabs[7]:
         st.markdown("#### Combat")
         st.caption("The Magister controls the combat order manually. Add Players and NPCs, apply initiative modifiers, and arrange the turn order.")
         all_combat_chars = list_characters()
@@ -4312,7 +4635,7 @@ def gm_view():
                     st.markdown("<div class='combat-arrow'>▼</div>", unsafe_allow_html=True)
 
     # ---- Campaign ----
-    with tabs[7]:
+    with tabs[8]:
         st.markdown("#### Campaign Configuration")
         with st.form("campf"):
             cc = st.columns([3, 1, 1])
@@ -4339,7 +4662,7 @@ def gm_view():
             st.markdown(f"<div class='row'><b>{lg['ts']}</b> - {lg['text']}</div>", unsafe_allow_html=True)
 
     # ---- Maintenance ----
-    with tabs[8]:
+    with tabs[9]:
         st.markdown("#### File Maintenance")
         st.caption("The .db backup contains everything: players, NPCs, folders, XP, Vox, portraits. "
                    "On free hosting the disk may reset; download backups regularly.")

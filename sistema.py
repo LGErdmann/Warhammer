@@ -2651,10 +2651,29 @@ def strip_archetype_package(cid, archetype, species):
 # ============================================================
 def cb_open(cid):
     st.session_state.editing = cid
+    # This callback fires from a button rendered inside char_row(), which is
+    # an @st.fragment. Per Streamlit, a widget interaction inside a fragment
+    # only reruns that fragment by default — gm_view(), which actually reads
+    # st.session_state.editing to switch to the sheet, lives outside it and
+    # would not re-execute until some unrelated full-app rerun happened
+    # later. That looked like "Open" was doing nothing / taking forever.
+    # st.rerun() forces the full-app rerun this needs.
+    st.rerun()
 
 
 def cb_close():
     st.session_state.editing = None
+    st.rerun()
+
+
+def cb_delete_character(cid):
+    # Same fragment-scoping reason as cb_open(): this fires from a button
+    # inside char_row() (@st.fragment). Without an explicit full-app rerun,
+    # the row for the now-deleted character keeps rendering with its last
+    # known state until something else happens to trigger one, so a deleted
+    # character appears to linger in the Characters list.
+    delete_character(cid)
+    st.rerun()
 
 
 def cb_archetype_change(cid):
@@ -2798,12 +2817,15 @@ def _ammo_stat_block(col, cid, ch, editable=False, actor_role="gm", actor_user_i
         _gear_mod_caption(cap_mod if cap_mod is not None else 0)
 
 
-def live_vitals(cid):
-    ch = load_character(cid)
+def live_vitals(cid, ch=None, gear_mods=None):
+    # Accepts an already-loaded character/gear so callers that already have
+    # them (battle_view always does) skip a second DB round trip and a
+    # second Wargear-modifier rebuild for the same character on every render.
+    ch = ch if ch is not None else load_character(cid)
     if not ch:
         return
-    gear = equipped_wargear_modifiers(ch)
-    d = derived_traits(ch)
+    gear = gear_mods if gear_mods is not None else equipped_wargear_modifiers(ch)
+    d = derived_traits(ch, gear)
     rank, asc = rank_from_xp(ch["earned_xp"], ch.get("rank", 1))
     user = st.session_state.get("user") or {}
     is_player = user.get("role") != "gm"
@@ -3078,7 +3100,7 @@ def battle_view(cid):
                 f"Tier {ch['tier']} &nbsp;·&nbsp; Rank {rank}</div></div>", unsafe_allow_html=True)
 
     st.markdown("<div class='sectionttl'>Vitals</div>", unsafe_allow_html=True)
-    live_vitals(cid)
+    live_vitals(cid, ch, gear_mods)
 
     left, right = st.columns([1.5, 1])
     with left:
@@ -3825,7 +3847,7 @@ def char_row(ch, folders):
         c[3].button("Cut Vox", key=f"vr_{ch['id']}", on_click=set_comms, args=(ch["id"], 0))
     else:
         c[3].button("Activate Vox", key=f"vr_{ch['id']}", on_click=set_comms, args=(ch["id"], 1))
-    c[4].button("X", key=f"dl_{ch['id']}", on_click=delete_character, args=(ch["id"],))
+    c[4].button("X", key=f"dl_{ch['id']}", on_click=cb_delete_character, args=(ch["id"],))
 
 
 def vox_toggle_list(chars):

@@ -1696,6 +1696,23 @@ def craft_description_html(row, kind="craft", name_color=None, title_text=""):
     return f"<details class='craft-details'><summary><span class='craft-details-name'{style}{title}>{name}</span></summary>{''.join(body)}</details>"
 
 
+def _craft_keyword_options():
+    """Return known Keywords for Craft prerequisite and Wargear editors."""
+    values = set()
+    for ch in list_characters():
+        values.update(character_keywords(ch))
+        values.update(_req_list(ch.get("keywords", [])))
+    for row in list_craft_items(active_only=False):
+        details = craft_details(row)
+        for value in details.get("keywords", []) if isinstance(details.get("keywords", []), list) else _req_list(details.get("keywords", "")):
+            if str(value).strip(): values.add(str(value).strip())
+        req = details.get("requirements", {}) or {}
+        if isinstance(req, dict):
+            values.update(_req_list(req.get("keywords_all", [])))
+            values.update(_req_list(req.get("keywords_any", [])))
+    return sorted(values, key=str.lower)
+
+
 def craft_keyword_values(row):
     details = craft_details(row)
     values = details.get("keywords", [])
@@ -4689,7 +4706,13 @@ def main():
         st.write(f"User: {st.session_state.user['username']}")
         st.write("Role: " + ("Magister" if role == "gm" else "Battle-Brother"))
         if role == "gm":
-            st.metric("Ruin", camp["ruin"])
+            st.markdown("**Ruin**")
+            ruin_cols = st.columns([1, 2, 1])
+            if ruin_cols[0].button("−", key="sidebar_ruin_minus", use_container_width=True):
+                adjust_ruin(-1); st.rerun()
+            ruin_cols[1].metric("", camp["ruin"])
+            if ruin_cols[2].button("+", key="sidebar_ruin_plus", use_container_width=True):
+                adjust_ruin(+1); st.rerun()
         st.divider()
         if st.button("Sign Out"):
             st.session_state.user = None; st.session_state.editing = None; st.rerun()

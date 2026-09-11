@@ -31,7 +31,7 @@ SKILLS = {
     "Psychic Mastery": "Willpower", "Scholar": "Intellect", "Stealth": "Agility",
     "Survival": "Willpower", "Tech": "Intellect", "Weapon Skill": "Initiative",
 }
-PLAYER_SPECIES = ["Human", "Abhuman", "Adeptus Astartes", "Primaris Astartes", "Aeldari", "Ork"]
+PLAYER_SPECIES = ["Human", "Adeptus Astartes", "Primaris Astartes", "Aeldari", "Ork"]
 SPECIES_LABELS = {
     "Astra Militarum (Humano)": "Astra Militarum (Human)",
     "Adepta Sororitas": "Adepta Sororitas",
@@ -101,36 +101,59 @@ SPECIES_PACKAGES = {
         "speed": 6, "size": "Average"},
 }
 
-# Bonuses included by the Core Rulebook archetypes for the archetypes whose
-# package data is encoded here. Other archetypes still set Species/Tier/XP and
-# can be customised manually, matching the Advanced Character Creation workflow.
+# Core Rulebook Species Attribute Maximums (base Ratings, before bonuses).
+SPECIES_ATTRIBUTE_MAX = {
+    "Human": {a: 8 for a in ATTRS},
+    "Adeptus Astartes": {"Strength": 10, "Toughness": 10, "Agility": 9, "Initiative": 9, "Willpower": 10, "Intellect": 10, "Fellowship": 8},
+    "Primaris Astartes": {"Strength": 12, "Toughness": 12, "Agility": 9, "Initiative": 9, "Willpower": 10, "Intellect": 10, "Fellowship": 8},
+    "Aeldari": {"Strength": 7, "Toughness": 7, "Agility": 12, "Initiative": 12, "Willpower": 12, "Intellect": 10, "Fellowship": 6},
+    "Ork": {"Strength": 12, "Toughness": 12, "Agility": 7, "Initiative": 7, "Willpower": 8, "Intellect": 7, "Fellowship": 7},
+}
+
+FACTION_OPTIONS = ["The Imperium", "Adepta Sororitas", "Adeptus Astra Telepathica", "Adeptus Mechanicus", "Adeptus Ministorum", "Astra Militarum", "The Inquisition", "Rogue Trader Dynasties", "Scum", "Adeptus Astartes", "Aeldari", "Orks", "Chaos"]
+POWER_DISCIPLINES = {
+    "Prescience": "Divination", "Psychometry": "Divination",
+    "Conceal/Reveal": "Runes of Battle", "Protect/Jinx": "Runes of Battle",
+}
+
+
+# Attribute and Skill increases included in the Core Rulebook Archetype package.
+# These are written directly onto the character sheet when the Archetype is
+# selected and are included in the Archetype XP cost. They are not gear-style
+# bonuses and are not displayed as separate modifiers.
 ARCHETYPE_PACKAGES = {
     "Sister Hospitaller": {"attributes":{"Willpower":3,"Intellect":3}, "skills":{"Medicae":1,"Scholar":1}},
     "Ministorum Priest": {"attributes":{"Willpower":3}, "skills":{"Scholar":1}},
     "Imperial Guard": {"attributes":{}, "skills":{"Ballistic Skill":2}},
-    "Inquisitorial Acolyte": {"attributes":{}, "skills":{}},
+    "Inquisitorial Acolyte": {"attributes":{}, "skills":{}, "skills_any_to": 2, "skills_any_count": 1},
     "Inquisitorial Sage": {"attributes":{"Intellect":3}, "skills":{"Scholar":2}},
     "Ganger": {"attributes":{}, "skills":{"Cunning":1}},
-    "Corsair": {"attributes":{}, "skills":{"Pilot":1,"Ballistic Skill":1}},
-    "Boy": {"attributes":{}, "skills":{"Weapon Skill":1}},
-    "Sister of Battle": {"attributes": {"Strength":3,"Toughness":3,"Agility":3,"Willpower":3}, "skills":{"Ballistic Skill":2,"Scholar":1,"Weapon Skill":2}},
+    "Corsair": {"attributes":{"Agility":3}, "skills":{"Athletics":2}},
+    "Boy": {"attributes":{"Strength":3,"Toughness":3}, "skills":{"Weapon Skill":2}},
+    "Sister of Battle": {"attributes":{"Strength":3,"Toughness":3,"Agility":3,"Willpower":3}, "skills":{"Ballistic Skill":2,"Scholar":1,"Weapon Skill":2}},
     "Sanctioned Psyker": {"attributes":{"Willpower":4}, "skills":{"Psychic Mastery":1}},
     "Skitarius": {"attributes":{"Toughness":3}, "skills":{"Ballistic Skill":2,"Tech":1}},
     "Death Cult Assassin": {"attributes":{"Agility":4}, "skills":{"Weapon Skill":2}},
+    "Tempestus Scion": {"attributes":{"Strength":3,"Toughness":3,"Agility":3}, "skills":{"Ballistic Skill":2,"Stealth":2}},
     "Rogue Trader": {"attributes":{"Fellowship":3}, "skills":{"Awareness":1,"Cunning":1,"Insight":2,"Persuasion":2}},
+    "Scavvy": {"attributes":{"Toughness":2}, "skills":{"Survival":1}},
     "Space Marine Scout": {"attributes":{"Strength":4,"Toughness":4,"Agility":4,"Initiative":4,"Willpower":3,"Intellect":3}, "skills":{"Athletics":3,"Awareness":3,"Ballistic Skill":3,"Stealth":3,"Weapon Skill":3}},
     "Ranger": {"attributes":{"Agility":3}, "skills":{"Ballistic Skill":2,"Stealth":1,"Survival":2}},
     "Kommando": {"attributes":{"Strength":3,"Toughness":3,"Agility":3}, "skills":{"Stealth":2,"Survival":1,"Weapon Skill":2}},
     "Tech-Priest": {"attributes":{"Intellect":3}, "skills":{"Scholar":1,"Tech":3}},
     "Crusader": {"attributes":{"Initiative":3,"Willpower":3}, "skills":{"Scholar":1,"Weapon Skill":3}},
     "Imperial Commissar": {"attributes":{"Strength":3,"Toughness":3,"Willpower":4}, "skills":{"Ballistic Skill":1,"Intimidation":2,"Leadership":2,"Weapon Skill":1}},
+    "Desperado": {"attributes":{"Agility":3,"Intellect":2}, "skills":{"Awareness":2,"Cunning":2,"Investigation":2}},
     "Tactical Space Marine": {"attributes":{"Strength":4,"Toughness":5,"Agility":5,"Initiative":5,"Willpower":3,"Intellect":3}, "skills":{"Athletics":3,"Awareness":3,"Ballistic Skill":5,"Leadership":1,"Scholar":1,"Stealth":3,"Survival":1,"Weapon Skill":4}},
-    "Warlock": {"attributes":{}, "skills":{}},
-    "Nob": {"attributes":{}, "skills":{}},
-    "Inquisitor": {"attributes":{}, "skills":{}},
-    "Primaris Intercessor": {"attributes":{}, "skills":{}},
+    "Warlock": {"attributes":{"Agility":3,"Willpower":4}, "skills":{"Psychic Mastery":2}},
+    "Nob": {"attributes":{"Strength":4,"Toughness":3}, "skills":{"Intimidation":2}},
+    "Inquisitor": {"attributes":{"Intellect":4,"Willpower":4}, "skills":{}, "skills_any_to": 4, "skills_any_count": 2},
+    "Primaris Intercessor": {"attributes":{"Strength":5,"Toughness":6,"Agility":5,"Initiative":5,"Willpower":3,"Intellect":3}, "skills":{"Athletics":3,"Awareness":3,"Ballistic Skill":6,"Stealth":3,"Weapon Skill":3}},
 }
 
+
+
+ARCHETYPE_ABILITIES = {'Sister Hospitaller': 'Loyal Compassion', 'Ministorum Priest': 'Fiery Invective', 'Imperial Guard': 'Look Out, Sir!', 'Inquisitorial Acolyte': 'Inquisitorial Decree', 'Inquisitorial Sage': 'Administratum Records', 'Ganger': 'Scrounger', 'Corsair': 'Dancing on the Blade’s Edge', 'Boy': 'Get Stuck In', 'Sister of Battle': 'Purity of Faith', 'Sanctioned Psyker': 'Psyker', 'Skitarius': 'Heavily Augmented', 'Death Cult Assassin': 'Glancing Blow', 'Tempestus Scion': 'Elite Soldier', 'Rogue Trader': 'Warrant of Trade', 'Scavvy': 'Mutant', 'Space Marine Scout': 'Use the Terrain', 'Ranger': 'From the Shadows', 'Kommando': 'Kunnin‘ Plan', 'Tech-Priest': 'Rite of Repair', 'Crusader': 'Armour of Faith', 'Imperial Commissar': 'Fearsome Respect', 'Desperado': 'Valuable Prey', 'Tactical Space Marine': 'Tactical Versatility', 'Warlock': 'Runes of Battle', 'Nob': 'The Green Tide', 'Inquisitor': 'Unchecked Authority', 'Primaris Intercessor': 'Intercessor Focus'}
 
 # Core Rulebook 2e starting Wargear by Archetype.
 ARCHETYPE_STARTING_WARGEAR = {'Sister Hospitaller': ['Sororitas Power Armour', "Chirurgeon's Tools", 'Chain Bayonet (wrist mounted)', 'Laspistol', 'Sororitas Vestments', 'Copy of the Rule of the Sororitas'], 'Ministorum Priest': ['Chainsword', 'Laspistol', 'Rosarius', 'Knife', 'Ministorum Robes', 'Missionary Kit'], 'Imperial Guard': ['Flak Armour', 'Lasgun', 'Knife', 'Munitorum Issue Mess Kit', 'Grooming Kit', "Imperial Infantryman's Uplifting Primer", '3 Ration Packs'], 'Inquisitorial Acolyte': ['Flak Armour', 'Symbol of Authority'], 'Inquisitorial Sage': ['Administratum Robes', 'Laspistol', 'Knife', 'Auto Quill', 'Data-Slate', '3 Scrolls of Ancient Records'], 'Ganger': ['Knife', 'Bedroll', 'Canteen', 'Gang Colours', 'Laspistol'], 'Corsair': ['Corsair Armour', 'Shuriken Pistol', 'Lasblaster', 'Spirit Stone', '3 Plasma Grenades', 'Void Suit'], 'Boy': ['Shoota', 'Slugga', 'Choppa', 'Ripped Clothes'], 'Sister of Battle': ['Sororitas Power Armour', 'Chaplet Ecclesiasticus', 'Sororitas Vestments', 'Writing Kit', 'Copy of the Rule of the Sororitas', 'Boltgun'], 'Sanctioned Psyker': ['Laspistol', 'Force Stave', 'Psykana Mercy Blade', 'Munitorum Issue Mess Kit', 'Blanket', 'Grooming Kit', '2 Ration Packs'], 'Skitarius': ['Combi-Tool', 'Galvanic Rifle', 'Skitarii Auto-Cuirass'], 'Death Cult Assassin': ['Two Death Cult Power Blades', 'Bodyglove', 'Knife', 'Laspistol', '3 doses of Stimm'], 'Tempestus Scion': ['Tempestus Carapace', 'Hot-Shot Lasgun', 'Grav-Chute', 'Knife', 'Munitorum Issue Mess Kit', "Imperial Infantryman's Uplifting Primer", 'Slate Monitron', 'Monoscope', '3 Ration Packs'], 'Rogue Trader': ['Imperial Frigate', 'Flak Coat', 'Carapace Armour'], 'Scavvy': ['Laspistol', 'Knife', 'Bedroll', 'Canteen', 'Tattered Clothes'], 'Space Marine Scout': ['Scout Armour', 'Astartes Combat Knife', '3 Frag Grenades', 'Vox Bead', 'Boltgun'], 'Ranger': ['Cameleoline Cloak', 'Aeldari Mesh Armour', 'Ranger Long Rifle', 'Shuriken Pistol', 'Knife', 'Spirit Stone', 'Bedroll', 'Blanket', 'Magnocular Scope'], 'Kommando': ['Shoota', 'Slugga', 'Choppa', '3 Stikkbombs', 'Survival Kit'], 'Tech-Priest': ['Omnissian Axe', 'Laspistol', 'One Mechadendrite', '2 Augmetics', 'Combi-Tool', 'Light Power Armour', 'Omnissian Sigil'], 'Crusader': ['Power Sword', 'Storm Shield', 'Carapace Armour', 'Ministorum Robes'], 'Imperial Commissar': ['Bolt Pistol', 'Chainsword', 'Flak Coat', 'Munitorum Issue Mess Kit', 'Blanket', 'Grooming Kit', 'Uplifting Primer', '3 Ration Packs'], 'Desperado': ['Flak Coat', 'Preysense Goggles', 'Maps of the Heartworlds', 'Combi-Tool', 'Projectile Weapon', 'Uncommon Melee Weapon'], 'Tactical Space Marine': ['Aquila Mk VII Power Armour', 'Boltgun', 'Bolt Pistol', 'Astartes Combat Knife', '3 Frag Grenades', '3 Krak Grenades'], 'Warlock': ['Rune Armour', 'Witchblade', 'Shuriken Pistol', 'Set of Wraithbone Runes', 'Spirit Stone'], 'Nob': ["'Eavy Armour", 'Kustom Slugga', 'Kustom Choppa'], 'Inquisitor': ['Inquisitorial Rosette', 'Boltgun', 'Bolt Pistol', 'Flak Coat'], 'Primaris Intercessor': ['Mark X Tacticus Power Armour', 'Bolt Rifle', 'Heavy Bolt Pistol', 'Astartes Combat Knife', '3 Frag Grenades', '3 Krak Grenades', 'Ballistic Appeasement Autoreliquary']}
@@ -170,8 +193,8 @@ CHAPTERS = {
     },
     "Dark Angels": {
         "legion": "I", "primarch": "Lion El'Jonson",
-        "ability": "Grim Resolve: You may reroll Double Rank dice once per ranged attack Test when you Aim.",
-        "tradition": "The Unforgiven: You suffer a +2 DN penalty to social Tests made against anyone outside your Chapter."
+        "ability": "Fire Discipline: When Dark Angels make a ranged attack using a held action, they ignore up to Rank penalties on the attack.",
+        "tradition": "The Secret: Dark Angels distrust anyone outside of their Chapter. They suffer a +2 DN penalty for Interaction Tests involving anyone outside the Dark Angels Chapter."
     },
     "Imperial Fists": {
         "legion": "VII", "primarch": "Rogal Dorn",
@@ -231,16 +254,16 @@ ARCHETYPES = {
     "Imperial Guard": {"tier": 1, "species": "Human", "xp": 6, "faction": "Astra Militarum"},
     "Inquisitorial Acolyte": {"tier": 1, "species": "Human", "xp": 6, "faction": "Inquisition"},
     "Inquisitorial Sage": {"tier": 1, "species": "Human", "xp": 16, "faction": "Inquisition"},
-    "Ganger": {"tier": 1, "species": "Human", "xp": 6, "faction": "Scum"},
-    "Corsair": {"tier": 1, "species": "Aeldari", "xp": 10, "faction": "Aeldari"},
-    "Boy": {"tier": 1, "species": "Ork", "xp": 20, "faction": "Orks"},
+    "Ganger": {"tier": 1, "species": "Human", "xp": 2, "faction": "Scum"},
+    "Corsair": {"tier": 1, "species": "Aeldari", "xp": 16, "faction": "Aeldari"},
+    "Boy": {"tier": 1, "species": "Ork", "xp": 26, "faction": "Orks"},
     "Sister of Battle": {"tier": 2, "species": "Human", "xp": 64, "faction": "Adepta Sororitas"},
     "Sanctioned Psyker": {"tier": 2, "species": "Human", "xp": 32, "faction": "Adeptus Astra Telepathica"},
     "Skitarius": {"tier": 2, "species": "Human", "xp": 28, "faction": "Adeptus Mechanicus"},
     "Death Cult Assassin": {"tier": 2, "species": "Human", "xp": 36, "faction": "Adeptus Ministorum"},
-    "Tempestus Scion": {"tier": 2, "species": "Human", "xp": 30, "faction": "Astra Militarum"},
+    "Tempestus Scion": {"tier": 2, "species": "Human", "xp": 52, "faction": "Astra Militarum"},
     "Rogue Trader": {"tier": 2, "species": "Human", "xp": 36, "faction": "Rogue Trader Dynasties"},
-    "Scavvy": {"tier": 2, "species": "Human", "xp": 20, "faction": "Scum"},
+    "Scavvy": {"tier": 2, "species": "Human", "xp": 16, "faction": "Scum"},
     "Space Marine Scout": {"tier": 2, "species": "Adeptus Astartes", "xp": 170, "faction": "Adeptus Astartes"},
     "Ranger": {"tier": 2, "species": "Aeldari", "xp": 34, "faction": "Aeldari"},
     "Kommando": {"tier": 2, "species": "Ork", "xp": 54, "faction": "Orks"},
@@ -252,7 +275,7 @@ ARCHETYPES = {
     "Warlock": {"tier": 3, "species": "Aeldari", "xp": 56, "faction": "Aeldari"},
     "Nob": {"tier": 3, "species": "Ork", "xp": 56, "faction": "Orks"},
     "Inquisitor": {"tier": 4, "species": "Human", "xp": 110, "faction": "Inquisition"},
-    "Primaris Intercessor": {"tier": 4, "species": "Primaris Astartes", "xp": 228, "faction": "Adeptus Astartes"},
+    "Primaris Intercessor": {"tier": 4, "species": "Primaris Astartes", "xp": 300, "faction": "Adeptus Astartes"},
 }
 
 def rank_eligible_from_xp(xp):
@@ -361,6 +384,11 @@ def creation_base_skill(ch, species, skill):
         ap = ARCHETYPE_PACKAGES[ch["archetype"]]
         if skill in ap.get("skills", {}):
             return int(ap["skills"][skill])
+        choices = ch.get("archetype_choices", {}) or {}
+        selected = choices.get("skills", []) if isinstance(choices, dict) else []
+        target = int(ap.get("skills_any_to", 0) or 0)
+        if skill in selected and target:
+            return max(species_base_skill(species, skill), target)
     return species_base_skill(species, skill)
 
 
@@ -451,7 +479,7 @@ def init_db():
     c.execute("""CREATE TABLE IF NOT EXISTS folders(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT)""")
     c.execute("""CREATE TABLE IF NOT EXISTS characters(id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER, kind TEXT DEFAULT 'player', name TEXT, chapter TEXT, species TEXT, archetype TEXT, creation_mode TEXT DEFAULT 'archetype', archetype_history TEXT DEFAULT '[]',
-        tier INTEGER DEFAULT 2, starting_tier INTEGER DEFAULT 2, rank INTEGER DEFAULT 1, earned_xp INTEGER DEFAULT 0, other_xp INTEGER DEFAULT 0,
+        tier INTEGER DEFAULT 2, starting_tier INTEGER DEFAULT 2, rank INTEGER DEFAULT 1, earned_xp INTEGER DEFAULT 0, other_xp INTEGER DEFAULT 0, faction TEXT DEFAULT '', keywords TEXT DEFAULT '[]', archetype_choices TEXT DEFAULT '{}',
         attributes TEXT, skills TEXT, talents TEXT, powers TEXT, wargear TEXT, armour INTEGER DEFAULT 0,
         cur_wounds INTEGER DEFAULT 0, cur_shock INTEGER DEFAULT 0, cur_wrath INTEGER DEFAULT 0,
         notes TEXT, folder_id INTEGER, portrait BLOB, comms_on INTEGER DEFAULT 1, comms_changed_at TEXT, updated_at TEXT, revision INTEGER DEFAULT 0)""")
@@ -494,7 +522,7 @@ def init_db():
     _ensure_columns(conn, "characters", {
         "user_id": "INTEGER", "kind": "TEXT DEFAULT 'player'", "name": "TEXT", "chapter": "TEXT",
         "species": "TEXT", "archetype": "TEXT", "creation_mode": "TEXT DEFAULT 'archetype'", "archetype_history": "TEXT DEFAULT '[]'", "tier": "INTEGER DEFAULT 2", "starting_tier": "INTEGER DEFAULT 2", "rank": "INTEGER DEFAULT 1", "earned_xp": "INTEGER DEFAULT 0",
-        "other_xp": "INTEGER DEFAULT 0", "attributes": "TEXT", "skills": "TEXT", "talents": "TEXT", "powers": "TEXT",
+        "other_xp": "INTEGER DEFAULT 0", "faction": "TEXT DEFAULT ''", "keywords": "TEXT DEFAULT '[]'", "archetype_choices": "TEXT DEFAULT '{}'", "attributes": "TEXT", "skills": "TEXT", "talents": "TEXT", "powers": "TEXT",
         "wargear": "TEXT", "armour": "INTEGER DEFAULT 0", "cur_wounds": "INTEGER DEFAULT 0",
         "cur_shock": "INTEGER DEFAULT 0", "cur_wrath": "INTEGER DEFAULT 0", "notes": "TEXT",
         "folder_id": "INTEGER", "portrait": "BLOB", "comms_on": "INTEGER DEFAULT 1",
@@ -610,11 +638,11 @@ def create_player(username, pw, creation_mode="archetype", tier=2, rank=1, speci
         for skill, value in ap.get("skills", {}).items():
             skills[skill] = max(int(skills.get(skill, 0)), int(value))
 
-        c.execute("""INSERT INTO characters(user_id,kind,name,chapter,species,archetype,creation_mode,tier,starting_tier,rank,earned_xp,other_xp,
+        c.execute("""INSERT INTO characters(user_id,kind,name,chapter,species,archetype,faction,keywords,archetype_choices,creation_mode,tier,starting_tier,rank,earned_xp,other_xp,
                      attributes,skills,talents,powers,wargear,armour,cur_wounds,cur_shock,cur_wrath,notes,
                      comms_on,comms_changed_at)
-                     VALUES(?, 'player', ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                  (uid, username, "", species, archetype, creation_mode, tier, tier, rank, 0, 0, json.dumps(attrs),
+                     VALUES(?, 'player', ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                  (uid, username, "", species, archetype, ARCHETYPES.get(archetype, {}).get("faction", "") if creation_mode == "archetype" else "", json.dumps([], ensure_ascii=False), json.dumps({}, ensure_ascii=False), creation_mode, tier, tier, rank, 0, 0, json.dumps(attrs),
                    json.dumps(skills), json.dumps([]), json.dumps([]), json.dumps(normalize_wargear((archetype_starting_wargear(archetype) if creation_mode == "archetype" else []) + starting_ammo_for_wargear(archetype_starting_wargear(archetype) if creation_mode == "archetype" else [])), ensure_ascii=False), 0, 0, 0, 0, "", 1, now_iso()))
         conn.commit(); return True, "Player recruited."
     except sqlite3.IntegrityError:
@@ -630,11 +658,11 @@ def create_npc(name, species, tier, creation_mode="archetype", rank=1):
     default_arch = "" if creation_mode == "advanced" else default_archetype_for_species(species, tier)
     starting_gear = archetype_starting_wargear(default_arch) if creation_mode != "advanced" else []
     starting_gear = normalize_wargear(starting_gear + starting_ammo_for_wargear(starting_gear))
-    conn.execute("""INSERT INTO characters(user_id,kind,name,chapter,species,archetype,creation_mode,tier,starting_tier,rank,earned_xp,other_xp,
+    conn.execute("""INSERT INTO characters(user_id,kind,name,chapter,species,archetype,faction,keywords,archetype_choices,creation_mode,tier,starting_tier,rank,earned_xp,other_xp,
                     attributes,skills,talents,powers,wargear,armour,cur_wounds,cur_shock,cur_wrath,notes,
                     comms_on,comms_changed_at)
-                    VALUES(NULL,'npc',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                 (name or "NPC", "", species, default_arch, creation_mode, tier, tier, rank, 0, 0, json.dumps(default_attributes()),
+                    VALUES(NULL,'npc',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                 (name or "NPC", "", species, default_arch, ARCHETYPES.get(default_arch, {}).get("faction", "") if default_arch else "", json.dumps([], ensure_ascii=False), json.dumps({}, ensure_ascii=False), creation_mode, tier, tier, rank, 0, 0, json.dumps(default_attributes()),
                   json.dumps(default_skills()), json.dumps([]), json.dumps([]), json.dumps(starting_gear, ensure_ascii=False), 0, 0, 0, 0, "", 1, now_iso()))
     conn.commit(); conn.close()
 
@@ -859,7 +887,7 @@ def character_keywords(ch):
     }
     keys.update(species_keywords.get(species, set()))
 
-    faction = str(ARCHETYPES.get(arch, {}).get("faction", "") or "")
+    faction = str(ch.get("faction", "") or ARCHETYPES.get(arch, {}).get("faction", "") or "")
     faction_map = {
         "Adeptus Astartes": "Adeptus Astartes",
         "Adepta Sororitas": "Adepta Sororitas",
@@ -939,26 +967,92 @@ def _requirement_data(row):
     req = details.get("requirements", {})
     if not isinstance(req, dict):
         req = {}
-    # Migrate the old free-text fields into the structured representation.
-    if not req.get("keywords_all") and details.get("keywords"):
-        req["keywords_all"] = _split_requirement_tokens(details.get("keywords"))
     if not req.get("prerequisites") and details.get("prerequisites"):
         req["prerequisites"] = str(details.get("prerequisites", ""))
     return req
 
 
-def _attribute_values(ch):
-    vals = {str(k).lower(): int(v) for k, v in (ch.get("attributes", {}) or {}).items()}
-    vals.update({str(k).lower(): int(v) for k, v in (ch.get("skills", {}) or {}).items()})
-    return vals
+def _check_prerequisites(ch, text, available):
+    text = str(text or "").strip()
+    if not text or text.lower() in {"none", "n/a", "-"}:
+        return True, "Eligible"
+
+    vals = _attribute_values(ch)
+    rank = int(ch.get("rank", 1) or 1)
+    tier = int(ch.get("tier", 1) or 1)
+
+    parts = [x.strip() for x in re.split(r",|;", text) if x.strip()]
+    for raw in parts:
+        token = raw.strip()
+        low = token.lower()
+
+        if low.startswith("must not possess "):
+            kw = low[len("must not possess "):].strip().replace("<", "").replace(">", "")
+            if kw and _keyword_ok(kw, available):
+                return False, f"Cannot possess Keyword: {token[len('must not possess '):].strip()}"
+            continue
+
+        if " or " in low:
+            alternatives = [x.strip() for x in re.split(r"\s+or\s+", token, flags=re.I)]
+            ok_alt = False
+            for alt in alternatives:
+                am = re.match(r"^(.+?)\s+(\d+)\+$", alt.strip())
+                if am:
+                    stat, minimum = am.group(1).strip(), int(am.group(2))
+                    stat_key = stat.lower()
+                    if stat_key == "ballistics skill": stat_key = "ballistic skill"
+                    if vals.get(stat_key, 0) >= minimum or vals.get(stat.lower(), 0) >= minimum:
+                        ok_alt = True; break
+                else:
+                    if _keyword_ok(alt.replace("<", "").replace(">", ""), available):
+                        ok_alt = True; break
+            if not ok_alt:
+                return False, f"Requires one of: {token}"
+            continue
+
+        m = re.match(r"^(.+?)\s+(\d+)\+$", token)
+        if m:
+            stat = m.group(1).strip()
+            minimum = int(m.group(2))
+            stat_low = stat.lower()
+            if stat_low == "rank":
+                if rank < minimum: return False, f"Requires Rank {minimum}+"
+            elif stat_low == "tier":
+                if tier < minimum: return False, f"Requires Tier {minimum}+"
+            elif stat_low in {"attribute", "skill"}:
+                if max(vals.values() or [0]) < minimum:
+                    return False, f"Requires any {stat} {minimum}+"
+            elif vals.get(stat_low, 0) < minimum:
+                # Accept the CRB spelling "Ballistics Skill" as Ballistic Skill.
+                if stat_low == "ballistics skill" and vals.get("ballistic skill", 0) >= minimum:
+                    continue
+                return False, f"Requires {stat} {minimum}+"
+            continue
+
+        kw = token.replace("<", "").replace(">", "").strip()
+        if not _keyword_ok(kw, available):
+            return False, f"Requires Keyword: {token}"
+
+    return True, "Eligible"
+
+
+def _keyword_ok(token, available):
+    token = str(token or "").strip().lower()
+    if not token:
+        return True
+    aliases = {
+        "astartes": "adeptus astartes",
+        "space marine": "adeptus astartes",
+        "ballistics skill": "ballistic skill",
+    }
+    canonical = aliases.get(token, token)
+    return canonical in {str(x).strip().lower() for x in available}
 
 
 def _requirements_satisfied(ch, row):
     req = _requirement_data(row)
     available = character_keywords(ch)
 
-    # Keywords: Wrath & Glory prerequisites are normally conjunctive. An
-    # explicit OR expression remains available for talents with alternatives.
     for raw in _split_requirement_tokens(req.get("keywords_all", [])):
         token = raw.strip().lower().replace("<", "").replace(">", "")
         if " or " in token:
@@ -966,6 +1060,7 @@ def _requirements_satisfied(ch, row):
                 return False, f"Requires one of: {raw}"
         elif not _keyword_ok(token, available):
             return False, f"Requires Keyword: {raw}"
+
     any_kw = _split_requirement_tokens(req.get("keywords_any", []))
     if any_kw and not any(_keyword_ok(x, available) for x in any_kw):
         return False, "Requires one of: " + ", ".join(any_kw)
@@ -982,7 +1077,9 @@ def _requirements_satisfied(ch, row):
         if vals.get(str(attr).lower(), 0) < int(minimum):
             return False, f"Requires {attr} {int(minimum)}+"
     for skill, minimum in (req.get("skills", {}) or {}).items():
-        if vals.get(str(skill).lower(), 0) < int(minimum):
+        skill_key = str(skill).lower()
+        if skill_key == "ballistics skill": skill_key = "ballistic skill"
+        if vals.get(skill_key, 0) < int(minimum):
             return False, f"Requires {skill} {int(minimum)}+"
 
     species = _split_requirement_tokens(req.get("species", []))
@@ -992,13 +1089,36 @@ def _requirements_satisfied(ch, row):
     if archetypes and str(ch.get("archetype", "")).lower() not in {x.lower() for x in archetypes}:
         return False, "Requires Archetype: " + ", ".join(archetypes)
 
+    if str(row.get("kind", "") if isinstance(row, dict) else "").lower() == "power":
+        if "psyker" not in available:
+            return False, "Requires Keyword: PSYKER"
+        power_name = str(row.get("name", ""))
+        pdetails = craft_details(row)
+        pkw = {str(x).strip().lower() for x in (pdetails.get("keywords", []) or [])}
+        if "aeldari" in pkw and "aeldari" not in available:
+            return False, "Requires Keyword: AELDARI"
+        prereq = str(pdetails.get("prerequisites", "") or "").strip()
+        if prereq and prereq.lower() not in {"none", "n/a", "-"}:
+            m = re.search(r"at least one other (.+?) power", prereq, flags=re.I)
+            if m:
+                discipline = m.group(1).strip().lower()
+                owned_names = {str(x.get("name", "")).strip().lower() for x in normalize_powers(ch.get("powers", []))}
+                known = {name.lower() for name, d in POWER_DISCIPLINES.items() if d.lower() == discipline}
+                if not (owned_names & known):
+                    return False, f"Requires another {m.group(1).strip()} Power"
+            elif not _keyword_ok(prereq, available):
+                ok_text, reason_text = _check_prerequisites(ch, prereq, available)
+                if not ok_text:
+                    return False, reason_text
+
     owned = {str(t.get("name", "")).strip().lower() for t in normalize_talents(ch.get("talents", []))}
     for talent in _split_requirement_tokens(req.get("talents", [])):
         if talent.lower() not in owned:
             return False, f"Requires Talent: {talent}"
 
-    return True, "Eligible"
-
+    # The v5 catalog stores the CRB prerequisite text here. Parse it so the
+    # Player shop and the Magister assignment screen use the same rules.
+    return _check_prerequisites(ch, req.get("prerequisites", ""), available)
 
 def talent_is_available(ch, row):
     ok, _ = _requirements_satisfied(ch, row)
@@ -1247,13 +1367,25 @@ def _decode(row):
     ch["talents"] = normalize_talents(ch.get("talents"))
     ch["powers"] = normalize_powers(ch.get("powers"))
     ch["wargear"] = normalize_wargear(ch.get("wargear"))
+    try:
+        raw_choices = ch.get("archetype_choices") or "{}"
+        ch["archetype_choices"] = json.loads(raw_choices) if isinstance(raw_choices, str) else raw_choices
+        if not isinstance(ch["archetype_choices"], dict): ch["archetype_choices"] = {}
+    except Exception:
+        ch["archetype_choices"] = {}
+    try:
+        raw_kw = ch.get("keywords") or "[]"
+        ch["keywords"] = json.loads(raw_kw) if isinstance(raw_kw, str) else raw_kw
+        if not isinstance(ch["keywords"], list): ch["keywords"] = []
+    except Exception:
+        ch["keywords"] = []
     for a in ATTRS:
         ch["attributes"].setdefault(a, 1)
     for s in SKILLS:
         ch["skills"].setdefault(s, 0)
     for k, dv in {"tier": 2, "starting_tier": 2, "rank": 1, "earned_xp": 0, "other_xp": 0, "armour": 0, "cur_wounds": 0,
                   "cur_shock": 0, "cur_wrath": 0, "comms_on": 1, "kind": "player",
-                  "name": "", "chapter": "", "species": "", "archetype": "", "creation_mode": "archetype", "archetype_history": "[]", "powers": "", "wargear": "", "notes": "", "updated_at": "", "revision": 0}.items():
+                  "name": "", "chapter": "", "species": "", "archetype": "", "faction": "", "keywords": [], "archetype_choices": {}, "creation_mode": "archetype", "archetype_history": "[]", "powers": "", "wargear": "", "notes": "", "updated_at": "", "revision": 0}.items():
         if ch.get(k) is None:
             ch[k] = dv
     return ch
@@ -1322,7 +1454,7 @@ def get_player_registry():
 
 def save_build(cid, name, chapter, species, tier, attributes, skills, talents, wargear, armour, notes, other_xp,
                archetype="", creation_mode="advanced", actor_role="gm", actor_user_id=None, actor_name="",
-               source="Character Sheet", expected_revision=None, powers=None):
+               source="Character Sheet", expected_revision=None, powers=None, faction=None, keywords=None, archetype_choices=None):
     conn = get_conn()
     row = conn.execute("SELECT * FROM characters WHERE id=?", (int(cid),)).fetchone()
     if row is None:
@@ -1331,11 +1463,14 @@ def save_build(cid, name, chapter, species, tier, attributes, skills, talents, w
     current_revision = int(old.get("revision", 0) or 0)
     if expected_revision is not None and current_revision != int(expected_revision):
         conn.close(); return False, "This character sheet changed in another session. The latest version was loaded; review your edits before saving again."
-    new_values = {"name": name, "chapter": chapter, "species": species, "archetype": archetype,
+    faction_value = str(faction if faction is not None else (old.get("faction", "") or "")).strip()
+    keyword_value = [str(x).strip() for x in (keywords if keywords is not None else old.get("keywords", [])) if str(x).strip()]
+    archetype_choice_value = dict(archetype_choices if archetype_choices is not None else (old.get("archetype_choices", {}) or {}))
+    new_values = {"name": name, "chapter": chapter, "species": species, "archetype": archetype, "faction": faction_value, "keywords": keyword_value, "archetype_choices": archetype_choice_value,
                   "creation_mode": creation_mode, "tier": int(tier), "attributes": attributes, "skills": skills,
                   "talents": talents, "powers": normalize_powers(powers) if powers is not None else old.get("powers", []), "wargear": wargear, "armour": int(armour), "notes": notes, "other_xp": int(other_xp)}
     old_values = {"name": old.get("name", ""), "chapter": old.get("chapter", ""), "species": old.get("species", ""),
-                  "archetype": old.get("archetype", ""), "creation_mode": old.get("creation_mode", "advanced"),
+                  "archetype": old.get("archetype", ""), "faction": old.get("faction", ""), "keywords": old.get("keywords", []), "archetype_choices": old.get("archetype_choices", {}), "creation_mode": old.get("creation_mode", "advanced"),
                   "tier": int(old.get("tier", 1)), "attributes": old.get("attributes", {}), "skills": old.get("skills", {}),
                   "talents": old.get("talents", []), "powers": old.get("powers", []), "wargear": old.get("wargear", []), "armour": int(old.get("armour", 0)),
                   "notes": old.get("notes", ""), "other_xp": int(old.get("other_xp", 0))}
@@ -1343,9 +1478,9 @@ def save_build(cid, name, chapter, species, tier, attributes, skills, talents, w
     if not any(_audit_value(a) != _audit_value(b) for _, a, b in changes):
         conn.close(); return True, "No changes."
     new_revision = current_revision + 1
-    cur = conn.execute("""UPDATE characters SET name=?,chapter=?,species=?,archetype=?,creation_mode=?,tier=?,attributes=?,skills=?,
+    cur = conn.execute("""UPDATE characters SET name=?,chapter=?,species=?,archetype=?,faction=?,keywords=?,archetype_choices=?,creation_mode=?,tier=?,attributes=?,skills=?,
                     talents=?,powers=?,wargear=?,armour=?,notes=?,other_xp=?,updated_at=?,revision=? WHERE id=? AND revision=?""",
-                 (name, chapter, species, archetype, creation_mode, int(tier), json.dumps(attributes), json.dumps(skills),
+                 (name, chapter, species, archetype, faction_value, json.dumps(keyword_value, ensure_ascii=False), json.dumps(archetype_choice_value, ensure_ascii=False), creation_mode, int(tier), json.dumps(attributes), json.dumps(skills),
                   json.dumps(talents), json.dumps(new_values["powers"], ensure_ascii=False), wargear, int(armour), notes, int(other_xp), now_iso(), new_revision, int(cid), current_revision))
     if cur.rowcount != 1:
         conn.rollback(); conn.close(); return False, "Concurrent change detected. The latest version was not overwritten."
@@ -1496,6 +1631,13 @@ def ascend_archetype(cid, new_archetype):
     current = ARCHETYPES.get(ch.get("archetype"), {})
     if current.get("faction") and data.get("faction") != current.get("faction"):
         return False, "The new Archetype must belong to the same Faction."
+    target_pkg = ARCHETYPE_PACKAGES.get(new_archetype, {})
+    for attr, minimum in target_pkg.get("attributes", {}).items():
+        if int(ch.get("attributes", {}).get(attr, 1)) < int(minimum):
+            return False, f"Requires {attr} {int(minimum)}+ before Ascension."
+    for skill, minimum in target_pkg.get("skills", {}).items():
+        if int(ch.get("skills", {}).get(skill, 0)) < int(minimum):
+            return False, f"Requires {skill} {int(minimum)}+ before Ascension."
     record_progression_undo(cid, f"Archetype Ascension to {new_archetype}")
     history = get_archetype_history(ch)
     if ch.get("archetype"):
@@ -1504,7 +1646,7 @@ def ascend_archetype(cid, new_archetype):
     conn.execute("UPDATE characters SET archetype=?, tier=?, archetype_history=?, updated_at=?, revision=revision+1 WHERE id=?",
                  (new_archetype, int(data["tier"]), json.dumps(history), now_iso(), cid))
     conn.commit(); conn.close()
-    return True, f"Character ascended to {new_archetype}. Attribute and Skill bonuses from the new Archetype were not granted."
+    return True, f"Character ascended to {new_archetype}. Required Attributes and Skills were already met; the new Archetype does not grant them again."
 
 
 def set_tier(cid, tier, force=False):
@@ -1731,6 +1873,8 @@ def get_combatants():
 
 
 def set_combatant(cid, active=True):
+    before = get_combatants()
+    current_id = before[combat_state().get("current", 0)]["id"] if before and int(combat_state().get("current", 0)) < len(before) else None
     conn = get_conn()
     if active:
         row = conn.execute("SELECT COALESCE(MAX(initiative_order), 0) + 1 FROM combatant").fetchone()
@@ -1740,6 +1884,15 @@ def set_combatant(cid, active=True):
     else:
         conn.execute("DELETE FROM combatant WHERE character_id=?", (int(cid),))
     conn.commit(); conn.close()
+    after = get_combatants()
+    if not after:
+        return
+    if current_id is not None:
+        ids = [int(x["id"]) for x in after]
+        if current_id in ids:
+            set_combat_turn(ids.index(current_id))
+    else:
+        set_combat_turn(0)
 
 
 def set_combat_modifier(cid, modifier):
@@ -1750,6 +1903,8 @@ def set_combat_modifier(cid, modifier):
 
 def move_combatant(cid, direction):
     current = get_combatants()
+    state = combat_state()
+    current_id = current[int(state.get("current", 0))]["id"] if current and int(state.get("current", 0)) < len(current) else None
     ids = [int(c["id"]) for c in current]
     if int(cid) not in ids:
         return
@@ -1761,10 +1916,36 @@ def move_combatant(cid, direction):
     for order, char_id in enumerate(ids, 1):
         conn.execute("UPDATE combatant SET initiative_order=? WHERE character_id=?", (order, char_id))
     conn.commit(); conn.close()
+    if current_id is not None and current_id in ids:
+        set_combat_turn(ids.index(int(current_id)), int(state.get("round", 1)))
 
+
+def combat_state():
+    eid = _current_combat_id(False)
+    if not eid:
+        return {"id": None, "round": 1, "current": 0}
+    conn = get_conn(); row = conn.execute("SELECT id,round_no,current_turn,status FROM combat_encounter WHERE id=?", (eid,)).fetchone(); conn.close()
+    if not row:
+        return {"id": eid, "round": 1, "current": 0}
+    return {"id": int(row["id"]), "round": max(1, int(row["round_no"] or 1)), "current": max(0, int(row["current_turn"] or 0)), "status": row["status"]}
+
+def set_combat_turn(index, round_no=None):
+    eid = _current_combat_id(True); current = get_combatants()
+    if not current: return
+    idx = max(0, min(len(current) - 1, int(index)))
+    state = combat_state(); rnd = max(1, int(round_no if round_no is not None else state.get("round", 1)))
+    conn = get_conn(); conn.execute("UPDATE combat_encounter SET current_turn=?,round_no=? WHERE id=?", (idx, rnd, eid)); conn.commit(); conn.close()
+
+def advance_combat_turn(delta=1):
+    current = get_combatants()
+    if not current: return
+    state = combat_state(); idx = int(state.get("current", 0)) + int(delta); rnd = int(state.get("round", 1))
+    while idx >= len(current): idx -= len(current); rnd += 1
+    while idx < 0: idx += len(current); rnd = max(1, rnd - 1)
+    set_combat_turn(idx, rnd)
 
 def clear_combat():
-    conn = get_conn(); conn.execute("DELETE FROM combatant"); conn.commit(); conn.close()
+    conn = get_conn(); conn.execute("DELETE FROM combatant"); conn.execute("UPDATE combat_encounter SET current_turn=0,round_no=1 WHERE status='active'"); conn.commit(); conn.close()
 
 
 # ============================================================
@@ -1929,7 +2110,7 @@ def cb_archetype_change(cid):
 
 
 def cb_species_change(cid):
-    """Apply the selected Species package without wiping higher manual values."""
+    """Apply the selected Species package without deleting values bought above the old package."""
     ch = load_character(cid) or {}
     st.session_state.setdefault(_k(cid, "sel", "mode"), "archetype" if ch.get("creation_mode") == "archetype" else "advanced")
     ark = _k(cid, "sel", "arch")
@@ -1938,15 +2119,32 @@ def cb_species_change(cid):
     st.session_state.setdefault(_k(cid, "meta", "previous_archetype"), st.session_state.get(ark, ""))
     spk = _k(cid, "sel", "sp")
     species = st.session_state.get(spk, "")
+    previous_species = st.session_state.get(_k(cid, "meta", "previous_species"), ch.get("species", ""))
 
     if species not in SPECIES_PACKAGES:
         return
 
-    for attr, value in SPECIES_PACKAGES[species].get("attributes", {}).items():
-        st.session_state[_k(cid, "a", attr)] = int(value)
+    # Remove only the old automatic Species package values. Higher values are
+    # preserved because they represent XP/customisation already on the sheet.
+    if previous_species in SPECIES_PACKAGES and previous_species != species:
+        old_package = SPECIES_PACKAGES[previous_species]
+        for attr, value in old_package.get("attributes", {}).items():
+            key = _k(cid, "a", attr)
+            current = int(st.session_state.get(key, value))
+            if current <= int(value):
+                st.session_state[key] = 1
+        for skill, value in old_package.get("skills", {}).items():
+            key = _k(cid, "s", skill)
+            current = int(st.session_state.get(key, value))
+            if current <= int(value):
+                st.session_state[key] = 0
 
+    for attr, value in SPECIES_PACKAGES[species].get("attributes", {}).items():
+        st.session_state[_k(cid, "a", attr)] = max(1, int(value), int(st.session_state.get(_k(cid, "a", attr), 1)))
     for skill, value in SPECIES_PACKAGES[species].get("skills", {}).items():
-        st.session_state[_k(cid, "s", skill)] = int(value)
+        st.session_state[_k(cid, "s", skill)] = max(0, int(value), int(st.session_state.get(_k(cid, "s", skill), 0)))
+
+    st.session_state[_k(cid, "meta", "previous_species")] = species
 
 
 # ============================================================
@@ -2152,7 +2350,7 @@ def battle_view(cid):
         st.error("Character sheet not found.")
         return
     d = derived_traits(ch)
-    rank, _ = rank_from_xp(ch["earned_xp"])
+    rank = int(ch.get("rank", 1) or 1)
     ncls = "npc" if ch["kind"] == "npc" else ""
     st.markdown(f"<div class='hero'><div class='nm {ncls}'>{ch['name'] or 'Character'}</div>"
                 f"<div class='meta'>{ch['chapter'] or ''} &nbsp;·&nbsp; {species_label(ch['species'])} &nbsp;·&nbsp; "
@@ -2183,46 +2381,22 @@ def battle_view(cid):
     with right:
         if ch.get("archetype") and ch.get("creation_mode") == "archetype":
             st.markdown("<div class='sectionttl'>Archetype</div>", unsafe_allow_html=True)
-            st.markdown(f"<div class='tal'><span class='tn'>{html.escape(ch['archetype'])}</span></div>", unsafe_allow_html=True)
-            ap = ARCHETYPE_PACKAGES.get(ch["archetype"], {})
-            if ap.get("skills"):
-                st.markdown("<div class='sectionttl'>Archetype Skill Bonuses</div>", unsafe_allow_html=True)
-                for sk, rating in ap["skills"].items():
-                    st.markdown(f"<div class='tal'><span class='tn'>{html.escape(sk)}</span><span class='tc'>+{int(rating)}</span></div>", unsafe_allow_html=True)
-
-        if ch.get("chapter") in CHAPTERS:
-            cd = CHAPTERS[ch["chapter"]]
-            st.markdown("<div class='sectionttl'>Chapter</div>", unsafe_allow_html=True)
-            ability = cd.get("ability", "")
-            ability_name, ability_text = (ability.split(":", 1) + [""])[:2] if ":" in ability else (ability, "")
-            tradition = cd.get("tradition", "")
-            tradition_name, tradition_text = (tradition.split(":", 1) + [""])[:2] if ":" in tradition else (tradition, "")
-            st.markdown(
-                f"<div class='chapter-card'><span class='ctitle'>{html.escape(ch["chapter"])}</span>"
-                f"<span class='cmeta'>Legion {html.escape(cd['legion'])} · {html.escape(cd['primarch'])}</span>"
-                f"<div class='clabel'>{html.escape(ability_name)}</div>"
-                f"<div class='ctext'>{html.escape(ability_text.strip())}</div>"
-                f"<div class='clabel'>{html.escape(tradition_name)}</div>"
-                f"<div class='ctext'>{html.escape(tradition_text.strip())}</div></div>",
-                unsafe_allow_html=True,
-            )
-
+            aname = html.escape(ch['archetype'])
+            st.markdown(f"<div class='tal'><span class='tn'>{aname}</span></div>", unsafe_allow_html=True)
+            if ch['archetype'] in ARCHETYPE_ABILITIES:
+                st.markdown(f"<div class='tal'><span class='tn'>Archetype Ability: {html.escape(ARCHETYPE_ABILITIES[ch['archetype']])}</span></div>", unsafe_allow_html=True)
         package = species_package(ch["species"])
-        if package.get("abilities"):
-            st.markdown("<div class='sectionttl'>Species Abilities</div>", unsafe_allow_html=True)
-            for ability in package["abilities"]:
-                st.markdown(
-                    f"<div class='tal'><span class='tn'>{ability}</span></div>",
-                    unsafe_allow_html=True,
-                )
-
-        if ch.get("archetype") and ch.get("creation_mode") == "archetype":
-            ap = ARCHETYPE_PACKAGES.get(ch["archetype"], {})
-            askills = ap.get("skills", {})
-            if askills:
-                st.markdown("<div class='sectionttl'>Archetype Skills</div>", unsafe_allow_html=True)
-                for sk, rating in askills.items():
-                    st.markdown(f"<div class='tal'><span class='tn'>{html.escape(sk)}</span><span class='tc'>Rating {int(rating)}</span></div>", unsafe_allow_html=True)
+        chapter_abilities = []
+        if ch.get("chapter") in CHAPTERS and ch.get("species") in ("Adeptus Astartes", "Primaris Astartes"):
+            cd = CHAPTERS[ch["chapter"]]
+            if cd.get("ability"): chapter_abilities.append(cd["ability"])
+            if cd.get("tradition"): chapter_abilities.append(cd["tradition"])
+        if package.get("abilities") or chapter_abilities:
+            st.markdown("<div class='sectionttl'>Species & Chapter Abilities</div>", unsafe_allow_html=True)
+            for ability in package.get("abilities", []):
+                st.markdown(f"<div class='tal'><span class='tn'>{html.escape(str(ability))}</span></div>", unsafe_allow_html=True)
+            for ability in chapter_abilities:
+                st.markdown(f"<div class='tal'><span class='tn'>{html.escape(str(ability))}</span></div>", unsafe_allow_html=True)
 
         st.markdown("<div class='sectionttl'>Talents</div>", unsafe_allow_html=True)
         talent_catalog = {str(r["name"]).strip().lower(): r for r in list_craft_items("talent")}
@@ -2378,6 +2552,9 @@ def edit_view(cid, gm_mode=False):
         mode = "advanced" if advanced else "archetype"
 
         if mode == "archetype":
+            override_key = _k(cid, "sel", "override_species")
+            st.session_state.setdefault(override_key, False)
+            st.checkbox("GM Species Override", key=override_key, help="By default the Archetype determines Species as in the Core Rulebook. Enable this only for a house rule.")
             arch_options = archetype_options()
             if st.session_state.get(ark) not in arch_options and arch_options:
                 st.session_state[ark] = arch_options[0]
@@ -2388,6 +2565,9 @@ def edit_view(cid, gm_mode=False):
                     format_func=lambda name: f"{name}  ·  T{ARCHETYPES[name]['tier']}  ·  {species_label(ARCHETYPES[name]['species'])}",
                 )
                 ad = ARCHETYPES[st.session_state[ark]]
+                if not st.session_state.get(_k(cid, "sel", "override_species"), False):
+                    st.session_state[spk] = ad["species"]
+                    cb_species_change(cid)
                 st.caption(f"Tier {ad['tier']} · {ad['species']} · {ad['xp']} XP · {ad['faction']}")
         else:
             st.info("Advanced Character Creation: the Player chooses Species. No Archetype is used.")
@@ -2412,6 +2592,29 @@ def edit_view(cid, gm_mode=False):
     elif mode == "advanced":
         st.session_state[ark] = ""
 
+    if mode == "advanced":
+        fcols = st.columns([1.4, 2.6])
+        current_faction = str(ch.get("faction", "") or "")
+        faction_options = [""] + FACTION_OPTIONS
+        if current_faction not in faction_options: faction_options.append(current_faction)
+        faction_value = fcols[0].selectbox("Faction", faction_options, index=faction_options.index(current_faction), key=_k(cid, "sel", "faction"), format_func=lambda x: "None" if not x else x)
+        kw_default = ", ".join(ch.get("keywords", []) or [])
+        if st.session_state.get(spk) == "Aeldari":
+            psyker_key = _k(cid, "sel", "advanced_psyker")
+            psyker_default = "PSYKER" in {str(x).upper() for x in (ch.get("keywords", []) or [])}
+            psyker = st.checkbox("Take PSYKER Keyword", value=psyker_default, key=psyker_key, help="Aeldari may choose the PSYKER Keyword during Advanced Character Creation.")
+        else:
+            psyker = False
+        keyword_text = fcols[1].text_input("Additional Keywords", value=kw_default, key=_k(cid, "t", "keywords"), help="Advanced Creation: choose Keywords with the GM. Species Keywords are automatic.")
+        keyword_list = [x.strip() for x in re.split(r",|;", keyword_text) if x.strip()]
+        if psyker and not any(str(x).strip().lower() == "psyker" for x in keyword_list): keyword_list.append("PSYKER")
+        if not psyker: keyword_list = [x for x in keyword_list if str(x).strip().lower() != "psyker"]
+        st.session_state[_k(cid, "meta", "faction")] = faction_value
+        st.session_state[_k(cid, "meta", "keywords")] = keyword_list
+    else:
+        st.session_state[_k(cid, "meta", "faction")] = str(ch.get("faction", "") or ARCHETYPES.get(st.session_state.get(ark, ""), {}).get("faction", ""))
+        st.session_state[_k(cid, "meta", "keywords")] = list(ch.get("keywords", []) or [])
+
     c = st.columns([2, 2, 2])
     c[0].text_input("Name", key=_k(cid, "t", "name"))
     current_chapter = st.session_state.get(_k(cid, "t", "chapter"), ch.get("chapter") or "")
@@ -2435,6 +2638,7 @@ def edit_view(cid, gm_mode=False):
             c[2].selectbox(
                 "Species", species_list, format_func=species_label, key=spk,
                 on_change=cb_species_change, args=(cid,),
+                disabled=not st.session_state.get(_k(cid, "sel", "override_species"), False),
             )
         else:
             # In Advanced Character Creation the Magister does not choose Species.
@@ -2460,13 +2664,39 @@ def edit_view(cid, gm_mode=False):
 
     st.markdown("#### Attributes")
     acol = st.columns(4)
+    attr_max = SPECIES_ATTRIBUTE_MAX.get(st.session_state.get(spk, ""), {a: 12 for a in ATTRS})
     for i, a in enumerate(ATTRS):
-        acol[i % 4].number_input(a, 1, 12, key=_k(cid, "a", a))
+        max_rating = int(attr_max.get(a, 12))
+        if int(st.session_state[_k(cid, "a", a)]) > max_rating:
+            st.session_state[_k(cid, "a", a)] = max_rating
+        acol[i % 4].number_input(a, 1, max_rating, key=_k(cid, "a", a), help="Base Attribute maximum for this Species. Bonuses may raise the final total above this limit.")
     # Read current values before rendering the Skill pools.
     # Streamlit executes this function top-to-bottom, so these dictionaries
     # must exist before the skill widgets use them.
     cur_attr = {a: int(st.session_state[_k(cid, "a", a)]) for a in ATTRS}
-    cur_skill = {s: int(st.session_state[_k(cid, "s", s)]) for s in SKILLS}
+
+    if mode == "archetype" and st.session_state.get(ark) in ARCHETYPE_PACKAGES:
+        ap = ARCHETYPE_PACKAGES[st.session_state[ark]]
+        any_count = int(ap.get("skills_any_count", 0) or 0)
+        any_to = int(ap.get("skills_any_to", 0) or 0)
+        if any_count and any_to:
+            st.markdown("#### Archetype Skill Choice")
+            choices_key = _k(cid, "meta", "archetype_choices")
+            choices = st.session_state.setdefault(choices_key, dict(ch.get("archetype_choices", {}) or {}))
+            selected = list(choices.get("skills", []) or [])
+            options = list(SKILLS.keys())
+            selected = [x for x in selected if x in options]
+            for n in range(any_count):
+                available_options = [x for x in options if x not in selected[:n]]
+                current_choice = selected[n] if n < len(selected) and selected[n] in available_options else available_options[0]
+                choice = st.selectbox(f"Skill to raise to {any_to} · {n+1}", available_options, index=available_options.index(current_choice), key=f"{choices_key}_{n}")
+                if n < len(selected): selected[n] = choice
+                else: selected.append(choice)
+            choices["skills"] = selected[:any_count]
+            st.session_state[choices_key] = choices
+            for choice in selected[:any_count]:
+                st.session_state[_k(cid, "s", choice)] = max(int(st.session_state[_k(cid, "s", choice)]), any_to)
+
 
     st.markdown("#### Skills")
     scol = st.columns(3)
@@ -2479,27 +2709,43 @@ def edit_view(cid, gm_mode=False):
             cc[1].markdown(f"<div style='padding-top:30px;color:#e8c96a;font-family:Cinzel'>{pool}</div>",
                            unsafe_allow_html=True)
 
+    cur_skill = {s: int(st.session_state[_k(cid, "s", s)]) for s in SKILLS}
+
     package = species_package(st.session_state[spk])
     if package:
-        st.markdown("#### Species Package")
+        st.markdown("#### Species & Chapter")
         st.caption(f"Package: {package.get('xp', 0)} XP · "
                    f"Speed {package.get('speed', species_speed(st.session_state[spk]))} · "
                    f"Size {package.get('size', 'Average')}")
 
-        abilities = package.get("abilities", [])
+        abilities = list(package.get("abilities", []))
+        if st.session_state.get(spk) in ("Adeptus Astartes", "Primaris Astartes"):
+            selected_chapter = st.session_state.get(_k(cid, "t", "chapter"), "")
+            if selected_chapter in CHAPTERS:
+                cd = CHAPTERS[selected_chapter]
+                if cd.get("ability"): abilities.append(cd["ability"])
+                if cd.get("tradition"): abilities.append(cd["tradition"])
         if abilities:
+            st.markdown("#### Species & Chapter Abilities")
             for ability in abilities:
-                st.markdown(
-                    f"<div class='tal'><span class='tn'>{ability}</span></div>",
-                    unsafe_allow_html=True,
-                )
+                st.markdown(f"<div class='tal'><span class='tn'>{html.escape(str(ability))}</span></div>", unsafe_allow_html=True)
 
     # Talents are purchased by Players when their Keywords/prerequisites allow them.
     # Wargear is assigned and equipped by the Magister.
     catalog_talents = list_craft_items("talent")
     catalog_wargear = list_craft_items("wargear")
-    available_xp = starting_xp(camp["tier"], advanced=(mode == "advanced")) + int(ch.get("earned_xp", 0)) - xp_spent(ch)
-    keys = sorted(character_keywords({**ch, "species": st.session_state[spk], "archetype": st.session_state.get(ark, "")}))
+    current_build = {**ch,
+                     "species": st.session_state[spk],
+                     "archetype": st.session_state.get(ark, ""),
+                     "creation_mode": mode,
+                     "attributes": cur_attr,
+                     "skills": cur_skill,
+                     "tier": int(st.session_state[_k(cid, "n", "tier")]),
+                     "other_xp": int(st.session_state[_k(cid, "n", "other")]),
+                     "talents": normalize_talents(ch.get("talents", [])),
+                     "archetype_choices": st.session_state.get(_k(cid, "meta", "archetype_choices"), ch.get("archetype_choices", {}))}
+    available_xp = starting_xp(camp["tier"], advanced=(mode == "advanced")) + int(ch.get("earned_xp", 0)) - xp_spent(current_build)
+    keys = sorted(character_keywords(current_build))
 
     st.markdown("#### Talents")
     st.caption("Purchase Talents by meeting their registered prerequisites and spending XP.")
@@ -2507,7 +2753,7 @@ def edit_view(cid, gm_mode=False):
         st.caption("Keywords: " + ", ".join(k.title() for k in keys))
 
     if not gm_mode:
-        eligible = [r for r in catalog_talents if talent_is_available({**ch, "species": st.session_state[spk], "archetype": st.session_state.get(ark, "")}, r)]
+        eligible = [r for r in catalog_talents if talent_is_available(current_build, r)]
         owned_ids = {int(t.get("craft_id", -1) or -1) for t in normalize_talents(ch.get("talents", []))}
         eligible = [r for r in eligible if int(r["id"]) not in owned_ids]
         if eligible:
@@ -2554,13 +2800,20 @@ def edit_view(cid, gm_mode=False):
         else:
             st.info("No additional Talents are currently available for this character.")
     else:
-        if ch["kind"] == "npc" and catalog_talents:
+        if catalog_talents:
             labels = {int(r["id"]): craft_item_label(r) for r in catalog_talents}
-            npc_tid = st.selectbox("NPC Talent", [None] + [int(r["id"]) for r in catalog_talents], format_func=lambda x: "Select Talent..." if x is None else labels[x], key=f"gm_talent_{cid}")
-            if npc_tid is not None and st.button("Assign Talent to NPC", key=f"gm_talent_add_{cid}", use_container_width=True):
-                result = assign_craft_to_character(cid, npc_tid, "talent", source="Magister NPC Talent Assignment")
-                if result[0]: st.rerun()
-                st.error(result[1])
+            gm_tid = st.selectbox("Assign Talent", [None] + [int(r["id"]) for r in catalog_talents],
+                                  format_func=lambda x: "Select Talent..." if x is None else labels[x],
+                                  key=f"gm_talent_{cid}")
+            if gm_tid is not None:
+                gm_selected = next(r for r in catalog_talents if int(r["id"]) == int(gm_tid))
+                gm_ok, gm_reason = _requirements_satisfied(current_build, gm_selected)
+                if not gm_ok:
+                    st.caption("Requirements not met: " + gm_reason)
+                if st.button("Assign Talent", key=f"gm_talent_add_{cid}", use_container_width=True):
+                    result = assign_craft_to_character(cid, gm_tid, "talent", source="Magister Talent Assignment")
+                    if result[0]: st.rerun()
+                    st.error(result[1])
 
     owned_talents = normalize_talents(ch.get("talents", []))
     if owned_talents:
@@ -2574,6 +2827,20 @@ def edit_view(cid, gm_mode=False):
 
     st.markdown("#### Psychic Powers")
     owned_powers = normalize_powers(ch.get("powers", []))
+    if not gm_mode:
+        catalog_powers = list_craft_items("power")
+        owned_power_ids = {int(x.get("craft_id", -1) or -1) for x in owned_powers}
+        eligible_powers = [r for r in catalog_powers if int(r["id"]) not in owned_power_ids and _requirements_satisfied(current_build, r)[0]]
+        if eligible_powers:
+            labels = {int(r["id"]): craft_item_label(r) + (f" · {int(r.get('cost', 0) or 0)} XP" if int(r.get("cost", 0) or 0) else "") for r in eligible_powers}
+            pid_buy = st.selectbox("Available Psychic Powers", [None] + [int(r["id"]) for r in eligible_powers], format_func=lambda x: "Select a Psychic Power..." if x is None else labels[x], key=f"power_shop_{cid}")
+            if pid_buy is not None:
+                selected_power = next(r for r in eligible_powers if int(r["id"]) == int(pid_buy))
+                pcost = int(selected_power.get("cost", 0) or 0)
+                if st.button(f"Purchase Psychic Power · {pcost} XP", key=f"power_buy_{cid}", disabled=available_xp < pcost, type="primary", use_container_width=True):
+                    result = assign_craft_to_character(cid, pid_buy, "power", actor_name=(st.session_state.get("user") or {}).get("username", ""), actor_user_id=(st.session_state.get("user") or {}).get("id"), source="Psychic Power Purchase")
+                    if result[0]: st.rerun()
+                    st.error(result[1])
     if gm_mode:
         catalog_powers = list_craft_items("power")
         if catalog_powers:
@@ -2619,7 +2886,27 @@ def edit_view(cid, gm_mode=False):
                 if result[0]: st.rerun()
                 st.error(result[1])
     else:
-        st.caption("Wargear is assigned by the Magister.")
+        st.caption("The Magister may assign Wargear at any time. During Advanced Character Creation, you may also select Wargear within the Core Rulebook Tier limits.")
+        if mode == "advanced" and catalog_wargear:
+            rarity_rank = {"common": 1, "uncommon": 2, "rare": 3, "very rare": 4, "unique": 5}
+            tier_now = int(st.session_state[_k(cid, "n", "tier")])
+            max_total = {1: 15, 2: 20, 3: 25, 4: 30}.get(tier_now, 30)
+            max_item = {1: 7, 2: 9, 3: 10, 4: 999999}.get(tier_now, 30)
+            current_gear_for_buy = normalize_wargear(ch.get("wargear", []))
+            current_value = sum(int(_gear_details_dict(w.get("details", {})).get("value", 0) or 0) * int(w.get("quantity", 1) or 1) for w in current_gear_for_buy if not _is_ammo_resource(w))
+            allowed_rarity = 2 if tier_now == 1 else 3 if tier_now == 2 else 4 if tier_now == 3 else 5
+            gear_choices = []
+            for r in catalog_wargear:
+                rd = craft_details(r); rarity = str(rd.get("rarity", "Common") or "Common").strip().lower(); value = int(rd.get("value", 0) or 0)
+                if value <= max_item and current_value + value < max_total and rarity_rank.get(rarity, 99) <= allowed_rarity and not any(int(w.get("craft_id", -1) or -1) == int(r["id"]) for w in current_gear_for_buy):
+                    gear_choices.append(r)
+            if gear_choices:
+                glabels = {int(r["id"]): f"{r['name']} · Value {int(craft_details(r).get('value', 0) or 0)} · {craft_details(r).get('rarity', 'Common')}" for r in gear_choices}
+                buy_gid = st.selectbox("Advanced Creation Wargear", [None] + [int(r["id"]) for r in gear_choices], format_func=lambda x: "Select Wargear..." if x is None else glabels[x], key=f"player_gear_shop_{cid}")
+                if buy_gid is not None and st.button("Take Wargear", key=f"player_gear_buy_{cid}", use_container_width=True):
+                    result = assign_wargear_to_character(cid, buy_gid, actor_name=(st.session_state.get("user") or {}).get("username", ""), actor_user_id=(st.session_state.get("user") or {}).get("id"))
+                    if result[0]: st.rerun()
+                    st.error(result[1])
 
     wdf = normalize_wargear(ch.get("wargear", []))
     if wdf:
@@ -2695,7 +2982,10 @@ def edit_view(cid, gm_mode=False):
         actor_user_id=(st.session_state.get("user") or {}).get("id"),
         actor_name=(st.session_state.get("user") or {}).get("username", ""),
         source=("Magister Character Sheet" if gm_mode else "Player Character Sheet"),
-        expected_revision=int(st.session_state.get(_k(cid, "meta", "db_revision"), ch.get("revision", 0) or 0))
+        expected_revision=int(st.session_state.get(_k(cid, "meta", "db_revision"), ch.get("revision", 0) or 0)),
+        faction=st.session_state.get(_k(cid, "meta", "faction"), ch.get("faction", "")),
+        keywords=st.session_state.get(_k(cid, "meta", "keywords"), ch.get("keywords", [])),
+        archetype_choices=st.session_state.get(_k(cid, "meta", "archetype_choices"), ch.get("archetype_choices", {}))
     )
     if save_result[0]:
         latest = load_character(cid)
@@ -2706,11 +2996,7 @@ def edit_view(cid, gm_mode=False):
         st.warning(save_result[1])
         st.stop()
 
-    cur = dict(ch); cur.update({"attributes": cur_attr, "skills": cur_skill, "species": st.session_state[spk],
-                                "tier": int(st.session_state[_k(cid, "n", "tier")]), "talents": talents,
-                                "archetype": st.session_state.get(ark, ""),
-                                "creation_mode": mode,
-                                "other_xp": int(st.session_state[_k(cid, "n", "other")])})
+    cur = dict(current_build); cur.update({"talents": talents})
     spent = xp_spent(cur); start = starting_xp(camp["tier"], advanced=(mode == "advanced")); avail = start + int(ch["earned_xp"]) - spent
     st.divider()
     x = st.columns(4)
@@ -2761,18 +3047,25 @@ def folder_label(fid, folders):
 
 
 def char_row(ch, folders):
-    rank, _ = rank_from_xp(ch["earned_xp"], ch.get("rank", 1)); d = derived_traits(ch)
+    rank = int(ch.get("rank", 1) or 1); d = derived_traits(ch)
     ncls = "npc" if ch["kind"] == "npc" else ""
     vs = ("<span class='vlive'>ACTIVE</span>" if ch["comms_on"]
           else ("<span class='vdead'>CUT</span>" if secs_since(ch["comms_changed_at"]) < COMMS_FADE_S else ""))
     c = st.columns([3.2, 1.6, 0.9, 1, 0.6])
-    c[0].markdown(f"<b class='{ncls}'>{ch['name'] or 'Unnamed'}{'*' if ch.get('creation_mode') == 'advanced' else ''}</b><br>"
-                  f"<small style='opacity:.65'>{ch['species']} · T{ch['tier']} · Rank {rank}</small> {vs}",
-                  unsafe_allow_html=True)
+    with c[0]:
+        label = f"{ch['name'] or 'Unnamed'}{'*' if ch.get('creation_mode') == 'advanced' else ''}"
+        with st.popover(label, use_container_width=True):
+            st.markdown(f"**{species_label(ch.get('species',''))}** · T{ch.get('tier',1)} · {rank_label(rank)}")
+            if ch.get("archetype"): st.caption(str(ch.get("archetype")))
+            attrs = effective_attributes(ch); skills = effective_skills(ch)
+            st.markdown("**Attributes**  " + " · ".join(f"{a[:3].upper()} {attrs.get(a,1)}" for a in ATTRS))
+            st.markdown("**Skills**  " + " · ".join(f"{sk[:4]} {skills.get(sk,0)+attrs.get(at,1)}" for sk, at in SKILLS.items()))
+            st.caption(f"Wounds {int(ch.get('cur_wounds',0))}/{d['Max Wounds']} · Shock {int(ch.get('cur_shock',0))}/{d['Max Shock']} · Wrath {int(ch.get('cur_wrath',0))}/{d['Max Wrath']}")
+        c[0].caption(f"{ch['species']} · T{ch['tier']} · Rank {rank} {vs}")
     _ammo_stacks, _ammo_total = ammo_inventory(ch)
     _is_gm_view = (st.session_state.get("user") or {}).get("role") == "gm"
     ammo_text = str(ammo_capacity(ch)) if _is_gm_view else f"{_ammo_total}/{ammo_capacity(ch)}"
-    c[1].markdown(f"<small>Shock {ch['cur_shock']}/{d['Max Shock']}<br>Wrath {ch['cur_wrath']}/{d['Max Wrath']}<br>Ammo {ammo_text}</small>", unsafe_allow_html=True)
+    c[1].markdown(f"<small>Wounds {ch['cur_wounds']}/{d['Max Wounds']}<br>Shock {ch['cur_shock']}/{d['Max Shock']}<br>Wrath {ch['cur_wrath']}/{d['Max Wrath']}<br>Ammo {ammo_text}</small>", unsafe_allow_html=True)
     c[2].button("Open", key=f"op_{ch['id']}", on_click=cb_open, args=(ch["id"],))
     if ch["comms_on"]:
         c[3].button("Cut Vox", key=f"vr_{ch['id']}", on_click=set_comms, args=(ch["id"], 0))
@@ -3622,11 +3915,23 @@ def gm_view():
 
         st.divider()
         current = get_combatants()
+        state = combat_state()
         st.markdown("<div class='combat-header'><div class='title'>⚔ Combat Order</div><div class='sub'>The Magister controls the sequence of turns</div></div>", unsafe_allow_html=True)
         st.markdown("<div class='combat-legend'><span class='p'>● Player</span><span class='n'>● NPC</span><span>↑↓ Reorder</span></div>", unsafe_allow_html=True)
         if not current:
             st.info("No characters are currently in combat. Add Players or NPCs above.")
         else:
+            cur_idx = min(int(state.get("current", 0)), len(current)-1)
+            current_ch = current[cur_idx]
+            st.markdown(f"<div class='combat-card player' style='border-width:3px'><div class='combat-name'>ROUND {int(state.get('round',1))} · CURRENT TURN: {html.escape(current_ch['name'] or 'Unnamed')}</div><div class='combat-meta'>{species_label(current_ch['species'])} · {('PLAYER' if current_ch['kind'] != 'npc' else 'NPC')}</div></div>", unsafe_allow_html=True)
+            tc = st.columns([1.1,1.1,1.1,1.2,2.4])
+            if tc[0].button("◀ Previous", use_container_width=True, key="combat_prev_turn"): advance_combat_turn(-1); st.rerun()
+            if tc[1].button("Next ▶", use_container_width=True, key="combat_next_turn"): advance_combat_turn(1); st.rerun()
+            if tc[2].button("End Turn", use_container_width=True, key="combat_end_turn"): advance_combat_turn(1); st.rerun()
+            if tc[3].button("Next Round", use_container_width=True, key="combat_next_round"): set_combat_turn(0, int(state.get("round",1))+1); st.rerun()
+            jump = tc[4].selectbox("Jump to Turn", list(range(len(current))), index=cur_idx, format_func=lambda i: f"{i+1:02d} · {current[i]['name'] or 'Unnamed'}", key="combat_jump")
+            if int(jump) != cur_idx: set_combat_turn(int(jump), int(state.get("round",1))); st.rerun()
+            st.divider()
             for idx, ch in enumerate(current):
                 kind_label = "PLAYER" if ch["kind"] != "npc" else "NPC"
                 role_cls = "player" if ch["kind"] != "npc" else "npc"

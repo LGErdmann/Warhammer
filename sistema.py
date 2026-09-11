@@ -4404,13 +4404,12 @@ def archetypes_view():
 
 
 def render_map_section(gm_mode=False):
-    """Embed the campaign's Owlbear Rodeo room, with a "join" link as a
-    fallback next to it. Owlbear Rodeo has no API for auto-joining a room
-    under a given name or bridging identity with this app — each browser
-    that opens the room link (embedded here, or via the link) simply joins
-    that Owlbear Rodeo room as its own participant, the same as opening it
-    directly. Whether the embed actually renders depends on Owlbear Rodeo's
-    own framing policy, which can change; the link always works regardless."""
+    """Link to the campaign's Owlbear Rodeo room. Confirmed live: Owlbear
+    Rodeo refuses to be embedded in an iframe (it sends its own
+    X-Frame-Options/CSP to block that), so this only offers the join link —
+    each browser that opens it simply joins that Owlbear Rodeo room as its
+    own participant, the same as opening it directly. Owlbear Rodeo has no
+    API for auto-joining under a given name or bridging identity with this app."""
     st.markdown("#### Map")
     camp = get_campaign()
     url = str(camp.get("map_url") or "").strip()
@@ -4423,9 +4422,8 @@ def render_map_section(gm_mode=False):
     if not url:
         st.info("No map room configured yet." if gm_mode else "The Magister has not shared a map room yet.")
         return
-    st.link_button("Open in a new tab", url, use_container_width=True)
-    st.caption("If the map does not appear below, use the button above instead — some sites refuse to be embedded.")
-    st.components.v1.iframe(url, height=700, scrolling=True)
+    st.link_button("Open the Map (Owlbear Rodeo)", url, use_container_width=True)
+    st.caption("Owlbear Rodeo does not allow being embedded here, so this opens it in a new tab.")
 
 
 def gm_view():

@@ -2667,52 +2667,73 @@ def cb_species_change(cid):
 # ============================================================
 #  COMPONENTES AO VIVO
 # ============================================================
-def live_vitals(cid):
-    ch = load_character(cid)
-    if not ch:
-        return
-    d = derived_traits(ch)
-    gear_mods = equipped_wargear_modifiers(ch)
-    rank, asc = rank_from_xp(ch["earned_xp"], ch.get("rank", 1))
+def _vital_stat_block(col, label, value, maximum, cid=None, field=None, editable=False,
+                       actor_role="gm", actor_user_id=None, actor_name="", key_prefix=""):
+    """Render one Wounds/Shock/Wrath-style stat using the Battle Sheet's metric + −/+ pattern.
+
+    This is the single source of the vitals widget style so every page (the
+    Player/GM Battle Sheet, the Combat panel, etc.) renders it identically.
+    """
+    with col:
+        row = st.columns([4, 1, 1])
+        row[0].metric(label, f"{value} / {maximum}")
+        if editable and cid is not None and field is not None:
+            row[1].button("−", key=f"{key_prefix}minus", on_click=adjust_vital,
+                          args=(cid, field, -1, actor_role, actor_user_id, actor_name))
+            row[2].button("+", key=f"{key_prefix}plus", on_click=adjust_vital,
+                          args=(cid, field, +1, actor_role, actor_user_id, actor_name))
+
+
+def _ammo_stat_block(col, cid, ch, editable=False, actor_role="gm", actor_user_id=None,
+                      actor_name="", key_prefix="", source_prefix="Ammo"):
+    """Render the Ammo Pool using the Battle Sheet's compact metric + −/+ pattern."""
     ammo_total = current_ammo(ch)
     ammo_max = ammo_capacity(ch)
-    user = st.session_state.get("user") or {}
-    is_player = user.get("role") != "gm"
-    actor_args = ("player" if is_player else "gm", user.get("id"), user.get("username", ""))
-
-    trio = [("cur_wounds", "Wounds", d["Max Wounds"]),
-            ("cur_shock", "Shock", d["Max Shock"]),
-            ("cur_wrath", "Wrath", d["Max Wrath"])]
-    cols = st.columns(4)
-    for i, (field, label, mx) in enumerate(trio):
-        with cols[i]:
-            row = st.columns([4, 1, 1])
-            row[0].metric(label, f"{ch[field]} / {mx}")
-            row[1].button("−", key=f"lv{field}{cid}minus", on_click=adjust_vital, args=(cid, field, -1, actor_args[0], actor_args[1], actor_args[2]))
-            row[2].button("+", key=f"lv{field}{cid}plus", on_click=adjust_vital, args=(cid, field, +1, actor_args[0], actor_args[1], actor_args[2]))
-
-    with cols[3]:
+    with col:
         st.markdown("<div class='vital-label'>AMMO</div>", unsafe_allow_html=True)
         acols = st.columns([1, 3, 1])
-        if acols[0].button("−", key=f"lvammo{cid}minus", disabled=ammo_total <= 0):
-            result = adjust_ammo_pool(
-                cid, -1, actor_name=user.get("username", ""), actor_user_id=user.get("id"),
-                source="Magister Ammo -1" if not is_player else "Player Ammo -1",
-                actor_role="gm" if not is_player else "player")
+        if editable and acols[0].button("−", key=f"{key_prefix}minus", disabled=ammo_total <= 0):
+            result = adjust_ammo_pool(cid, -1, actor_role=actor_role, actor_user_id=actor_user_id,
+                                      actor_name=actor_name, source=f"{source_prefix} -1")
             if result[0]: st.rerun()
             else: st.error(result[1])
         acols[1].markdown(
             f"<div class='ammo-vital-value'><b>{ammo_total}</b> / {ammo_max}</div>",
             unsafe_allow_html=True,
         )
-        if acols[2].button("+", key=f"lvammo{cid}plus", disabled=ammo_total >= ammo_max):
-            result = adjust_ammo_pool(
-                cid, 1, actor_name=user.get("username", ""), actor_user_id=user.get("id"),
-                source="Magister Ammo +1" if not is_player else "Player Ammo +1",
-                actor_role="gm" if not is_player else "player")
+        if editable and acols[2].button("+", key=f"{key_prefix}plus", disabled=ammo_total >= ammo_max):
+            result = adjust_ammo_pool(cid, 1, actor_role=actor_role, actor_user_id=actor_user_id,
+                                      actor_name=actor_name, source=f"{source_prefix} +1")
             if result[0]: st.rerun()
             else: st.error(result[1])
-        st.caption("Capacity")
+        if editable:
+            st.caption("Capacity")
+
+
+def live_vitals(cid):
+    ch = load_character(cid)
+    if not ch:
+        return
+    d = derived_traits(ch)
+    rank, asc = rank_from_xp(ch["earned_xp"], ch.get("rank", 1))
+    user = st.session_state.get("user") or {}
+    is_player = user.get("role") != "gm"
+    actor_role = "player" if is_player else "gm"
+    actor_user_id = user.get("id")
+    actor_name = user.get("username", "")
+
+    trio = [("cur_wounds", "Wounds", d["Max Wounds"]),
+            ("cur_shock", "Shock", d["Max Shock"]),
+            ("cur_wrath", "Wrath", d["Max Wrath"])]
+    cols = st.columns(4)
+    for i, (field, label, mx) in enumerate(trio):
+        _vital_stat_block(cols[i], label, ch[field], mx, cid=cid, field=field, editable=True,
+                          actor_role=actor_role, actor_user_id=actor_user_id, actor_name=actor_name,
+                          key_prefix=f"lv{field}{cid}")
+
+    _ammo_stat_block(cols[3], cid, ch, editable=True, actor_role=actor_role, actor_user_id=actor_user_id,
+                     actor_name=actor_name, key_prefix=f"lvammo{cid}",
+                     source_prefix="Player Ammo" if is_player else "Magister Ammo")
 
     if asc:
         st.warning("100+ Earned XP - this character may ascend to the next Tier.")
@@ -4501,113 +4522,61 @@ def gm_view():
         if not current:
             st.info("No characters are currently in combat. Add Players or NPCs below.")
         else:
-            st.caption("Use ↑ and ↓ to change the attack order. Select a combatant to view combat details.")
+            st.caption("Use ↑ and ↓ to change the attack order. Select a combatant's name for full details.")
 
+            user = st.session_state.user or {}
             for idx, ch in enumerate(current):
-                max_values = derived_traits(ch)
-                wounds = max(0, int(ch.get("cur_wounds", 0) or 0))
-                shock = max(0, int(ch.get("cur_shock", 0) or 0))
-                ammo = current_ammo(ch)
-                wrath = max(0, int(ch.get("cur_wrath", 0) or 0))
-                max_wounds = int(max_values.get("Max Wounds", 0) or 0)
-                max_shock = int(max_values.get("Max Shock", 0) or 0)
-                max_wrath = int(max_values.get("Max Wrath", 0) or 0)
-                max_ammo = ammo_capacity(ch)
+                d = derived_traits(ch)
                 is_npc = ch.get("kind") == "npc"
                 role_label = "NPC" if is_npc else "PLAYER"
-                role_cls = "npc" if is_npc else "player"
+                rank = int(ch.get("rank", 1) or 1)
                 folder_name = folder_map.get(ch.get("folder_id"), "No folder")
 
-                # Compact combat row stays outside the details expander, matching Characters.
-                row = st.columns([3.5, 1.15, 1.15, 1.15, 1.15, 1.15, 1.15, 0.65, 0.65, 0.9])
-                row[0].markdown(
-                    f"<b class='{role_cls}'>{html.escape(ch.get('name') or 'Unnamed')}</b> · {role_label} · "
-                    f"{species_label(ch.get('species'))} · T{ch.get('tier', 1)} · {rank_label(ch.get('rank', 1))}",
-                    unsafe_allow_html=True,
-                )
+                with st.container(border=True):
+                    # Name + expandable details popover, matching the Characters page.
+                    head = st.columns([3.6, 0.7, 0.7, 1])
+                    with head[0]:
+                        with st.popover(ch.get("name") or "Unnamed", use_container_width=True, key=f"combat_pop_{ch['id']}"):
+                            st.markdown(f"**{species_label(ch.get('species', ''))}** · T{ch.get('tier', 1)} · {rank_label(rank)}")
+                            if ch.get("archetype"):
+                                st.caption(str(ch.get("archetype")))
+                            attrs = effective_attributes(ch); skills = effective_skills(ch)
+                            st.markdown("**Attributes**  " + " · ".join(f"{a[:3].upper()} {attrs.get(a, 1)}" for a in ATTRS))
+                            st.markdown("**Skills**  " + " · ".join(f"{sk[:4]} {skills.get(sk, 0) + attrs.get(at, 1)}" for sk, at in SKILLS.items()))
+                            derived_order = [
+                                ("Defence", "Defence"), ("Resilience", "Resilience"), ("Soak", "Soak"),
+                                ("Determination", "Determination"), ("Resolve", "Resolve"), ("Conviction", "Conviction"),
+                                ("Passive Awareness", "Awareness"), ("Influence", "Influence"), ("Speed", "Speed"),
+                            ]
+                            st.markdown("**Derived Traits**  " + " · ".join(f"{lbl} {int(d.get(key, 0) or 0)}" for key, lbl in derived_order))
+                        st.caption(f"{role_label} · {species_label(ch.get('species'))} · T{ch.get('tier', 1)} · {rank_label(rank)} · {folder_name}")
+                    if head[1].button("↑", key=f"combat_up_{ch['id']}", disabled=(idx == 0), use_container_width=True):
+                        move_combatant(ch["id"], -1)
+                        st.rerun()
+                    if head[2].button("↓", key=f"combat_down_{ch['id']}", disabled=(idx == len(current) - 1), use_container_width=True):
+                        move_combatant(ch["id"], 1)
+                        st.rerun()
+                    if head[3].button("Remove", key=f"combat_current_remove_{ch['id']}", use_container_width=True):
+                        set_combatant(ch["id"], False)
+                        st.rerun()
 
-                def vital_cell(col, label, value, maximum, minus_cb=None, plus_cb=None, key_prefix=""):
-                    col.markdown(f"<small>{label}</small>", unsafe_allow_html=True)
-                    parts = col.columns([0.8, 1.4, 0.8])
-                    if minus_cb:
-                        parts[0].button("−", key=f"{key_prefix}m", on_click=minus_cb, use_container_width=True)
-                    else:
-                        parts[0].write("")
-                    parts[1].markdown(f"<div style='text-align:center'><b>{value}/{maximum}</b></div>", unsafe_allow_html=True)
-                    if plus_cb:
-                        parts[2].button("+", key=f"{key_prefix}p", on_click=plus_cb, use_container_width=True)
-                    else:
-                        parts[2].write("")
+                    # Wounds/Shock/Ammo/Wrath, in the same metric + −/+ pattern as the Battle Sheet.
+                    vcols = st.columns(4)
+                    _vital_stat_block(vcols[0], "Wounds", max(0, int(ch.get("cur_wounds", 0) or 0)), int(d.get("Max Wounds", 0) or 0),
+                                      cid=ch["id"], field="cur_wounds", editable=is_npc, actor_role="gm",
+                                      actor_user_id=user.get("id"), actor_name=user.get("username", "Magister"),
+                                      key_prefix=f"combat_w_{ch['id']}")
+                    _vital_stat_block(vcols[1], "Shock", max(0, int(ch.get("cur_shock", 0) or 0)), int(d.get("Max Shock", 0) or 0),
+                                      cid=ch["id"], field="cur_shock", editable=is_npc, actor_role="gm",
+                                      actor_user_id=user.get("id"), actor_name=user.get("username", "Magister"),
+                                      key_prefix=f"combat_s_{ch['id']}")
+                    _ammo_stat_block(vcols[2], ch["id"], ch, editable=is_npc, actor_role="gm",
+                                     actor_user_id=user.get("id"), actor_name=user.get("username", "Magister"),
+                                     key_prefix=f"combat_a_{ch['id']}", source_prefix="Combat Quick Panel")
+                    _vital_stat_block(vcols[3], "Wrath", max(0, int(ch.get("cur_wrath", 0) or 0)), int(d.get("Max Wrath", 0) or 0))
 
-                if is_npc:
-                    vital_cell(row[1], "Wounds", wounds, max_wounds,
-                               lambda cid=ch["id"]: adjust_vital(cid, "cur_wounds", -1, actor_role="gm", actor_name=st.session_state.user.get("username", "Magister"), source="Combat Quick Panel"),
-                               lambda cid=ch["id"]: adjust_vital(cid, "cur_wounds", 1, actor_role="gm", actor_name=st.session_state.user.get("username", "Magister"), source="Combat Quick Panel"),
-                               f"combat_w_{ch['id']}")
-                    vital_cell(row[2], "Shock", shock, max_shock,
-                               lambda cid=ch["id"]: adjust_vital(cid, "cur_shock", -1, actor_role="gm", actor_name=st.session_state.user.get("username", "Magister"), source="Combat Quick Panel"),
-                               lambda cid=ch["id"]: adjust_vital(cid, "cur_shock", 1, actor_role="gm", actor_name=st.session_state.user.get("username", "Magister"), source="Combat Quick Panel"),
-                               f"combat_s_{ch['id']}")
-                    vital_cell(row[3], "Ammo", ammo, max_ammo,
-                               lambda cid=ch["id"]: adjust_ammo_pool(cid, -1, actor_role="gm", actor_name=st.session_state.user.get("username", "Magister"), source="Combat Quick Panel"),
-                               lambda cid=ch["id"]: adjust_ammo_pool(cid, 1, actor_role="gm", actor_name=st.session_state.user.get("username", "Magister"), source="Combat Quick Panel"),
-                               f"combat_a_{ch['id']}")
-                else:
-                    vital_cell(row[1], "Wounds", wounds, max_wounds, key_prefix=f"combat_pw_{ch['id']}")
-                    vital_cell(row[2], "Shock", shock, max_shock, key_prefix=f"combat_ps_{ch['id']}")
-                    vital_cell(row[3], "Ammo", ammo, max_ammo, key_prefix=f"combat_pa_{ch['id']}")
-
-                row[4].markdown(f"<small>Wrath</small><br><b>{wrath}/{max_wrath}</b>", unsafe_allow_html=True)
-                row[5].markdown(f"<small>Folder</small><br>{html.escape(folder_name)}", unsafe_allow_html=True)
-                if row[6].button("↑", key=f"combat_up_{ch['id']}", disabled=(idx == 0), use_container_width=True):
-                    move_combatant(ch["id"], -1)
-                    st.rerun()
-                if row[7].button("↓", key=f"combat_down_{ch['id']}", disabled=(idx == len(current) - 1), use_container_width=True):
-                    move_combatant(ch["id"], 1)
-                    st.rerun()
-                if row[8].button("Remove", key=f"combat_current_remove_{ch['id']}", use_container_width=True):
-                    set_combatant(ch["id"], False)
-                    st.rerun()
-                row[9].write("")
-
-                with st.expander("Details", expanded=False):
-                    gear_mods = equipped_wargear_modifiers(ch)
-                    d = derived_traits(ch)
-                    st.markdown("**Derived Traits**")
-                    derived_order = [
-                        ("Defence", "Defence"), ("Resilience", "Resilience"), ("Soak", "Soak"),
-                        ("Determination", "Determination"), ("Resolve", "Resolve"), ("Conviction", "Conviction"),
-                        ("Passive Awareness", "Passive Awareness"), ("Influence", "Influence"), ("Speed", "Speed"),
-                    ]
-                    dc = st.columns(3)
-                    for n, (key, label) in enumerate(derived_order):
-                        dc[n % 3].metric(label, int(d.get(key, 0) or 0))
-
-                    st.markdown("**Skills**")
-                    base_sk = {str(k): int(v) for k, v in (ch.get("skills", {}) or {}).items()}
-                    base_attr = {str(k): int(v) for k, v in (ch.get("attributes", {}) or {}).items()}
-                    skill_rows = []
-                    for skill_name in SKILLS:
-                        attr_name = SKILLS[skill_name]
-                        skill_base = int(base_sk.get(skill_name, 0))
-                        attr_base = int(base_attr.get(attr_name, 0))
-                        skill_mod = int(gear_mods.get(str(skill_name).lower(), 0) or 0)
-                        attr_mod = int(gear_mods.get(str(attr_name).lower(), 0) or 0)
-                        skill_total = skill_base + skill_mod
-                        attr_total = attr_base + attr_mod
-                        total = skill_total + attr_total
-                        skill_rows.append((skill_name, skill_total, attr_total, total))
-                    sc = st.columns(4)
-                    sc[0].markdown("**Skill**")
-                    sc[1].markdown("**Rank**")
-                    sc[2].markdown("**Attr**")
-                    sc[3].markdown("**Total**")
-                    for skill_name, skill_total, attr_total, total in skill_rows:
-                        sc = st.columns(4)
-                        sc[0].write(skill_name)
-                        sc[1].write(skill_total)
-                        sc[2].write(f"+{attr_total}")
-                        sc[3].write(total)
+                if idx < len(current) - 1:
+                    st.markdown("<div class='combat-arrow'>▼</div>", unsafe_allow_html=True)
 
         st.divider()
         st.markdown("#### Add Combatants")
@@ -4643,10 +4612,11 @@ def gm_view():
         st.caption(f"Standard character XP: {starting_xp(camp['tier'])} (Tier {camp['tier']} × 100). Advanced Character Creation adds Tier ×10 bonus XP.")
         st.divider()
         st.markdown("#### Ruin")
-        rc = st.columns([1, 1, 1, 3])
+        # Same metric + −/+ pattern as the Battle Sheet vitals (Wounds/Shock/Wrath/Ammo).
+        rc = st.columns([4, 1, 1])
         rc[0].metric("Ruin", camp["ruin"])
-        rc[1].button("−1", key="ruinm", on_click=adjust_ruin, args=(-1,))
-        rc[2].button("+1", key="ruinp", on_click=adjust_ruin, args=(+1,))
+        rc[1].button("−", key="ruinminus", on_click=adjust_ruin, args=(-1,))
+        rc[2].button("+", key="ruinplus", on_click=adjust_ruin, args=(+1,))
         st.divider()
         st.markdown("#### Session Log")
         with st.form("voxlog"):

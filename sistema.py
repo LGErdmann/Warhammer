@@ -725,6 +725,9 @@ def init_db():
         side TEXT DEFAULT 'npc', initiative_mod INTEGER DEFAULT 0, initiative_roll INTEGER DEFAULT 0,
         initiative_icons INTEGER DEFAULT 0, initiative_total INTEGER DEFAULT 0, turn_order INTEGER DEFAULT 0,
         ambushed INTEGER DEFAULT 0, added_at TEXT, UNIQUE(encounter_id, character_id))""")
+    c.execute("""CREATE TABLE IF NOT EXISTS combat_log(
+        id INTEGER PRIMARY KEY AUTOINCREMENT, session_no INTEGER, started_at TEXT, ended_at TEXT,
+        rounds INTEGER DEFAULT 1, participants TEXT DEFAULT '[]')""")
     conn.commit()
     # migration: ensure columns exist in databases created by older versions
     _ensure_columns(conn, "campaign", {"name": "TEXT", "tier": "INTEGER DEFAULT 2",
@@ -2517,6 +2520,61 @@ def clear_combat():
     conn.close()
 
 
+def log_combat_end():
+    """Snapshot every combatant's final Wounds/Shock/Wrath into a permanent
+    Combat Log entry tagged to the current session, then clear the live
+    tracker. A no-op (just clears) if nobody was actually in combat."""
+    current = get_combatants()
+    if not current:
+        clear_combat()
+        return False
+    state = combat_state()
+    conn = get_conn()
+    started_at = None
+    if state.get("id"):
+        row = conn.execute("SELECT started_at FROM combat_encounter WHERE id=?", (int(state["id"]),)).fetchone()
+        started_at = row["started_at"] if row else None
+    camp_row = conn.execute("SELECT session_no FROM campaign WHERE id=1").fetchone()
+    session_no = int(camp_row[0] if camp_row else 1)
+    participants = []
+    for ch in current:
+        d = derived_traits(ch)
+        participants.append({
+            "character_id": int(ch["id"]), "name": ch.get("name") or "Unnamed", "kind": ch.get("kind"),
+            "species": ch.get("species"), "tier": int(ch.get("tier", 1) or 1),
+            "cur_wounds": int(ch.get("cur_wounds", 0) or 0), "max_wounds": int(d.get("Max Wounds", 0) or 0),
+            "cur_shock": int(ch.get("cur_shock", 0) or 0), "max_shock": int(d.get("Max Shock", 0) or 0),
+            "cur_wrath": int(ch.get("cur_wrath", 0) or 0), "max_wrath": int(d.get("Max Wrath", 0) or 0),
+        })
+    conn.execute(
+        "INSERT INTO combat_log(session_no,started_at,ended_at,rounds,participants) VALUES(?,?,?,?,?)",
+        (session_no, started_at, now_iso(), int(state.get("round", 1) or 1), json.dumps(participants, ensure_ascii=False)),
+    )
+    conn.commit()
+    conn.close()
+    clear_combat()
+    return True
+
+
+def get_combat_logs(session_no=None, limit=100):
+    conn = get_conn()
+    if session_no is not None:
+        rows = conn.execute("SELECT * FROM combat_log WHERE session_no=? ORDER BY id DESC LIMIT ?",
+                            (int(session_no), int(limit))).fetchall()
+    else:
+        rows = conn.execute("SELECT * FROM combat_log ORDER BY id DESC LIMIT ?", (int(limit),)).fetchall()
+    conn.close()
+    out = []
+    for r in rows:
+        entry = dict(r)
+        try:
+            entry["participants"] = json.loads(entry.get("participants") or "[]")
+        except Exception:
+            entry["participants"] = []
+        out.append(entry)
+    return out
+
+
 # ============================================================
 #  TEMA
 # ============================================================
@@ -2557,6 +2615,7 @@ def inject_theme():
     .fold{ display:inline-block; }
     .combat-arrow{ text-align:center; color:var(--gold); font-size:1rem; line-height:.8; margin:-2px 0 3px; opacity:.8; }
     .combat-pos{ font-family:'Cinzel',serif; font-weight:900; color:var(--gold2); font-size:1.3rem; text-align:center; line-height:2.2; }
+    .combat-pos-active{ color:#171209; background:var(--gold2); border-radius:50%; width:1.9em; height:1.9em; margin:0 auto; line-height:1.9em; box-shadow:0 0 8px var(--gold2); }
     /* Visão de Batalha */
     .hero{ background:linear-gradient(135deg,#20180d,#100b06); border:1px solid var(--gold);
         border-radius:4px; padding:14px 18px; margin-bottom:10px; }
@@ -4396,6 +4455,36 @@ def archetypes_view():
                 if ok: st.rerun()
 
 
+def render_combat_log_entry(log):
+    """One Combat Log entry as a single compact line, click to see each
+    participant's final Wounds/Shock/Wrath — a popover nests safely inside
+    an expander, unlike another expander."""
+    participants = log.get("participants", []) or []
+    ended = str(log.get("ended_at") or "").replace("T", " ")[:16]
+    summary = f"{ended} · {int(log.get('rounds', 1) or 1)} round(s) · {len(participants)} participant(s)"
+    with st.popover(summary, use_container_width=True):
+        for p in participants:
+            ncls = "npc" if p.get("kind") == "npc" else ""
+            st.markdown(
+                f"<div class='wg'><span class='{ncls}'><b>{html.escape(str(p.get('name', '')))}</b></span>"
+                f" · {species_label(p.get('species', ''))} · T{int(p.get('tier', 1) or 1)}"
+                f"<div style='opacity:.75;font-size:.82rem;margin-top:2px'>"
+                f"Wounds {p.get('cur_wounds', 0)}/{p.get('max_wounds', 0)}"
+                f" · Shock {p.get('cur_shock', 0)}/{p.get('max_shock', 0)}"
+                f" · Wrath {p.get('cur_wrath', 0)}/{p.get('max_wrath', 0)}</div></div>",
+                unsafe_allow_html=True,
+            )
+
+
+def render_session_combat_logs(session_no):
+    logs = get_combat_logs(session_no=session_no)
+    if not logs:
+        st.caption("No combats logged this session.")
+        return
+    for log in logs:
+        render_combat_log_entry(log)
+
+
 def gm_view():
     camp = get_campaign()
     st.markdown("<div class='banner'>✠ MAGISTER SANCTUM ✠<span class='sub'>Campaign Command</span></div>",
@@ -4806,20 +4895,43 @@ def gm_view():
                 if awards:
                     for aw in awards:
                         st.markdown(f"**{aw['name']}** · +{aw['total_xp']} XP (base {aw['base_xp']} + bonus {aw['bonus_xp']})")
+                st.markdown("**Combat Log**")
+                render_session_combat_logs(sr["session_no"])
 
     # ---- Combat ----
     with tabs[7]:
         head_row = st.columns([5, 1.3])
         head_row[0].markdown("#### Combat")
-        if head_row[1].button("Clear Combat", use_container_width=True, key="combat_clear"):
-            clear_combat()
+        if head_row[1].button("End Combat", use_container_width=True, key="combat_clear"):
+            logged = log_combat_end()
+            st.session_state["combat_just_logged"] = bool(logged)
             st.rerun()
+        if st.session_state.pop("combat_just_logged", False):
+            st.success("Combat logged. See the Combat Log below or in Session history.")
 
         all_combat_chars = list_characters()
         folders = list_folders()
         folder_map = {f["id"]: f["name"] for f in folders}
         current = get_combatants()
         active = {c["id"] for c in current}
+
+        current_idx = -1
+        if current:
+            state = combat_state()
+            current_idx = min(state["current"], len(current) - 1)
+            turn_cols = st.columns([1.1, 1.3, 1.3, 3], gap="small")
+            turn_cols[0].metric("Round", state["round"])
+            if turn_cols[1].button("◀ Previous Turn", use_container_width=True, key="combat_turn_prev"):
+                advance_combat_turn(-1)
+                st.rerun()
+            if turn_cols[2].button("Next Turn ▶", use_container_width=True, key="combat_turn_next"):
+                advance_combat_turn(+1)
+                st.rerun()
+            current_name = html.escape(current[current_idx].get("name") or "Unnamed")
+            turn_cols[3].markdown(
+                f"<div style='padding-top:8px'>Current turn: <b>{current_name}</b> (#{current_idx + 1})</div>",
+                unsafe_allow_html=True,
+            )
 
         if not current:
             st.info("No characters are currently in combat. Add Players or NPCs below.")
@@ -4834,12 +4946,15 @@ def gm_view():
                 rank = int(ch.get("rank", 1) or 1)
                 folder_name = folder_map.get(ch.get("folder_id"), "No folder")
 
+                is_current_turn = (idx == current_idx)
                 with st.container(border=True):
                     # Position number + name/details popover + reorder/remove, all in one row.
                     head = st.columns([0.5, 3.7, 0.6, 1], gap="small")
-                    head[0].markdown(f"<div class='combat-pos'>{idx + 1}</div>", unsafe_allow_html=True)
+                    pos_cls = "combat-pos combat-pos-active" if is_current_turn else "combat-pos"
+                    head[0].markdown(f"<div class='{pos_cls}'>{idx + 1}</div>", unsafe_allow_html=True)
                     with head[1]:
-                        with st.popover(ch.get("name") or "Unnamed", use_container_width=True, key=f"combat_pop_{ch['id']}"):
+                        pop_label = ("▶ " + (ch.get("name") or "Unnamed")) if is_current_turn else (ch.get("name") or "Unnamed")
+                        with st.popover(pop_label, use_container_width=True, key=f"combat_pop_{ch['id']}"):
                             st.markdown(f"**{species_label(ch.get('species', ''))}** · T{ch.get('tier', 1)} · {rank_label(rank)}")
                             if ch.get("archetype"):
                                 st.caption(str(ch.get("archetype")))
@@ -4930,6 +5045,16 @@ def gm_view():
                         set_combatant(ch["id"], not in_combat)
                         st.rerun()
                     cols[2].caption("IN COMBAT" if in_combat else "")
+
+        session_no_now = int(camp.get("session_no", 1) or 1)
+        session_logs = get_combat_logs(session_no=session_no_now)
+        with st.expander(f"Combat Log · Session {session_no_now} · {len(session_logs)} combat(s)", expanded=False):
+            st.caption("Click a combat to see each participant's final Wounds/Shock/Wrath.")
+            if not session_logs:
+                st.caption("No combats logged this session yet. Ending a combat above records one here.")
+            else:
+                for log in session_logs:
+                    render_combat_log_entry(log)
 
     # ---- Campaign ----
     with tabs[8]:

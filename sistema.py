@@ -397,9 +397,13 @@ def rank_from_xp(xp, current_rank=1):
 
 
 def derived_traits(ch):
-    a, sk = effective_attributes(ch), effective_skills(ch)
-    tier = int(ch.get("tier", 1)); base_armour = 0; sp = ch.get("species", "")
+    # Compute the equipped-Wargear modifiers once and thread them through,
+    # instead of effective_attributes()/effective_skills() each recomputing
+    # them independently — this function runs on every render of every
+    # character sheet, popover and Combat row for every connected user.
     gear = equipped_wargear_modifiers(ch)
+    a, sk = effective_attributes(ch, gear), effective_skills(ch, gear)
+    tier = int(ch.get("tier", 1)); base_armour = 0; sp = ch.get("species", "")
     T = int(a.get("Toughness", 1))
     I = int(a.get("Initiative", 1))
     Wil = int(a.get("Willpower", 1))
@@ -1451,15 +1455,15 @@ def craft_modifiers(row):
     return mods
 
 
-def effective_attributes(ch):
+def effective_attributes(ch, gear_mods=None):
     base = {str(k): int(v) for k, v in (ch.get("attributes", {}) or {}).items()}
-    mods = equipped_wargear_modifiers(ch)
+    mods = gear_mods if gear_mods is not None else equipped_wargear_modifiers(ch)
     return {k: int(v) + int(mods.get(k.lower(), 0)) for k, v in base.items()}
 
 
-def effective_skills(ch):
+def effective_skills(ch, gear_mods=None):
     base = {str(k): int(v) for k, v in (ch.get("skills", {}) or {}).items()}
-    mods = equipped_wargear_modifiers(ch)
+    mods = gear_mods if gear_mods is not None else equipped_wargear_modifiers(ch)
     return {k: int(v) + int(mods.get(k.lower(), 0)) for k, v in base.items()}
 
 
@@ -1631,7 +1635,8 @@ def assign_wargear_to_character(cid, craft_id, actor_name="", actor_user_id=None
     return assign_craft_to_character(cid, craft_id, "wargear", actor_name, actor_user_id, "Magister Wargear Assignment")
 
 
-def list_craft_items(kind=None, active_only=True):
+@st.cache_data(ttl=5, show_spinner=False)
+def _cached_craft_items(kind, active_only):
     conn = get_conn()
     if kind:
         sql = "SELECT * FROM craft_items WHERE kind=?" + (" AND active=1" if active_only else "") + " ORDER BY name COLLATE NOCASE"
@@ -1641,6 +1646,24 @@ def list_craft_items(kind=None, active_only=True):
         rows = conn.execute(sql).fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+def list_craft_items(kind=None, active_only=True):
+    """Cached read of the Craft catalog (Talents/Powers/Wargear).
+
+    This is looked up on every effective-attribute/skill/derived-trait
+    computation for every character, on every auto-refresh of every open
+    Battle Sheet/Combat panel — with a GM and several Players connected at
+    once that adds up fast. The catalog only changes when the GM edits it in
+    the Craft tab, so a short cache with explicit invalidation on write
+    (invalidate_craft_cache(), called from save/delete) avoids re-querying
+    SQLite on every read while still reflecting GM edits immediately.
+    """
+    return _cached_craft_items(kind, active_only)
+
+
+def invalidate_craft_cache():
+    _cached_craft_items.clear()
 
 
 def save_craft_item(item, item_id=None):
@@ -1670,10 +1693,12 @@ def save_craft_item(item, item_id=None):
                          (item["kind"], item["name"], item.get("effect", ""), int(item.get("cost", 0) or 0),
                           item.get("source", ""), source_url, payload, now, now))
     conn.commit(); conn.close()
+    invalidate_craft_cache()
 
 
 def delete_craft_item(item_id):
     conn = get_conn(); conn.execute("UPDATE craft_items SET active=0, updated_at=? WHERE id=?", (now_iso(), int(item_id))); conn.commit(); conn.close()
+    invalidate_craft_cache()
 
 
 def craft_description_html(row, kind="craft", name_color=None, title_text=""):
@@ -2667,14 +2692,22 @@ def cb_species_change(cid):
 # ============================================================
 #  COMPONENTES AO VIVO
 # ============================================================
+def _gear_mod_caption(mod):
+    """Small inline green badge for a Wargear-driven bonus, matching the .gear-mod style used everywhere else."""
+    if mod:
+        st.markdown(f"<div style='margin-top:-6px'><span class='gear-mod'>{int(mod):+d} gear</span></div>", unsafe_allow_html=True)
+
+
 def _vital_stat_block(col, label, value, maximum, cid=None, field=None, editable=False,
-                       actor_role="gm", actor_user_id=None, actor_name="", key_prefix=""):
+                       actor_role="gm", actor_user_id=None, actor_name="", key_prefix="", max_mod=0):
     """Render one Wounds/Shock/Wrath-style stat using the Battle Sheet's compact metric + −/+ pattern.
 
     The − and + controls stack vertically right beside the value, instead of
     spreading across separate columns, so this is the single source of the
     vitals widget style and every page (the Player/GM Battle Sheet, the
     Combat panel, the Ruin counter, etc.) stays compact and identical.
+    `max_mod` surfaces any Wargear modifier folded into `maximum` (e.g. a
+    +Wounds trinket) as the same green badge used in the Skills table.
     """
     with col:
         if editable and cid is not None and field is not None:
@@ -2689,10 +2722,11 @@ def _vital_stat_block(col, label, value, maximum, cid=None, field=None, editable
                           use_container_width=True)
         else:
             st.metric(label, f"{value} / {maximum}")
+        _gear_mod_caption(max_mod)
 
 
 def _ammo_stat_block(col, cid, ch, editable=False, actor_role="gm", actor_user_id=None,
-                      actor_name="", key_prefix="", source_prefix="Ammo"):
+                      actor_name="", key_prefix="", source_prefix="Ammo", cap_mod=None):
     """Render the Ammo Pool using the same compact metric + stacked −/+ pattern."""
     ammo_total = current_ammo(ch)
     ammo_max = ammo_capacity(ch)
@@ -2716,12 +2750,18 @@ def _ammo_stat_block(col, cid, ch, editable=False, actor_role="gm", actor_user_i
         else:
             st.markdown("<div class='vital-label'>AMMO</div>", unsafe_allow_html=True)
             st.markdown(f"<div class='ammo-vital-value'><b>{ammo_total}</b> / {ammo_max}</div>", unsafe_allow_html=True)
+        # cap_mod: total non-Strength bonus folded into the Ammo capacity
+        # (Ammo Backpack/Bandolier flat bonuses, plus the Craft editor's
+        # "Ammo" Automatic Sheet Modifier) — the base-from-Strength part is
+        # not a gear bonus, so it is excluded from the badge.
+        _gear_mod_caption(cap_mod if cap_mod is not None else 0)
 
 
 def live_vitals(cid):
     ch = load_character(cid)
     if not ch:
         return
+    gear = equipped_wargear_modifiers(ch)
     d = derived_traits(ch)
     rank, asc = rank_from_xp(ch["earned_xp"], ch.get("rank", 1))
     user = st.session_state.get("user") or {}
@@ -2730,18 +2770,19 @@ def live_vitals(cid):
     actor_user_id = user.get("id")
     actor_name = user.get("username", "")
 
-    trio = [("cur_wounds", "Wounds", d["Max Wounds"]),
-            ("cur_shock", "Shock", d["Max Shock"]),
-            ("cur_wrath", "Wrath", d["Max Wrath"])]
+    trio = [("cur_wounds", "Wounds", d["Max Wounds"], "wounds"),
+            ("cur_shock", "Shock", d["Max Shock"], "shock"),
+            ("cur_wrath", "Wrath", d["Max Wrath"], "wrath")]
     cols = st.columns(4)
-    for i, (field, label, mx) in enumerate(trio):
+    for i, (field, label, mx, mod_key) in enumerate(trio):
         _vital_stat_block(cols[i], label, ch[field], mx, cid=cid, field=field, editable=True,
                           actor_role=actor_role, actor_user_id=actor_user_id, actor_name=actor_name,
-                          key_prefix=f"lv{field}{cid}")
+                          key_prefix=f"lv{field}{cid}", max_mod=int(gear.get(mod_key, 0) or 0))
 
     _ammo_stat_block(cols[3], cid, ch, editable=True, actor_role=actor_role, actor_user_id=actor_user_id,
                      actor_name=actor_name, key_prefix=f"lvammo{cid}",
-                     source_prefix="Player Ammo" if is_player else "Magister Ammo")
+                     source_prefix="Player Ammo" if is_player else "Magister Ammo",
+                     cap_mod=ammo_capacity_bonus(ch, gear))
 
     if asc:
         st.warning("100+ Earned XP - this character may ascend to the next Tier.")
@@ -2883,14 +2924,14 @@ def adjust_ammo_pool(cid, delta, actor_role="gm", actor_user_id=None, actor_name
         conn.close()
 
 
-def ammo_capacity(ch):
-    """Core Rulebook Ammo carrying limit: max(3, half Strength), plus explicit container bonuses."""
-    attrs = effective_attributes(ch)
-    strength = max(0, int(attrs.get("Strength", 0) or 0))
-    # The rulebook gives a whole-number inventory resource. For odd Strength values,
-    # round the half-Strength value up so the character is never assigned a fractional slot.
-    base = max(3, (strength + 1) // 2)
-    bonus = 0
+def ammo_capacity_bonus(ch, gear=None):
+    """Non-Strength bonus folded into the Ammo capacity: containers plus the
+    Craft editor's "Ammo" Automatic Sheet Modifier. Split out from
+    ammo_capacity() so the UI can badge just the gear-driven part."""
+    gear = gear if gear is not None else equipped_wargear_modifiers(ch)
+    # The Craft editor's "Ammo" Automatic Sheet Modifier (Vitals / Capacity
+    # group) has to land here, or setting it there would silently do nothing.
+    bonus = int(gear.get("ammo", 0) or 0)
     for w in normalize_wargear(ch.get("wargear", [])):
         if not w.get("equipped", True):
             continue
@@ -2907,7 +2948,18 @@ def ammo_capacity(ch):
                 bonus += 10
             elif "bandolier" in name:
                 bonus += 2
-    return base + bonus
+    return bonus
+
+
+def ammo_capacity(ch):
+    """Core Rulebook Ammo carrying limit: max(3, half Strength), plus explicit container bonuses."""
+    gear = equipped_wargear_modifiers(ch)
+    attrs = effective_attributes(ch, gear)
+    strength = max(0, int(attrs.get("Strength", 0) or 0))
+    # The rulebook gives a whole-number inventory resource. For odd Strength values,
+    # round the half-Strength value up so the character is never assigned a fractional slot.
+    base = max(3, (strength + 1) // 2)
+    return base + ammo_capacity_bonus(ch, gear)
 
 
 def render_ammo_section(cid, ch, compact=False, gm_mode=False):
@@ -3034,8 +3086,12 @@ def battle_view(cid):
             total = skill_total + attr_total
             skill_badge = f"<span class='gear-mod'>{skill_mod:+d}</span>" if skill_mod else ""
             attr_badge = f"<span class='gear-mod'>{attr_mod:+d}</span>" if attr_mod else ""
-            rows += (f"<div class='skrow'><span class='n'>{s}</span><span class='c'>{skill_total}{skill_badge}</span>"
-                     f"<span class='c'>+{attr_total}{attr_badge}</span><span class='t'>{total}</span></div>")
+            # Show the base Rank/Attribute plus the green gear badge separately
+            # (e.g. "5 +4"), not the already-summed value next to the badge
+            # again (which read as "9 +4" and looked like the bonus was
+            # being double-counted). Total still uses the full summed values.
+            rows += (f"<div class='skrow'><span class='n'>{s}</span><span class='c'>{skill_base}{skill_badge}</span>"
+                     f"<span class='c'>+{attr_base}{attr_badge}</span><span class='t'>{total}</span></div>")
         st.markdown(rows, unsafe_allow_html=True)
 
     with right:
@@ -3827,7 +3883,10 @@ def _render_craft_modifiers(prefix, details=None, wargear_only=False):
     details = dict(details or {}); old = details.get("modifiers", {}) or {}; mods = {}
     st.markdown("**Automatic Sheet Modifiers**")
     st.caption("These are only direct numeric changes to the character sheet. Use Traits for rule effects such as Pistol, Blast or Parry.")
-    groups = [("Attributes", list(ATTRS)), ("Skills", list(SKILLS.keys())), ("Derived Traits", ["defence", "resilience", "speed", "initiative"]), ("Vitals / Capacity", ["wounds", "shock", "wrath", "ammo"]), ("Armour Rating", ["armour"])]
+    # Initiative is not repeated here: it is already one of the seven
+    # Attributes above, and both fields would silently collide on the same
+    # underlying "initiative" modifier key.
+    groups = [("Attributes", list(ATTRS)), ("Skills", list(SKILLS.keys())), ("Derived Traits", ["defence", "resilience", "speed"]), ("Vitals / Capacity", ["wounds", "shock", "wrath", "ammo"]), ("Armour Rating", ["armour"])]
     for title, keys in groups:
         with st.expander(title, expanded=False):
             cols = st.columns(4)
@@ -3915,10 +3974,12 @@ def craft_view():
                         if extra: st.caption(" · ".join(extra))
                     b = st.columns(3)
                     if b[0].button("Disable" if int(r.get("active",1)) else "Enable", key=f"ct_{kind}_{r['id']}"):
-                        conn=get_conn(); conn.execute("UPDATE craft_items SET active=?,updated_at=? WHERE id=?", (0 if int(r.get("active",1)) else 1, now_iso(), int(r["id"]))); conn.commit(); conn.close(); st.rerun()
+                        conn=get_conn(); conn.execute("UPDATE craft_items SET active=?,updated_at=? WHERE id=?", (0 if int(r.get("active",1)) else 1, now_iso(), int(r["id"]))); conn.commit(); conn.close()
+                        invalidate_craft_cache(); st.rerun()
                     if b[1].button("Edit", key=f"ce_{kind}_{r['id']}"): st.session_state["craft_edit_id"] = int(r["id"]); st.rerun()
                     if b[2].button("Delete", key=f"cd_{kind}_{r['id']}"):
-                        conn=get_conn(); conn.execute("DELETE FROM craft_items WHERE id=?", (int(r["id"]),)); conn.commit(); conn.close(); st.rerun()
+                        conn=get_conn(); conn.execute("DELETE FROM craft_items WHERE id=?", (int(r["id"]),)); conn.commit(); conn.close()
+                        invalidate_craft_cache(); st.rerun()
 
     def register_form(kind, title):
         with st.expander(f"Register {title}", expanded=False):
@@ -4539,6 +4600,7 @@ def gm_view():
 
             user = st.session_state.user or {}
             for idx, ch in enumerate(current):
+                gear = equipped_wargear_modifiers(ch)
                 d = derived_traits(ch)
                 is_npc = ch.get("kind") == "npc"
                 role_label = "NPC" if is_npc else "PLAYER"
@@ -4553,7 +4615,7 @@ def gm_view():
                             st.markdown(f"**{species_label(ch.get('species', ''))}** · T{ch.get('tier', 1)} · {rank_label(rank)}")
                             if ch.get("archetype"):
                                 st.caption(str(ch.get("archetype")))
-                            attrs = effective_attributes(ch); skills = effective_skills(ch)
+                            attrs = effective_attributes(ch, gear); skills = effective_skills(ch, gear)
                             st.markdown("**Attributes**  " + " · ".join(f"{a[:3].upper()} {attrs.get(a, 1)}" for a in ATTRS))
                             st.markdown("**Skills**  " + " · ".join(f"{sk[:4]} {skills.get(sk, 0) + attrs.get(at, 1)}" for sk, at in SKILLS.items()))
                             derived_order = [
@@ -4579,15 +4641,17 @@ def gm_view():
                     _vital_stat_block(vcols[0], "Wounds", max(0, int(ch.get("cur_wounds", 0) or 0)), int(d.get("Max Wounds", 0) or 0),
                                       cid=ch["id"], field="cur_wounds", editable=is_npc, actor_role="gm",
                                       actor_user_id=user.get("id"), actor_name=user.get("username", "Magister"),
-                                      key_prefix=f"combat_w_{ch['id']}")
+                                      key_prefix=f"combat_w_{ch['id']}", max_mod=int(gear.get("wounds", 0) or 0))
                     _vital_stat_block(vcols[1], "Shock", max(0, int(ch.get("cur_shock", 0) or 0)), int(d.get("Max Shock", 0) or 0),
                                       cid=ch["id"], field="cur_shock", editable=is_npc, actor_role="gm",
                                       actor_user_id=user.get("id"), actor_name=user.get("username", "Magister"),
-                                      key_prefix=f"combat_s_{ch['id']}")
+                                      key_prefix=f"combat_s_{ch['id']}", max_mod=int(gear.get("shock", 0) or 0))
                     _ammo_stat_block(vcols[2], ch["id"], ch, editable=is_npc, actor_role="gm",
                                      actor_user_id=user.get("id"), actor_name=user.get("username", "Magister"),
-                                     key_prefix=f"combat_a_{ch['id']}", source_prefix="Combat Quick Panel")
-                    _vital_stat_block(vcols[3], "Wrath", max(0, int(ch.get("cur_wrath", 0) or 0)), int(d.get("Max Wrath", 0) or 0))
+                                     key_prefix=f"combat_a_{ch['id']}", source_prefix="Combat Quick Panel",
+                                     cap_mod=ammo_capacity_bonus(ch, gear))
+                    _vital_stat_block(vcols[3], "Wrath", max(0, int(ch.get("cur_wrath", 0) or 0)), int(d.get("Max Wrath", 0) or 0),
+                                      max_mod=int(gear.get("wrath", 0) or 0))
 
                 if idx < len(current) - 1:
                     st.markdown("<div class='combat-arrow'>▼</div>", unsafe_allow_html=True)

@@ -700,19 +700,45 @@ def create_player(username, pw, creation_mode="archetype", tier=2, rank=1, speci
         conn.close()
 
 
-def create_npc(name, species, tier, creation_mode="archetype", rank=1):
+def create_npc(name, species, tier, creation_mode="archetype", rank=1, archetype=""):
     conn = get_conn()
     tier = max(1, min(MAX_TIER, int(tier)))
     rank = max(1, min(3, int(rank)))
-    default_arch = "" if creation_mode == "advanced" else default_archetype_for_species(species, tier)
-    starting_gear = archetype_starting_wargear(default_arch) if creation_mode != "advanced" else []
+    if creation_mode == "advanced":
+        archetype = ""
+    else:
+        archetype = archetype if archetype in ARCHETYPES else default_archetype_for_species(species, tier)
+
+    attrs = default_attributes()
+    skills = default_skills()
+    species_alias = {
+        "Astra Militarum (Humano)": "Human",
+        "Adepta Sororitas": "Human",
+        "Inquisição": "Human",
+        "Rogue Trader": "Human",
+        "Aeldari (Asuryani)": "Aeldari",
+    }
+    sp = SPECIES_PACKAGES.get(species_alias.get(species, species), {})
+    for attr, value in sp.get("attributes", {}).items():
+        attrs[attr] = max(int(attrs.get(attr, 1)), int(value))
+    for skill, value in sp.get("skills", {}).items():
+        skills[skill] = max(int(skills.get(skill, 0)), int(value))
+
+    ap = ARCHETYPE_PACKAGES.get(archetype, {})
+    for attr, value in ap.get("attributes", {}).items():
+        attrs[attr] = max(int(attrs.get(attr, 1)), int(value))
+    for skill, value in ap.get("skills", {}).items():
+        skills[skill] = max(int(skills.get(skill, 0)), int(value))
+
+    starting_gear = archetype_starting_wargear(archetype) if creation_mode != "advanced" else []
     starting_gear = normalize_wargear(starting_gear + starting_ammo_for_wargear(starting_gear))
+    faction = ARCHETYPES.get(archetype, {}).get("faction", "") if archetype else ""
     conn.execute("""INSERT INTO characters(user_id,kind,name,chapter,species,archetype,faction,keywords,archetype_choices,creation_mode,tier,starting_tier,rank,earned_xp,other_xp,
                     attributes,skills,talents,powers,wargear,armour,cur_wounds,cur_shock,cur_wrath,notes,
                     comms_on,comms_changed_at)
                     VALUES(NULL,'npc',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                 (name or "NPC", "", species, default_arch, ARCHETYPES.get(default_arch, {}).get("faction", "") if default_arch else "", json.dumps([], ensure_ascii=False), json.dumps({}, ensure_ascii=False), creation_mode, tier, tier, rank, 0, 0, json.dumps(default_attributes()),
-                  json.dumps(default_skills()), json.dumps([]), json.dumps([]), json.dumps(starting_gear, ensure_ascii=False), 0, 0, 0, 0, "", 1, now_iso()))
+                 (name or "NPC", "", species, archetype, faction, json.dumps([], ensure_ascii=False), json.dumps({}, ensure_ascii=False), creation_mode, tier, tier, rank, 0, 0, json.dumps(attrs),
+                  json.dumps(skills), json.dumps([]), json.dumps([]), json.dumps(starting_gear, ensure_ascii=False), 0, 0, 0, 0, "", 1, now_iso()))
     conn.commit(); conn.close()
 
 
@@ -3872,15 +3898,28 @@ def gm_view():
                             st.rerun()
         with cre[1]:
             st.markdown("#### Create NPC")
+            # Keep NPC creation visually aligned with Player recruitment.
+            # Advanced NPCs still let the Magister define Species, but have no Archetype.
+            nadvanced = st.checkbox("Advanced Character Creation", value=False, key="create_npc_advanced")
             with st.form("newn"):
                 nn = st.text_input("Name")
-                nsp = st.selectbox("Species / Type", NPC_SPECIES)
-                nc = st.columns([1, 1, 2])
+                st.markdown("**Character Definition**")
+                nc = st.columns(2)
                 nt = nc[0].number_input("Tier", 1, MAX_TIER, int(get_campaign()["tier"]))
                 nrank = nc[1].selectbox("Rank", [1, 2, 3], format_func=rank_label)
-                nadvanced = nc[2].checkbox("Advanced Character Creation", value=False)
+                nc2 = st.columns(2)
+                nsp = nc2[0].selectbox("Species", NPC_SPECIES, format_func=species_label)
+                if not nadvanced:
+                    narc = nc2[1].selectbox(
+                        "Archetype", archetype_options(),
+                        format_func=lambda name: f"{name}  ·  T{ARCHETYPES[name]['tier']}  ·  {ARCHETYPES[name]['faction']}"
+                    )
+                    st.caption("The Magister defines Species, Archetype, Tier and Rank for this NPC.")
+                else:
+                    narc = ""
+                    st.info("Advanced Character Creation: the Magister defines Species. No Archetype is used.")
                 if st.form_submit_button("Create NPC"):
-                    create_npc(nn.strip(), nsp, nt, "advanced" if nadvanced else "archetype", nrank)
+                    create_npc(nn.strip(), nsp, nt, "advanced" if nadvanced else "archetype", nrank, narc)
                     st.rerun()
 
         st.divider()

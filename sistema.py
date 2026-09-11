@@ -2233,6 +2233,7 @@ def inject_theme():
     .tal .tc{ float:right; opacity:.6; font-size:.75rem; }
     .craft-shop-name{ font-family:'Cinzel',serif; font-size:.76rem; font-weight:700; letter-spacing:.025em; line-height:1.05; }
     .craft-shop-cost{ color:rgba(216,208,191,.52); font-size:.66rem; white-space:nowrap; }
+.gear-mod-sheet{color:#55c878;font-family:Cinzel;font-weight:700;font-size:.9rem;padding-top:30px;text-align:center}.gear-mod-sheet::before{content:""}
 .gear-mod{margin-left:4px;color:#55c96b;font-size:.68em;font-weight:700;vertical-align:middle;}
 .ammo-vital-value{min-height:30px;padding-top:2px;text-align:center;color:#d7d0c2;font-family:Cinzel,serif;font-size:1.05rem;}
 .vital-label{font-family:Cinzel,serif;color:#c9a227;letter-spacing:.08em;font-size:.78rem;margin-bottom:4px;}
@@ -2664,13 +2665,23 @@ def battle_view(cid):
         order = [("Defence", "Defence"), ("Resilience", "Resilience"), ("Soak", "Soak"),
                  ("Determination", "Determination"), ("Resolve", "Resolve"), ("Conviction", "Conviction"),
                  ("Passive Awareness", "Passive Awareness"), ("Influence", "Influence"), ("Speed", "Speed")]
+        def gear_value(key):
+            key_l = str(key).lower()
+            if key_l == "resilience":
+                return int(gear_mods.get("armour", 0) or 0) + int(gear_mods.get("resilience", 0) or 0)
+            return int(gear_mods.get(key_l, 0) or 0)
+
         def gear_badge(key):
-            value = int(gear_mods.get(str(key).lower(), 0) or 0)
-            if not value:
-                return ""
-            return f"<span class='gear-mod'>{value:+d}</span>"
+            value = gear_value(key)
+            return f"<span class='gear-mod'>{value:+d}</span>" if value else ""
+
+        def derived_display(key):
+            value = int(d[key])
+            modifier = gear_value(key)
+            return f"{value - modifier}{gear_badge(key)}"
+
         cards = "".join(
-            f"<div class='statcard'><div class='l'>{pt}</div><div class='v'>{d[en]}{gear_badge(en)}</div></div>"
+            f"<div class='statcard'><div class='l'>{pt}</div><div class='v'>{derived_display(en)}</div></div>"
             for en, pt in order
         )
         st.markdown(f"<div class='grid'>{cards}</div>", unsafe_allow_html=True)
@@ -2980,11 +2991,17 @@ def edit_view(cid, gm_mode=False):
     st.markdown("<div class='sheet-banner'>Core Profile · Attributes</div>", unsafe_allow_html=True)
     acol = st.columns(4)
     attr_max = SPECIES_ATTRIBUTE_MAX.get(st.session_state.get(spk, ""), {a: 12 for a in ATTRS})
+    sheet_gear_mods = equipped_wargear_modifiers({**ch, "wargear": normalize_wargear(ch.get("wargear", []))})
     for i, a in enumerate(ATTRS):
         max_rating = int(attr_max.get(a, 12))
         if int(st.session_state[_k(cid, "a", a)]) > max_rating:
             st.session_state[_k(cid, "a", a)] = max_rating
-        acol[i % 4].number_input(a, 1, max_rating, key=_k(cid, "a", a), help="Base Attribute maximum for this Species. Bonuses may raise the final total above this limit.")
+        with acol[i % 4]:
+            ac = st.columns([4, 1])
+            ac[0].number_input(a, 1, max_rating, key=_k(cid, "a", a), help="Base Attribute maximum for this Species. Bonuses may raise the final total above this limit.")
+            mod = int(sheet_gear_mods.get(a.lower(), 0) or 0)
+            if mod:
+                ac[1].markdown(f"<div class='gear-mod-sheet'>{mod:+d}</div>", unsafe_allow_html=True)
     # Read current values before rendering the Skill pools.
     # Streamlit executes this function top-to-bottom, so these dictionaries
     # must exist before the skill widgets use them.
@@ -3019,9 +3036,17 @@ def edit_view(cid, gm_mode=False):
         with scol[i % 3]:
             cc = st.columns([3, 1])
             cc[0].number_input(s, 0, 8, key=_k(cid, "s", s))
-            # Show the complete test pool beside each Skill.
-            pool = int(st.session_state[_k(cid, "s", s)]) + int(st.session_state[_k(cid, "a", SKILLS[s])])
-            cc[1].markdown(f"<div style='padding-top:30px;color:#e8c96a;font-family:Cinzel'>{pool}</div>",
+            skill_base = int(st.session_state[_k(cid, "s", s)])
+            attr_base = int(st.session_state[_k(cid, "a", SKILLS[s])])
+            skill_mod = int(sheet_gear_mods.get(s.lower(), 0) or 0)
+            attr_mod = int(sheet_gear_mods.get(SKILLS[s].lower(), 0) or 0)
+            pool = skill_base + skill_mod + attr_base + attr_mod
+            badges = ""
+            if skill_mod:
+                badges += f"<span class='gear-mod'>{skill_mod:+d}</span>"
+            if attr_mod:
+                badges += f"<span class='gear-mod'>{attr_mod:+d}</span>"
+            cc[1].markdown(f"<div style='padding-top:30px;color:#e8c96a;font-family:Cinzel'>{pool}</div>{badges}",
                            unsafe_allow_html=True)
 
     cur_skill = {s: int(st.session_state[_k(cid, "s", s)]) for s in SKILLS}

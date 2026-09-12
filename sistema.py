@@ -3047,6 +3047,13 @@ def inject_theme():
     .row{ border:1px solid #3a2e18; border-radius:3px; padding:6px 10px; margin-bottom:6px; background:var(--panel); }
     .fold{ display:inline-block; }
     .combat-arrow{ text-align:center; color:var(--gold); font-size:1rem; line-height:.8; margin:-2px 0 3px; opacity:.8; }
+    .info-tip{ display:inline-flex; align-items:center; justify-content:center; width:1.35em; height:1.35em;
+        margin-top:6px; border-radius:50%; border:1px solid var(--gold); color:var(--gold2);
+        font-family:'Cinzel',serif; font-size:.72rem; font-weight:700; cursor:help; opacity:.85; user-select:none; }
+    .info-tip:hover{ opacity:1; background:var(--panel2); }
+    .st-key-lang_flags{ position:fixed; top:8px; right:14px; z-index:9999; width:auto !important; }
+    .st-key-lang_flags button{ font-size:1.25rem !important; line-height:1 !important; padding:4px 10px !important; }
+    .st-key-lang_flags [data-testid="stHorizontalBlock"]{ gap:.35rem; }
     .combat-pos{ font-family:'Cinzel',serif; font-weight:900; color:var(--gold2); font-size:1.3rem; text-align:center; line-height:2.2; }
     .combat-pos-active{ color:#171209; background:var(--gold2); border-radius:50%; width:1.9em; height:1.9em; margin:0 auto; line-height:1.9em; box-shadow:0 0 8px var(--gold2); }
     /* Visão de Batalha */
@@ -3746,6 +3753,94 @@ def render_ammo_section(cid, ch, compact=False, gm_mode=False):
                 else: st.error(result[1])
 
 
+# ============================================================
+#  PLAYER UI TRANSLATION (purely visual — never touches stored data)
+# ============================================================
+# Only the interface chrome of the two Player pages (Battle View, Character
+# Sheet) is translated: section headers, field labels, static captions, and
+# the Attribute/Skill names. Character names, Notes, and catalog-driven text
+# (Talent/Power/Wargear names and rules effects) are game content, not app
+# chrome, and are deliberately left as written — translating them would mean
+# maintaining a full Portuguese translation of the rulebook's text, which is
+# out of scope for a "visual only" toggle.
+TRANSLATE_PT = {
+    # Attributes
+    "Strength": "Força", "Toughness": "Resistência", "Agility": "Agilidade", "Initiative": "Iniciativa",
+    "Willpower": "Força de Vontade", "Intellect": "Intelecto", "Fellowship": "Carisma",
+    # Skills
+    "Athletics": "Atletismo", "Awareness": "Percepção", "Ballistic Skill": "Perícia de Tiro",
+    "Cunning": "Astúcia", "Deception": "Enganação", "Insight": "Perspicácia", "Intimidation": "Intimidação",
+    "Investigation": "Investigação", "Leadership": "Liderança", "Medicae": "Medicina", "Persuasion": "Persuasão",
+    "Pilot": "Pilotagem", "Psychic Mastery": "Domínio Psíquico", "Scholar": "Erudição", "Stealth": "Furtividade",
+    "Survival": "Sobrevivência", "Tech": "Tecnologia", "Weapon Skill": "Perícia de Combate",
+    # Derived Traits
+    "Defence": "Defesa", "Resilience": "Resiliência", "Soak": "Absorção", "Determination": "Determinação",
+    "Resolve": "Resolução", "Conviction": "Convicção", "Passive Awareness": "Percepção Passiva",
+    "Influence": "Influência", "Speed": "Velocidade",
+    # Section headers / general chrome
+    "Vitals": "Vitalidade", "Derived Traits": "Traços Derivados", "Corruption": "Corrupção", "Wealth": "Riqueza",
+    "Faith": "Fé", "Skills": "Perícias", "Total = Skill + Attribute": "Total = Perícia + Atributo",
+    "Skill": "Perícia", "Rank": "Grau", "Attr": "Atr", "Total": "Total", "Archetype": "Arquétipo",
+    "Archetype Ability": "Habilidade do Arquétipo", "Species & Chapter Abilities": "Habilidades de Espécie e Capítulo",
+    "Talents": "Talentos", "No talents.": "Nenhum talento.", "Psychic Powers": "Poderes Psíquicos",
+    "No Psychic Powers.": "Nenhum Poder Psíquico.", "Wargear": "Equipamento", "No wargear.": "Nenhum equipamento.",
+    "Range": "Alcance", "Damage": "Dano", "AP": "PA", "Salvo": "Rajada", "Traits": "Traços", "Rarity": "Raridade",
+    "Value": "Valor", "Vox Network": "Rede Vox", "Character": "Personagem",
+    "Core Profile · Attributes": "Perfil Central · Atributos", "Core Profile · Skills": "Perfil Central · Perícias",
+    "Species & Chapter": "Espécie e Capítulo", "Arsenal · Wargear": "Arsenal · Equipamento",
+    "Advancements · Talents": "Avanços · Talentos", "Available Talents": "Talentos Disponíveis",
+    "Available Psychic Powers": "Poderes Psíquicos Disponíveis", "Purchase": "Comprar",
+    "Name": "Nome", "Chapter": "Capítulo", "Species": "Espécie", "Tier": "Nível", "Armour": "Armadura",
+    "Other XP": "Outro XP", "Starting XP": "XP Inicial", "Earned XP": "XP Ganho", "XP Spent": "XP Gasto",
+    "XP Available": "XP Disponível", "Notes": "Anotações", "Portrait": "Retrato", "Upload": "Enviar",
+    "Save Portrait": "Salvar Retrato", "Battle View": "Visão de Batalha", "Character Sheet": "Ficha de Personagem",
+    "Change Password": "Alterar Senha", "Sign Out": "Sair", "New Password": "Nova Senha", "Confirm": "Confirmar",
+    "Change": "Alterar", "Package": "Pacote", "Size": "Tamanho", "Average": "Médio",
+    "Provided by equipped Armour Wargear": "Fornecida pela Armadura equipada",
+    "Advancements · Psychic Powers": "Avanços · Poderes Psíquicos",
+    "Over budget by": "Acima do orçamento em",
+    "Purchase Talents by meeting their registered prerequisites and spending XP.":
+        "Compre Talentos cumprindo os pré-requisitos registrados e gastando XP.",
+    "Keywords": "Palavras-chave", "Search Talents...": "Buscar Talentos...",
+    "No Talents match the search.": "Nenhum Talento corresponde à busca.",
+    "No talents purchased.": "Nenhum talento comprado.",
+    "Search Psychic Powers...": "Buscar Poderes Psíquicos...",
+    "No Psychic Powers match the search.": "Nenhum Poder Psíquico corresponde à busca.",
+    "No Psychic Powers purchased.": "Nenhum Poder Psíquico comprado.",
+    "INVENTORY": "INVENTÁRIO", "EQUIPPED": "EQUIPADO", "STOWED": "GUARDADO", "USE 1": "USAR 1",
+    "REMOVE": "REMOVER", "No Wargear assigned.": "Nenhum equipamento atribuído.",
+    "Summary": "Resumo",
+    "Base Attribute maximum for this Species. Bonuses may raise the final total above this limit.":
+        "Máximo de Atributo base para esta Espécie. Bônus podem elevar o total final acima deste limite.",
+    "Custom Chapter": "Capítulo Personalizado", "Chapter applies to Adeptus Astartes characters.":
+        "Capítulo se aplica a personagens Adeptus Astartes.",
+    "Session": "Sessão", "No character sheet linked. Contact the Magister.":
+        "Nenhuma ficha vinculada. Contate o Mestre.",
+}
+
+
+def T(text):
+    """Translate a piece of Player-facing UI chrome if the Player picked
+    Portuguese via the flag toggle. Purely cosmetic — never touches what is
+    actually stored on the character. Falls back to the original English if
+    no translation is registered or the Player has not switched languages."""
+    if st.session_state.get("ui_lang") != "pt":
+        return text
+    return TRANSLATE_PT.get(text, text)
+
+
+def _language_flag_toggle():
+    """Fixed-corner PT/EN flag toggle for the two Player pages. Session-local
+    and purely visual: it only changes which strings T() returns, never any
+    stored character data."""
+    with st.container(key="lang_flags"):
+        c1, c2 = st.columns(2)
+        if c1.button("🇧🇷", key="lang_flag_pt", help="Português"):
+            st.session_state["ui_lang"] = "pt"; st.rerun()
+        if c2.button("🇺🇸", key="lang_flag_en", help="English"):
+            st.session_state["ui_lang"] = "en"; st.rerun()
+
+
 @st.fragment(run_every=REFRESH_S)
 def battle_view(cid):
     ch = load_character(cid)
@@ -3756,16 +3851,16 @@ def battle_view(cid):
     d = derived_traits(ch, gear_mods)
     rank = int(ch.get("rank", 1) or 1)
     ncls = "npc" if ch["kind"] == "npc" else ""
-    st.markdown(f"<div class='hero'><div class='nm {ncls}'>{ch['name'] or 'Character'}</div>"
+    st.markdown(f"<div class='hero'><div class='nm {ncls}'>{ch['name'] or T('Character')}</div>"
                 f"<div class='meta'>{ch['chapter'] or ''} &nbsp;·&nbsp; {species_label(ch['species'])} &nbsp;·&nbsp; "
-                f"Tier {ch['tier']} &nbsp;·&nbsp; Rank {rank}</div></div>", unsafe_allow_html=True)
+                f"{T('Tier')} {ch['tier']} &nbsp;·&nbsp; {T('Rank')} {rank}</div></div>", unsafe_allow_html=True)
 
-    st.markdown("<div class='sectionttl'>Vitals</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='sectionttl'>{T('Vitals')}</div>", unsafe_allow_html=True)
     live_vitals(cid, ch, gear_mods)
 
     left, right = st.columns([1.5, 1])
     with left:
-        st.markdown("<div class='sectionttl'>Derived Traits</div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='sectionttl'>{T('Derived Traits')}</div>", unsafe_allow_html=True)
         order = [("Defence", "Defence"), ("Resilience", "Resilience"), ("Soak", "Soak"),
                  ("Determination", "Determination"), ("Resolve", "Resolve"), ("Conviction", "Conviction"),
                  ("Passive Awareness", "Passive Awareness"), ("Influence", "Influence"), ("Speed", "Speed")]
@@ -3790,7 +3885,7 @@ def battle_view(cid):
             return f"{value - modifier}{gear_badge(key)}"
 
         cards = "".join(
-            f"<div class='statcard'><div class='l'>{pt}</div><div class='v'>{derived_display(en)}</div></div>"
+            f"<div class='statcard'><div class='l'>{T(pt)}</div><div class='v'>{derived_display(en)}</div></div>"
             for en, pt in order
         )
         # Corruption and Wealth (p.285, p.38) are tracked point pools, not
@@ -3798,18 +3893,18 @@ def battle_view(cid):
         # character sheet directly rather than through gear_value()/derived_display().
         corr_info = corruption_level_info(ch.get("cur_corruption", 0))
         cards += (
-            f"<div class='statcard'><div class='l'>Corruption</div>"
+            f"<div class='statcard'><div class='l'>{T('Corruption')}</div>"
             f"<div class='v'>{corr_info['level']} · {html.escape(corr_info['name'])}</div></div>"
-            f"<div class='statcard'><div class='l'>Wealth</div><div class='v'>{int(ch.get('cur_wealth', 0) or 0)}</div></div>"
+            f"<div class='statcard'><div class='l'>{T('Wealth')}</div><div class='v'>{int(ch.get('cur_wealth', 0) or 0)}</div></div>"
         )
         # Faith (p.142) only applies to characters with at least one Faith Talent.
         f_max_card = faith_max(ch)
         if f_max_card > 0:
-            cards += f"<div class='statcard'><div class='l'>Faith</div><div class='v'>{min(f_max_card, int(ch.get('cur_faith', 0) or 0))} / {f_max_card}</div></div>"
+            cards += f"<div class='statcard'><div class='l'>{T('Faith')}</div><div class='v'>{min(f_max_card, int(ch.get('cur_faith', 0) or 0))} / {f_max_card}</div></div>"
         st.markdown(f"<div class='grid'>{cards}</div>", unsafe_allow_html=True)
 
-        st.markdown("<div class='sectionttl'>Skills &nbsp;<small style='opacity:.6;letter-spacing:0'>Total = Skill + Attribute</small></div>", unsafe_allow_html=True)
-        rows = "<div class='skhead'><span>Skill</span><span>Rank</span><span>Attr</span><span>Total</span></div>"
+        st.markdown(f"<div class='sectionttl'>{T('Skills')} &nbsp;<small style='opacity:.6;letter-spacing:0'>{T('Total = Skill + Attribute')}</small></div>", unsafe_allow_html=True)
+        rows = f"<div class='skhead'><span>{T('Skill')}</span><span>{T('Rank')}</span><span>{T('Attr')}</span><span>{T('Total')}</span></div>"
         base_sk = {str(k): int(v) for k, v in (ch.get("skills", {}) or {}).items()}
         base_attr = {str(k): int(v) for k, v in (ch.get("attributes", {}) or {}).items()}
         for s in SKILLS:
@@ -3827,17 +3922,17 @@ def battle_view(cid):
             # (e.g. "5 +4"), not the already-summed value next to the badge
             # again (which read as "9 +4" and looked like the bonus was
             # being double-counted). Total still uses the full summed values.
-            rows += (f"<div class='skrow'><span class='n'>{s}</span><span class='c'>{skill_base}{skill_badge}</span>"
+            rows += (f"<div class='skrow'><span class='n'>{T(s)}</span><span class='c'>{skill_base}{skill_badge}</span>"
                      f"<span class='c'>+{attr_base}{attr_badge}</span><span class='t'>{total}</span></div>")
         st.markdown(rows, unsafe_allow_html=True)
 
     with right:
         if ch.get("archetype") and ch.get("creation_mode") == "archetype":
-            st.markdown("<div class='sectionttl'>Archetype</div>", unsafe_allow_html=True)
+            st.markdown(f"<div class='sectionttl'>{T('Archetype')}</div>", unsafe_allow_html=True)
             aname = html.escape(ch['archetype'])
             st.markdown(f"<div class='tal'><span class='tn'>{aname}</span></div>", unsafe_allow_html=True)
             if ch['archetype'] in ARCHETYPE_ABILITIES:
-                st.markdown(f"<div class='tal'><span class='tn'>Archetype Ability: {html.escape(ARCHETYPE_ABILITIES[ch['archetype']])}</span></div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='tal'><span class='tn'>{T('Archetype Ability')}: {html.escape(ARCHETYPE_ABILITIES[ch['archetype']])}</span></div>", unsafe_allow_html=True)
         # Chapter abilities are resolved from the latest saved character data,
         # so changing Chapter on the sheet is reflected on the next refresh.
         latest_chapter = str(ch.get("chapter", "") or "").strip()
@@ -3848,13 +3943,13 @@ def battle_view(cid):
             if cd.get("ability"): chapter_abilities.append(cd["ability"])
             if cd.get("tradition"): chapter_abilities.append(cd["tradition"])
         if package.get("abilities") or chapter_abilities:
-            st.markdown("<div class='sectionttl'>Species & Chapter Abilities</div>", unsafe_allow_html=True)
+            st.markdown(f"<div class='sectionttl'>{T('Species & Chapter Abilities')}</div>", unsafe_allow_html=True)
             for ability in package.get("abilities", []):
                 st.markdown(f"<div class='tal'><span class='tn'>{html.escape(str(ability))}</span></div>", unsafe_allow_html=True)
             for ability in chapter_abilities:
                 st.markdown(f"<div class='tal'><span class='tn'>{html.escape(str(ability))}</span></div>", unsafe_allow_html=True)
 
-        st.markdown("<div class='sectionttl'>Talents</div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='sectionttl'>{T('Talents')}</div>", unsafe_allow_html=True)
         talent_catalog = {str(r["name"]).strip().lower(): r for r in list_craft_items("talent")}
         if ch["talents"]:
             for t in ch["talents"]:
@@ -3870,19 +3965,19 @@ def battle_view(cid):
                 effect_html = f"<div class='taleffect'>{effect}</div>" if effect else ""
                 st.markdown(f"<div class='tal'><span class='tn'>{name}</span>{cost}{effect_html}</div>", unsafe_allow_html=True)
         else:
-            st.markdown("<div class='tal' style='opacity:.6'>No talents.</div>", unsafe_allow_html=True)
+            st.markdown(f"<div class='tal' style='opacity:.6'>{T('No talents.')}</div>", unsafe_allow_html=True)
 
-        st.markdown("<div class='sectionttl'>Psychic Powers</div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='sectionttl'>{T('Psychic Powers')}</div>", unsafe_allow_html=True)
         powers = normalize_powers(ch.get("powers", []))
         if powers:
             for pwr in powers:
                 st.markdown(f"<div class='tal'><span class='tn'>{html.escape(str(pwr.get('name','')))}</span><div style='margin-top:5px;opacity:.75;line-height:1.35'>{html.escape(str(pwr.get('effect','')))}</div></div>", unsafe_allow_html=True)
         else:
-            st.markdown("<div class='tal' style='opacity:.6'>No Psychic Powers.</div>", unsafe_allow_html=True)
+            st.markdown(f"<div class='tal' style='opacity:.6'>{T('No Psychic Powers.')}</div>", unsafe_allow_html=True)
 
         render_ammo_section(cid, ch, gm_mode=((st.session_state.get("user") or {}).get("role") == "gm"))
 
-        st.markdown("<div class='sectionttl'>Wargear</div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='sectionttl'>{T('Wargear')}</div>", unsafe_allow_html=True)
         wargear_catalog = {str(r["name"]).strip().lower(): r for r in list_craft_items("wargear")}
         if ch["wargear"]:
             for w in ch["wargear"]:
@@ -3902,13 +3997,13 @@ def battle_view(cid):
                 stats = []
                 for key, label in (("range", "Range"), ("damage", "Damage"), ("ap", "AP"), ("salvo", "Salvo"), ("traits", "Traits"), ("rarity", "Rarity"), ("value", "Value")):
                     if details.get(key) not in (None, ""):
-                        stats.append(f"<span style='margin-right:12px'><b>{label}</b> {html.escape(str(details[key]))}</span>")
+                        stats.append(f"<span style='margin-right:12px'><b>{T(label)}</b> {html.escape(str(details[key]))}</span>")
                 stats_html = f"<div style='margin-top:5px;opacity:.85;font-size:.78rem'>{''.join(stats)}</div>" if stats else ""
                 st.markdown(f"<div class='wg'><b>{name}</b>{stats_html}{effect_html}</div>", unsafe_allow_html=True)
         else:
-            st.markdown("<div class='wg' style='opacity:.6'>No wargear.</div>", unsafe_allow_html=True)
+            st.markdown(f"<div class='wg' style='opacity:.6'>{T('No wargear.')}</div>", unsafe_allow_html=True)
 
-        st.markdown("<div class='sectionttl'>Vox Network</div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='sectionttl'>{T('Vox Network')}</div>", unsafe_allow_html=True)
         vox_live(cid)
 
 
@@ -4069,23 +4164,23 @@ def edit_view(cid, gm_mode=False):
         st.session_state[_k(cid, "meta", "keywords")] = list(ch.get("keywords", []) or [])
 
     c = st.columns([2, 2, 2])
-    c[0].text_input("Name", key=_k(cid, "t", "name"))
+    c[0].text_input(T("Name"), key=_k(cid, "t", "name"))
     current_chapter = st.session_state.get(_k(cid, "t", "chapter"), ch.get("chapter") or "")
     if st.session_state.get(spk) in ("Adeptus Astartes", "Primaris Astartes"):
         chapter_choice = c[1].selectbox(
-            "Chapter",
+            T("Chapter"),
             CHAPTER_OPTIONS,
             index=(CHAPTER_OPTIONS.index(current_chapter) if current_chapter in CHAPTER_OPTIONS else len(CHAPTER_OPTIONS)-1),
             key=_k(cid, "sel", "chapter"),
         )
         if chapter_choice == "Other / Successor Chapter":
-            c[1].text_input("Custom Chapter", value="" if current_chapter in CHAPTER_OPTIONS else current_chapter, key=_k(cid, "t", "chapter_custom"))
+            c[1].text_input(T("Custom Chapter"), value="" if current_chapter in CHAPTER_OPTIONS else current_chapter, key=_k(cid, "t", "chapter_custom"))
             st.session_state[_k(cid, "t", "chapter")] = st.session_state.get(_k(cid, "t", "chapter_custom"), "")
         else:
             st.session_state[_k(cid, "t", "chapter")] = chapter_choice
     else:
         st.session_state[_k(cid, "t", "chapter")] = ""
-        c[1].caption("Chapter applies to Adeptus Astartes characters.")
+        c[1].caption(T("Chapter applies to Adeptus Astartes characters."))
     if gm_mode:
         if mode == "archetype":
             c[2].selectbox(
@@ -4098,9 +4193,9 @@ def edit_view(cid, gm_mode=False):
             c[2].markdown("**Species**")
             c[2].caption("Chosen by the Player")
     elif mode != "advanced":
-        c[2].text_input("Species", value=species_label(ch.get("species") or "Unknown"), disabled=True, key=f"player_species_{cid}")
+        c[2].text_input(T("Species"), value=species_label(ch.get("species") or "Unknown"), disabled=True, key=f"player_species_{cid}")
     else:
-        c[2].markdown("**Species**")
+        c[2].markdown(f"**{T('Species')}**")
         c[2].caption(species_label(st.session_state[spk]))
     if gm_mode:
         c = st.columns([1, 1, 1, 1.4, 1])
@@ -4129,13 +4224,13 @@ def edit_view(cid, gm_mode=False):
         c2[0].number_input("Other XP", 0, 100000, key=_k(cid, "n", "other"))
     else:
         c = st.columns([1, 1, 1, 2])
-        c[0].metric("Tier", int(st.session_state[_k(cid, "n", "tier")]))
-        c[1].markdown("**Armour**")
-        c[1].caption("Provided by equipped Armour Wargear")
-        c[2].number_input("Other XP", 0, 100000, key=_k(cid, "n", "other"))
-        c[3].markdown(f"**Rank:** {rank_label(ch.get('rank', 1))}<br><small></small>", unsafe_allow_html=True)
+        c[0].metric(T("Tier"), int(st.session_state[_k(cid, "n", "tier")]))
+        c[1].markdown(f"**{T('Armour')}**")
+        c[1].caption(T("Provided by equipped Armour Wargear"))
+        c[2].number_input(T("Other XP"), 0, 100000, key=_k(cid, "n", "other"))
+        c[3].markdown(f"**{T('Rank')}:** {rank_label(ch.get('rank', 1))}<br><small></small>", unsafe_allow_html=True)
 
-    st.markdown("<div class='sheet-banner'>Core Profile · Attributes</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='sheet-banner'>{T('Core Profile · Attributes')}</div>", unsafe_allow_html=True)
     acol = st.columns(4)
     attr_max = SPECIES_ATTRIBUTE_MAX.get(st.session_state.get(spk, ""), {a: 12 for a in ATTRS})
     sheet_gear_mods = equipped_wargear_modifiers({**ch, "wargear": normalize_wargear(ch.get("wargear", []))})
@@ -4145,7 +4240,7 @@ def edit_view(cid, gm_mode=False):
             st.session_state[_k(cid, "a", a)] = max_rating
         with acol[i % 4]:
             ac = st.columns([4, 1])
-            ac[0].number_input(a, 1, max_rating, key=_k(cid, "a", a), help="Base Attribute maximum for this Species. Bonuses may raise the final total above this limit.")
+            ac[0].number_input(T(a), 1, max_rating, key=_k(cid, "a", a), help=T("Base Attribute maximum for this Species. Bonuses may raise the final total above this limit."))
             mod = int(sheet_gear_mods.get(a.lower(), 0) or 0)
             if mod:
                 ac[1].markdown(f"<div class='gear-mod-sheet'>{mod:+d}</div>", unsafe_allow_html=True)
@@ -4177,12 +4272,12 @@ def edit_view(cid, gm_mode=False):
                 st.session_state[_k(cid, "s", choice)] = max(int(st.session_state[_k(cid, "s", choice)]), any_to)
 
 
-    st.markdown("<div class='sheet-banner'>Core Profile · Skills</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='sheet-banner'>{T('Core Profile · Skills')}</div>", unsafe_allow_html=True)
     scol = st.columns(3)
     for i, s in enumerate(SKILLS):
         with scol[i % 3]:
             cc = st.columns([3, 1])
-            cc[0].number_input(s, 0, 8, key=_k(cid, "s", s))
+            cc[0].number_input(T(s), 0, 8, key=_k(cid, "s", s))
             skill_base = int(st.session_state[_k(cid, "s", s)])
             attr_base = int(st.session_state[_k(cid, "a", SKILLS[s])])
             skill_mod = int(sheet_gear_mods.get(s.lower(), 0) or 0)
@@ -4200,10 +4295,10 @@ def edit_view(cid, gm_mode=False):
 
     package = species_package(st.session_state[spk])
     if package:
-        st.markdown("#### Species & Chapter")
-        st.caption(f"Package: {package.get('xp', 0)} XP · "
-                   f"Speed {package.get('speed', species_speed(st.session_state[spk]))} · "
-                   f"Size {package.get('size', 'Average')}")
+        st.markdown(f"#### {T('Species & Chapter')}")
+        st.caption(f"{T('Package')}: {package.get('xp', 0)} XP · "
+                   f"{T('Speed')} {package.get('speed', species_speed(st.session_state[spk]))} · "
+                   f"{T('Size')} {T(package.get('size', 'Average'))}")
 
         abilities = list(package.get("abilities", []))
         if st.session_state.get(spk) in ("Adeptus Astartes", "Primaris Astartes"):
@@ -4213,11 +4308,11 @@ def edit_view(cid, gm_mode=False):
                 if cd.get("ability"): abilities.append(cd["ability"])
                 if cd.get("tradition"): abilities.append(cd["tradition"])
         if abilities:
-            st.markdown("#### Species & Chapter Abilities")
+            st.markdown(f"#### {T('Species & Chapter Abilities')}")
             for ability in abilities:
                 st.markdown(f"<div class='tal'><span class='tn'>{html.escape(str(ability))}</span></div>", unsafe_allow_html=True)
 
-    st.markdown("<div class='sheet-banner'>Arsenal · Wargear</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='sheet-banner'>{T('Arsenal · Wargear')}</div>", unsafe_allow_html=True)
 
     # Talents are purchased by Players when their Keywords/prerequisites allow them.
     # Wargear is assigned and equipped by the Magister.
@@ -4241,16 +4336,16 @@ def edit_view(cid, gm_mode=False):
     available_xp = starting_xp(current_build["tier"], advanced=(mode == "advanced")) + int(ch.get("earned_xp", 0)) - xp_spent(current_build)
     keys = sorted(character_keywords(current_build))
 
-    st.markdown("<div class='sheet-banner'>Advancements · Talents</div>", unsafe_allow_html=True)
-    st.caption("Purchase Talents by meeting their registered prerequisites and spending XP.")
+    st.markdown(f"<div class='sheet-banner'>{T('Advancements · Talents')}</div>", unsafe_allow_html=True)
+    st.caption(T("Purchase Talents by meeting their registered prerequisites and spending XP."))
     if keys:
-        st.caption("Keywords: " + ", ".join(k.title() for k in keys))
+        st.caption(T("Keywords") + ": " + ", ".join(k.title() for k in keys))
 
     if not gm_mode:
         owned_ids = {int(t.get("craft_id", -1) or -1) for t in normalize_talents(ch.get("talents", []))}
         visible = [r for r in catalog_talents if int(r["id"]) not in owned_ids and craft_keyword_match(current_build, r)]
-        with st.expander(f"Available Talents  ·  {len(visible)}", expanded=False):
-            talent_query = st.text_input("", key=f"talent_search_{cid}", placeholder="Search Talents...", label_visibility="collapsed")
+        with st.expander(f"{T('Available Talents')}  ·  {len(visible)}", expanded=False):
+            talent_query = st.text_input("", key=f"talent_search_{cid}", placeholder=T("Search Talents..."), label_visibility="collapsed")
             if talent_query.strip():
                 q = talent_query.strip().lower()
                 visible = [r for r in visible if q in str(r.get("name", "")).lower()]
@@ -4263,12 +4358,12 @@ def edit_view(cid, gm_mode=False):
                     cols = st.columns([7, 1.25, 1.55])
                     cols[0].markdown(craft_description_html(r, "craft", name_color=color, title_text=craft_status_text(status, reason)), unsafe_allow_html=True)
                     cols[1].markdown(f"<span class='craft-shop-cost'>{cost} XP</span>", unsafe_allow_html=True)
-                    if cols[2].button("Purchase", key=f"talent_buy_{cid}_{rid}", disabled=status != "green", use_container_width=True):
+                    if cols[2].button(T("Purchase"), key=f"talent_buy_{cid}_{rid}", disabled=status != "green", use_container_width=True):
                         result = assign_craft_to_character(cid, rid, "talent", actor_name=(st.session_state.get("user") or {}).get("username", ""), actor_user_id=(st.session_state.get("user") or {}).get("id"), source="Talent Purchase")
                         if result[0]: st.rerun()
                         st.error(result[1])
             else:
-                st.caption("No Talents match the search.")
+                st.caption(T("No Talents match the search."))
     else:
         if catalog_talents:
             with st.expander(f"Assign Talent  ·  {len(catalog_talents)}", expanded=False):
@@ -4291,16 +4386,16 @@ def edit_view(cid, gm_mode=False):
             tc[1].caption(str(t.get("effect", "")))
             tc[2].caption(f"{int(t.get('cost', 0) or 0)} XP")
     else:
-        st.caption("No talents purchased.")
+        st.caption(T("No talents purchased."))
 
-    st.markdown("<div class='sheet-banner'>Advancements · Psychic Powers</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='sheet-banner'>{T('Advancements · Psychic Powers')}</div>", unsafe_allow_html=True)
     owned_powers = normalize_powers(ch.get("powers", []))
     if not gm_mode:
         catalog_powers = list_craft_items("power")
         owned_power_ids = {int(x.get("craft_id", -1) or -1) for x in owned_powers}
         visible_powers = [r for r in catalog_powers if int(r["id"]) not in owned_power_ids and craft_keyword_match(current_build, r)]
-        with st.expander(f"Available Psychic Powers  ·  {len(visible_powers)}", expanded=False):
-            power_query = st.text_input("", key=f"power_search_{cid}", placeholder="Search Psychic Powers...", label_visibility="collapsed")
+        with st.expander(f"{T('Available Psychic Powers')}  ·  {len(visible_powers)}", expanded=False):
+            power_query = st.text_input("", key=f"power_search_{cid}", placeholder=T("Search Psychic Powers..."), label_visibility="collapsed")
             if power_query.strip():
                 q = power_query.strip().lower()
                 visible_powers = [r for r in visible_powers if q in str(r.get("name", "")).lower()]
@@ -4313,12 +4408,12 @@ def edit_view(cid, gm_mode=False):
                     cols = st.columns([7, 1.25, 1.55])
                     cols[0].markdown(craft_description_html(r, "craft", name_color=color, title_text=craft_status_text(status, reason)), unsafe_allow_html=True)
                     cols[1].markdown(f"<span class='craft-shop-cost'>{cost} XP</span>", unsafe_allow_html=True)
-                    if cols[2].button("Purchase", key=f"power_buy_{cid}_{rid}", disabled=status != "green", use_container_width=True):
+                    if cols[2].button(T("Purchase"), key=f"power_buy_{cid}_{rid}", disabled=status != "green", use_container_width=True):
                         result = assign_craft_to_character(cid, rid, "power", actor_name=(st.session_state.get("user") or {}).get("username", ""), actor_user_id=(st.session_state.get("user") or {}).get("id"), source="Psychic Power Purchase")
                         if result[0]: st.rerun()
                         st.error(result[1])
             else:
-                st.caption("No Psychic Powers match the search.")
+                st.caption(T("No Psychic Powers match the search."))
     else:
         catalog_powers = list_craft_items("power")
         if catalog_powers:
@@ -4358,7 +4453,7 @@ def edit_view(cid, gm_mode=False):
 
     if wdf:
         st.markdown("<div class='arsenal-panel'>", unsafe_allow_html=True)
-        st.markdown("<div class='resource-subtitle'>INVENTORY</div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='resource-subtitle'>{T('INVENTORY')}</div>", unsafe_allow_html=True)
         for idx, w in enumerate(wdf):
             qty = max(1, int(w.get("quantity", 1) or 1))
             details_w = _gear_details_dict(w.get("details", {}))
@@ -4391,7 +4486,7 @@ def edit_view(cid, gm_mode=False):
                         if result[0]: st.rerun()
                         else: st.error(result[1])
                 else:
-                    if wc2[2].button("USE 1", key=f"sheet_use_{cid}_{idx}", disabled=qty <= 0 or _wargear_craft_id(w) < 1):
+                    if wc2[2].button(T("USE 1"), key=f"sheet_use_{cid}_{idx}", disabled=qty <= 0 or _wargear_craft_id(w) < 1):
                         result = adjust_wargear_quantity(cid, _wargear_craft_id(w), -1,
                                                          actor_name=(st.session_state.get("user") or {}).get("username", ""),
                                                          actor_user_id=(st.session_state.get("user") or {}).get("id"),
@@ -4400,7 +4495,7 @@ def edit_view(cid, gm_mode=False):
                         else: st.error(result[1])
             else:
                 equipped = bool(w.get("equipped", True))
-                if wc2[2].button("EQUIPPED" if equipped else "STOWED", key=f"sheet_eq_{cid}_{idx}"):
+                if wc2[2].button(T("EQUIPPED") if equipped else T("STOWED"), key=f"sheet_eq_{cid}_{idx}"):
                     wdf[idx]["equipped"] = not equipped
                     result = save_build(cid, ch["name"], ch.get("chapter", ""), st.session_state[spk], int(st.session_state[_k(cid, "n", "tier")]),
                                         cur_attr, cur_skill, normalize_talents(ch.get("talents", [])), json.dumps(wdf, ensure_ascii=False),
@@ -4412,7 +4507,7 @@ def edit_view(cid, gm_mode=False):
                     if result[0]: st.rerun()
                     else: st.error(result[1])
 
-            if wc2[3].button("REMOVE", key=f"sheet_rm_{cid}_{idx}"):
+            if wc2[3].button(T("REMOVE"), key=f"sheet_rm_{cid}_{idx}"):
                 wdf.pop(idx)
                 result = save_build(cid, ch["name"], ch.get("chapter", ""), st.session_state[spk], int(st.session_state[_k(cid, "n", "tier")]),
                                     cur_attr, cur_skill, normalize_talents(ch.get("talents", [])), json.dumps(wdf, ensure_ascii=False),
@@ -4425,14 +4520,14 @@ def edit_view(cid, gm_mode=False):
                 else: st.error(result[1])
         st.markdown("</div>", unsafe_allow_html=True)
     else:
-        st.caption("No Wargear assigned.")
+        st.caption(T("No Wargear assigned."))
 
     talents = normalize_talents(ch.get("talents", []))
     wargear = normalize_wargear(wdf)
     wc = st.columns(2)
-    wc[0].markdown("**Summary**")
+    wc[0].markdown(f"**{T('Summary')}**")
     wc[0].caption(f"{len(wargear)} wargear item(s) · {len(talents)} talent(s)")
-    wc[1].text_area("Notes", key=_k(cid, "t", "notes"), height=110)
+    wc[1].text_area(T("Notes"), key=_k(cid, "t", "notes"), height=110)
 
     save_result = save_build(
         cid, st.session_state[_k(cid, "t", "name")], st.session_state[_k(cid, "t", "chapter")],
@@ -4463,16 +4558,16 @@ def edit_view(cid, gm_mode=False):
     spent = xp_spent(cur); start = starting_xp(cur["tier"], advanced=(mode == "advanced")); avail = start + int(ch["earned_xp"]) - spent
     st.divider()
     x = st.columns(4)
-    x[0].metric("Starting XP", start); x[1].metric("Earned XP", ch["earned_xp"])
-    x[2].metric("XP Spent", spent); x[3].metric("XP Available", avail)
+    x[0].metric(T("Starting XP"), start); x[1].metric(T("Earned XP"), ch["earned_xp"])
+    x[2].metric(T("XP Spent"), spent); x[3].metric(T("XP Available"), avail)
     if avail < 0:
-        st.error(f"Over budget by {-avail} XP.")
+        st.error(f"{T('Over budget by')} {-avail} XP.")
 
-    with st.expander("Portrait"):
+    with st.expander(T("Portrait")):
         if ch.get("portrait"):
             st.image(ch["portrait"], width=170)
-        up = st.file_uploader("Upload", type=["png", "jpg", "jpeg"], key=f"port_{cid}")
-        if up is not None and st.button("Save Portrait", key=f"pb_{cid}"):
+        up = st.file_uploader(T("Upload"), type=["png", "jpg", "jpeg"], key=f"port_{cid}")
+        if up is not None and st.button(T("Save Portrait"), key=f"pb_{cid}"):
             set_portrait(cid, up.getvalue(), actor_role=("gm" if gm_mode else "player"),
                          actor_user_id=(st.session_state.get("user") or {}).get("id"),
                          actor_name=(st.session_state.get("user") or {}).get("username", ""),
@@ -4485,16 +4580,16 @@ def edit_view(cid, gm_mode=False):
 @contextmanager
 def _section(title, help_text, expanded=False):
     """Standard collapsed-by-default section wrapper used across every
-    Magister tab: a title, a small '?' popover explaining what the section
-    does in general terms, and content hidden until clicked open.
+    Magister tab: a title, a small circled '?' that shows its explanation on
+    hover (no click needed), and content hidden until clicked open.
 
     (st.expander in this Streamlit version has no `help=` parameter, so the
-    tooltip is a small popover placed next to the section's own expander.)
+    tooltip is a plain HTML span with a native browser hover title, placed
+    next to the section's own expander.)
     """
     hcol, qcol = st.columns([30, 1])
     with qcol:
-        with st.popover("?"):
-            st.caption(help_text)
+        st.markdown(f"<span class='info-tip' title='{html.escape(str(help_text))}'>?</span>", unsafe_allow_html=True)
     with hcol:
         exp = st.expander(title, expanded=expanded)
     with exp:
@@ -5733,14 +5828,15 @@ def gm_view():
 
 
 def player_view():
+    _language_flag_toggle()
     camp = get_campaign()
     st.markdown(f"<div class='banner'>✠ SERVICE RECORD ✠"
-                f"<span class='sub'>{camp['name']} · Session {camp['session_no']}</span></div>", unsafe_allow_html=True)
+                f"<span class='sub'>{camp['name']} · {T('Session')} {camp['session_no']}</span></div>", unsafe_allow_html=True)
     cid = char_id_for_user(st.session_state.user["id"])
     if not cid:
-        st.error("No character sheet linked. Contact the Magister.")
+        st.error(T("No character sheet linked. Contact the Magister."))
         return
-    t = st.tabs(["Battle View", "Character Sheet"])
+    t = st.tabs([T("Battle View"), T("Character Sheet")])
     with t[0]:
         battle_view(cid)
     with t[1]:

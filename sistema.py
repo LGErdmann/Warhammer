@@ -352,6 +352,215 @@ ARCHETYPES = {
     "Inquisitor": {"tier": 4, "species": "Human", "xp": 110, "faction": "Inquisition"},
     "Primaris Intercessor": {"tier": 4, "species": "Primaris Astartes", "xp": 300, "faction": "Adeptus Astartes"},
 }
+
+# ============================================================
+#  BESTIARY (Core Rulebook 2e, "Bestiary" chapter, p.322+)
+# ============================================================
+# Registered into the same ARCHETYPES/ARCHETYPE_PACKAGES/ARCHETYPE_STARTING_WARGEAR
+# registries as Player Archetypes so the Generic NPC mob generator (Combat tab)
+# can build them through the exact same pipeline. Every name ends in
+# "(Bestiary)" so it is never confused with a Player-facing Archetype in any
+# dropdown that lists them together.
+# The Bestiary format (p.323) prints each Skill as a single combined dice pool
+# (Skill Rating + linked Attribute Rating already added together), so the
+# Skill Rating stored below is back-solved as pool - attribute. Defence,
+# Resilience, Wounds, and Shock are derived from this system's normal
+# Attribute-formula instead of the printed flat numbers — per the book itself
+# (p.322): "Their statistics ... rather than strictly following the same
+# mechanics used to build characters" — so some drift from the exact printed
+# numbers is expected and left to the Magister to tweak.
+_BESTIARY_ENTRIES = [
+    # (name, tier, species, faction, attributes[S,T,A,I,W,Int,Fel], skill pools{name: pool}, starting wargear[], abilities text)
+    ("Imperial Citizen", 1, "Human", "The Imperium",
+     [2, 2, 3, 2, 3, 1, 2], {"Awareness": 3}, [],
+     "ACTION: Unarmed 2 +1 ED / Range 1. COMPLICATION: Cheap Augmetic — an augmetic malfunctions; Hindered "
+     "until repaired (DN 3 Tech). DETERMINATION: Spend 1 Ruin to roll 2d6. Default Skill Pool (unlisted "
+     "Skills): 4. (Bestiary, Imperial Threats, Core Rulebook 2e)"),
+    ("Astra Militarum Trooper", 1, "Human", "Astra Militarum",
+     [3, 3, 3, 3, 2, 1, 2], {"Awareness": 5, "Ballistic Skill": 5}, ["Lasgun", "Frag Grenade", "Knife", "Flak Armour"],
+     "ACTION: Lasgun 7 +1 ED / Range 12-24-36 / Salvo 2 / Rapid Fire (1), Reliable. Frag Grenade (1 Ammo) "
+     "10 +4 ED / Range 12 / Blast (6). Knife or Bayonet 5 +2 ED / Range 1. DETERMINATION: Spend 1 Ruin to "
+     "roll 3d6. Default Skill Pool: 4. (Bestiary, Imperial Threats, Core Rulebook 2e)"),
+    ("Tactical Space Marine", 3, "Adeptus Astartes", "Adeptus Astartes",
+     [7, 5, 5, 5, 4, 4, 2], {"Awareness": 9, "Ballistic Skill": 10, "Weapon Skill": 9},
+     ["Aquila Mk VII Power Armour", "Boltgun", "Astartes Combat Knife"],
+     "BONUSES: Know No Fear (reroll failed Resolve Test dice). Space Marine Implants. Champion (3 personal "
+     "Ruin). ACTION: Boltgun 10 +1 ED / Range 12-24-36 / Salvo 2 / Brutal, Rapid Fire (2). Astartes Combat "
+     "Knife 10 +2 ED / Range 1 / Reliable. RUIN: Angel of Death — spend 1 Ruin to add the Tier in ED to all "
+     "attacks this Round. DETERMINATION: Spend 1 Ruin to roll 6d6. Default Skill Pool: 7. "
+     "(Bestiary, Imperial Threats, Core Rulebook 2e)"),
+    ("Enforcer", 1, "Human", "The Imperium",
+     [3, 3, 3, 3, 3, 3, 3], {"Awareness": 6, "Intimidation": 7, "Investigation": 6, "Weapon Skill": 6},
+     ["Combat Shotgun", "Shock Maul", "Flak Armour"],
+     "BONUSES: Brutal Discipline (+2 bonus dice vs. SCUM/HERETIC). BATTLECRY: Freeze, Scum! — Intimidation "
+     "Interaction Attack against 2 targets, no penalty. ACTION: Combat Shotgun 10 +1 ED / Range 6-12-18 / "
+     "Salvo 2 / Assault, Rapid-Fire (1), Spread. Shock Maul 7 +4 ED / AP -1 / Range 1 / Agonising, Brutal. "
+     "DETERMINATION: Spend 1 Ruin to roll 5d6. Default Skill Pool: 5. (Bestiary, Imperial Threats, Core Rulebook 2e)"),
+    ("Chrono Gladiator", 2, "Human", "Scum",
+     [4, 4, 2, 4, 3, 2, 1], {"Awareness": 4}, ["Power Claw"],
+     "ACTION: Power Claw 13 +3 ED / AP -2 / Range 1 / Brutal, Unwieldy (2). WRATH: Borrowed Time — Free "
+     "Action attack against any target in range. REACTION: Combat Stimms — once per round, suffer 1 Shock "
+     "to take an immediate Combat Action. DETERMINATION: Spend 1 Ruin to roll 4d6. Default Skill Pool: 7. "
+     "(Bestiary, Imperial Threats, Core Rulebook 2e)"),
+    ("Mutant", 1, "Human", "Scum",
+     [4, 3, 3, 4, 3, 2, 2], {"Weapon Skill": 6}, ["Industrial Bludgeon"],
+     "BONUSES: Mutative — whenever this Threat deals a Wound, the GM gains +1 Ruin. ACTION: Industrial "
+     "Bludgeon 8 +2 ED / Range 1 / Brutal, Unwieldy. WRATH: Sticky Fingers. REACTION: Desperation. "
+     "DETERMINATION: Spend 1 Ruin to roll 3d6. Default Skill Pool: 5. (Bestiary, Imperial Threats, Core Rulebook 2e)"),
+    ("Scum", 1, "Human", "Scum",
+     [2, 3, 3, 3, 2, 1, 2], {"Awareness": 6, "Stealth": 7, "Weapon Skill": 6}, ["Autopistol", "Combat Knife"],
+     "ACTION: Autopistol 7 +1 ED / Range 6-12-18 / Salvo 2 / Pistol. Combat Knife 4 +2 ED / Range 1. "
+     "BATTLECRY: Without Honour — first round, may substitute Stealth for Weapon/Ballistic Skill Tests. "
+     "DETERMINATION: Spend 1 Ruin to roll 3d6. Default Skill Pool: 5. (Bestiary, Imperial Threats, Core Rulebook 2e)"),
+    ("Combat Servitor", 2, "Servitor", "Adeptus Mechanicus",
+     [4, 2, 2, 2, 1, 1, 1], {"Weapon Skill": 5}, ["Servo Arm"],
+     "BONUSES: Iron Soul — unaffected by mind-affecting abilities, never needs a Resolve Test. Printed Shock "
+     "is '-' (Unstoppable, never suffers Shock damage). ACTION: Servo Arm 9 +2 ED / AP -3 / Range 1 / Brutal, "
+     "Unwieldy (2). COMPLICATION: Error — Exhausted for 1 Round. DETERMINATION: Spend 1 Ruin to roll 3d6. "
+     "Default Skill Pool: 4. (Bestiary, Imperial Threats, Core Rulebook 2e)"),
+    ("Servo-Skull", 1, "Servitor", "Adeptus Mechanicus",
+     [1, 1, 2, 4, 2, 3, 2], {"Awareness": 6, "Stealth": 7}, [],
+     "BONUSES: Iron Soul. Assistant — Elite/Adversary allies within 10m gain +2 bonus dice to Skill Tests. "
+     "Printed Shock is '-' (Unstoppable). ACTION: Skull Bash 3 +1 ED / Range 1. Flight, Speed 10, Size Tiny. "
+     "DETERMINATION: Spend 1 Ruin to roll 2d6. Default Skill Pool: 5. (Bestiary, Imperial Threats, Core Rulebook 2e)"),
+    ("Cultist", 1, "Cultista do Caos", "Chaos",
+     [2, 3, 2, 3, 3, 2, 3], {"Awareness": 4, "Deception": 5, "Stealth": 5, "Weapon Skill": 5},
+     ["Autopistol", "Knife"],
+     "BONUSES: Devotion — GM gains 1 Ruin whenever a Cultist is slain by a Critical Hit. ACTION: Shoot and "
+     "Stab (no Multi-Action penalty for Autopistol + Knife). Autopistol 7 +1 ED / Range 6-12-18 / Salvo 2 / "
+     "Pistol. Knife 4 +2 ED / Range 1. DETERMINATION: Spend 1 Ruin to roll 3d6. Default Skill Pool: 3. "
+     "(Bestiary, Heretical Threats, Core Rulebook 2e)"),
+    ("Cult Leader", 3, "Cultista do Caos", "Chaos",
+     [3, 4, 3, 4, 5, 4, 4], {"Awareness": 7, "Deception": 7, "Intimidation": 7, "Persuasion": 8, "Stealth": 6, "Weapon Skill": 7},
+     ["Autopistol", "Chainsword"],
+     "BONUSES: Herald of Ruin, Champion (1 personal Ruin), Priest of the Dark Gods (+2 bonus dice to "
+     "Interaction Attacks). BATTLECRY: Kneel Before the Dark Gods! ACTION: Autopistol 7 +1 ED / Range "
+     "6-12-18 / Salvo 2 / Pistol. Chainsword 8 +4 ED / Range 1 / Brutal, Parry. RUIN: Kill Them ALL! "
+     "DETERMINATION: Spend 1 Ruin to roll 4d6. Default Skill Pool: 6. (Bestiary, Heretical Threats, Core Rulebook 2e)"),
+    ("Rogue Psyker", 3, "Cultista do Caos", "Chaos",
+     [2, 3, 2, 5, 5, 4, 2], {"Awareness": 6, "Psychic Mastery": 8}, ["Laspistol"],
+     "BONUSES: Champion (2 personal Ruin), Warp Touched (bonus Wrath dice on Psychic Mastery Tests equal "
+     "to Tier). ACTION: Maleficarum (Smite or a Maleficarum power). Laspistol 7 +1 ED / Range 6-12-18 / "
+     "Salvo 1 / Pistol, Reliable. RUIN: Psychic Storm. DETERMINATION: Spend 1 Ruin to roll 3d6. Default "
+     "Skill Pool: 5. (Bestiary, Heretical Threats, Core Rulebook 2e)"),
+    ("Possessed Mortal", 3, "Cultista do Caos", "Chaos",
+     [5, 4, 2, 4, 3, 4, 3], {"Awareness": 9, "Weapon Skill": 7}, [],
+     "BONUSES: Champion (2 personal Ruin). BATTLECRY: Frightful Form (DN 3 Fear Test). ACTION: Horrifying "
+     "Tendril 11 +2 ED / AP -2 / Range 4. DETERMINATION: Daemonic Determination — spend 1 Ruin to roll 4d6; "
+     "can roll against Mortal Wounds, negated Wounds are ignored instead of becoming Shock. ANNIHILATION: "
+     "Burnt Body — Warp Explosion 5 +5 ED / Agonising, Blast (6). Default Skill Pool: 6. "
+     "(Bestiary, Heretical Threats, Core Rulebook 2e)"),
+    ("Chaos Space Marine", 4, "Chaos Space Marine", "Chaos",
+     [8, 6, 5, 5, 4, 3, 2], {"Awareness": 9, "Ballistic Skill": 8, "Weapon Skill": 8},
+     ["Bolt Pistol", "Chainsword", "Mark V Power Armour"],
+     "BONUSES: Architect of Ruin (GM gains 1 Ruin at the start of each of this Threat's turns), Champion "
+     "(1 personal Ruin), Mark of Chaos, Space Marine Implants. ACTION: Bolt Pistol 10 +1 ED / Range 6-12-18 "
+     "/ Salvo 1 / Brutal, Pistol. Chainsword 13 +4 ED / Range 1 / Brutal, Parry. RUIN: Veteran of the Long "
+     "War — add the Tier as ED to all attacks this Round. DETERMINATION: Spend 1 Ruin to roll 6d6. Default "
+     "Skill Pool: 5. (Bestiary, Heretical Threats, Core Rulebook 2e)"),
+    ("Possessed Chaos Space Marine", 4, "Chaos Space Marine", "Chaos",
+     [9, 8, 6, 6, 5, 5, 1], {"Awareness": 9, "Ballistic Skill": 9, "Weapon Skill": 9}, ["Mark V Power Armour"],
+     "BONUSES: Architect of Ruin, Champion (4 personal Ruin), Writhing Tentacles (Multi-Attack all Engaged "
+     "enemies without a DN penalty). BATTLECRY: Sea of Mutations (apply a Severe Mutation at combat start). "
+     "ACTION: Horrifying Mutations 13 +2 ED / AP -2 / Range 1. RUIN: Veteran of the Long War. DETERMINATION: "
+     "Daemonic Determination — spend 1 Ruin to roll 9d6. ANNIHILATION: Painful Lessons (GM gains 2 Ruin on "
+     "death). Default Skill Pool: 5. (Bestiary, Heretical Threats, Core Rulebook 2e)"),
+    ("Bloodletter", 3, "Daemon de Khorne", "Chaos",
+     [7, 6, 3, 4, 3, 3, 3], {"Awareness": 9, "Weapon Skill": 10}, [],
+     "BONUSES: Locus of Fury — anyone meleeing within 2m may reroll 1s on Weapon Skill Tests. Printed Shock "
+     "is '-' (Unstoppable). BATTLECRY: Frightful Form. ACTION: Hellblade 13 +2 ED / AP -3 / Range 1 / "
+     "Brutal, Parry. WRATH: Blood for the Blood God! (inflicts Bleeding). DETERMINATION: Daemonic "
+     "Determination — spend 1 Ruin to roll 6d6. Default Skill Pool: 5. (Bestiary, Daemonic Threats, Core Rulebook 2e)"),
+    ("Daemonette", 3, "Daemon de Slaanesh", "Chaos",
+     [5, 4, 7, 7, 4, 4, 6], {"Awareness": 9, "Deception": 9, "Persuasion": 9, "Weapon Skill": 9}, [],
+     "BONUSES: Allure of Slaanesh — attacks against Daemonettes use Willpower instead of Agility/Initiative. "
+     "Printed Shock is '-' (Unstoppable). BATTLECRY: Disquieting Creature & Quicksilver Swiftness (DN 3 Fear "
+     "Test; acts first as though Seizing the Initiative). ACTION: Piercing Claws 11 +2 ED / AP -1 / Range 1 "
+     "/ Parry, Penetrating (3). DETERMINATION: Daemonic Determination — spend 1 Ruin to roll 4d6. Default "
+     "Skill Pool: 8. (Bestiary, Daemonic Threats, Core Rulebook 2e)"),
+    ("Pink Horror", 3, "Daemon de Tzeentch", "Chaos",
+     [3, 3, 3, 4, 4, 4, 4], {"Awareness": 9, "Psychic Mastery": 9, "Weapon Skill": 9}, [],
+     "Printed Shock is '-' (Unstoppable). BATTLECRY: Frightful Form. ACTION: Coruscating Flames 9 +1 ED / "
+     "Range 12-24-36 / Salvo 1 / Assault, Inflicts (On Fire), Spread. Magical Claws 6 +2 ED / Range 1. "
+     "DETERMINATION: Daemonic Determination — spend 1 Ruin to roll 3d6. ANNIHILATION: Split — becomes two "
+     "Blue Horrors. Default Skill Pool: 8. (Bestiary, Daemonic Threats, Core Rulebook 2e)"),
+    ("Blue Horror", 3, "Daemon de Tzeentch", "Chaos",
+     [3, 3, 3, 4, 4, 4, 4], {"Awareness": 7, "Psychic Mastery": 8, "Weapon Skill": 8}, [],
+     "Printed Wounds: 3 (uses Pink Horror's Attributes with lower Skills). ACTION: Scrabbling Claws 5 +2 ED "
+     "/ Range 1. ANNIHILATION: Split — becomes two Brimstone Horrors. Default Skill Pool: 7. "
+     "(Bestiary, Daemonic Threats, Core Rulebook 2e)"),
+    ("Brimstone Horror", 3, "Daemon de Tzeentch", "Chaos",
+     [3, 3, 3, 4, 4, 4, 4], {"Awareness": 5, "Psychic Mastery": 7, "Weapon Skill": 7}, [],
+     "Printed Wounds: 1 (uses Pink Horror's Attributes with lower Skills). ACTION: Scrabbling Claws 4 +1 ED "
+     "/ Range 1. Default Skill Pool: 6. (Bestiary, Daemonic Threats, Core Rulebook 2e)"),
+    ("Plaguebearer", 3, "Daemon de Nurgle", "Chaos",
+     [4, 8, 3, 4, 3, 3, 1], {"Awareness": 7, "Weapon Skill": 9}, [],
+     "BONUSES: Cloud of Flies — counts as Full Cover at all times. Printed Shock is '-' (Unstoppable). "
+     "BATTLECRY: Frightful Form. ACTION: Plaguesword 11 +2 ED / Range 1 / Inflict (Poison 7), Parry. "
+     "DETERMINATION: Disgustingly Resilient — no Ruin cost to roll Determination, roll 7d6; can roll "
+     "against Mortal Wounds. Default Skill Pool: 8. (Bestiary, Daemonic Threats, Core Rulebook 2e)"),
+    ("Poxwalker", 1, "Human", "Chaos",
+     [4, 3, 2, 2, 1, 1, 1], {"Awareness": 3, "Weapon Skill": 5}, [],
+     "BONUSES: Mindless — automatically passes Resolve Tests. ACTION: Infectious Fists and Teeth 6 +1 ED / "
+     "Range 1 / Inflicts (Poison 3). DETERMINATION: Spend 1 Ruin to roll 3d6. Default Skill Pool: 3. "
+     "(Bestiary, Daemonic Threats, Core Rulebook 2e)"),
+    ("Chaos Spawn", 3, "Fera", "Chaos",
+     [5, 6, 5, 4, 1, 1, 1], {"Awareness": 6, "Weapon Skill": 9}, [],
+     "BONUSES: Architect of Ruin, Champion. BATTLECRY: Terrifying (DN 5 Terror Test). ACTION: Hideous "
+     "Mutations — roll 1d3 each turn: 1) Razor Claw 12 +3 ED / AP -4 / Range 1; 2) Grasping Tendrils 12 +3 "
+     "ED / AP -2 / Range 4; 3) Dripping Poison 12 +3 ED / AP -2 / Inflict (Poison 7) / Range 1. "
+     "DETERMINATION: Spend 1 Ruin to roll 6d6. Size Large. Default Skill Pool: 5. "
+     "(Bestiary, Daemonic Threats, Core Rulebook 2e)"),
+    ("Ork Boy", 1, "Ork", "Orks",
+     [4, 4, 2, 3, 1, 1, 1], {"Awareness": 4, "Ballistic Skill": 4, "Weapon Skill": 7},
+     ["Slugga", "Choppa", "Frag Grenade"],
+     "BONUSES: 'Ere We Go! — +2 damage to melee attacks if Engaged at the start of its Turn. BATTLECRY: Get "
+     "Stuck In! (Charge + DN 3 Fear Test on a hit). ACTION: Slugga 10 +1 ED / Range 6-12-18 / Salvo 1 / "
+     "Pistol, Waaagh! Choppa 7 +3 ED / Range 1 / Reliable, Waaagh! Stikkbombz (2) 9 +5 ED / Range 16 / Blast "
+     "(6). DETERMINATION: Spend 1 Ruin to roll 4d6. Default Skill Pool: 5. (Bestiary, Ork Threats, Core Rulebook 2e)"),
+    ("Kommando (Ork)", 2, "Ork", "Orks",
+     [4, 4, 4, 3, 2, 2, 1], {"Awareness": 6, "Ballistic Skill": 4, "Cunning": 6, "Stealth": 8, "Survival": 7, "Weapon Skill": 7},
+     ["Slugga", "Choppa"],
+     "BATTLECRY: Sneaky Gitz — first round of an ambush, may use Stealth pool (8) for any Test. ACTION: "
+     "Slugga 10 +1 ED / Range 6-12-18 / Salvo 1 / Pistol, Waaagh! Choppa 7 +3 ED / Range 1 / Reliable, "
+     "Waaagh! Stikkbombz (2) 9 +5 ED / Range 24 / Blast (6). DETERMINATION: Spend 1 Ruin to roll 4d6. "
+     "Default Skill Pool: 5. (Bestiary, Ork Threats, Core Rulebook 2e)"),
+    ("Ork Nob", 2, "Ork", "Orks",
+     [6, 6, 2, 4, 3, 1, 2], {"Awareness": 4, "Ballistic Skill": 3, "Weapon Skill": 10}, ["Shoota", "'Eavy Armour"],
+     "BONUSES: Champion (3 personal Ruin), 'Ere We Go! ACTION: Shoota 10 +1 ED / Range 9-18-27 / Salvo 2 / "
+     "Assault, Waaagh! Big Choppa 11 +5 ED / AP -1 / Range 1 / Waaagh! Stikkbombz (2) 9 +5 ED / Range 20 / "
+     "Blast (6). RUIN: I'm Da Boss! (allied ORKs within 10m gain +2 bonus dice to Weapon Skill Tests). "
+     "REACTION: Orks Is Never Defeated. DETERMINATION: Spend 1 Ruin to roll 4d6. Default Skill Pool: 6. "
+     "(Bestiary, Ork Threats, Core Rulebook 2e)"),
+    ("Painboy", 2, "Ork", "Orks",
+     [5, 4, 3, 4, 3, 2, 1], {"Awareness": 6, "Medicae": 6, "Weapon Skill": 8}, ["Power Claw"],
+     "BONUSES: Champion (3 personal Ruin), Bionik Boyz, 'Ere We Go! ACTION: Wetwork (Dok's Tools + weapon "
+     "attack, no Multi-Action penalty). Dok's Tools — DN 3 Medicae (Int) Test heals an ally. Power Claw 11 "
+     "+5 ED / AP -3 / Range 1 / Brutal, Unwieldy (3), Waaagh! 'Urty Syringe 8 +2 ED / Rending (6). RUIN: "
+     "Kwik Fix. DETERMINATION: Spend 1 Ruin to roll 4d6. Default Skill Pool: 5. (Bestiary, Ork Threats, Core Rulebook 2e)"),
+    ("Grot", 1, "Ork", "Orks",
+     [1, 1, 3, 3, 2, 2, 1], {"Awareness": 4, "Ballistic Skill": 2}, ["Autopistol", "Combat Knife"],
+     "ACTION: Grot Blasta 7 +1 ED / Range 6-12-18 / Salvo 1 / Pistol. Combat Knife 3 +2 ED / Range 1. Size "
+     "Small. DETERMINATION: Spend 1 Ruin to roll 3d6. Default Skill Pool: 4. (Bestiary, Ork Threats, Core Rulebook 2e)"),
+    ("Killa Kan", 2, "Ork", "Orks",
+     [10, 5, 3, 3, 3, 2, 1], {"Awareness": 6, "Ballistic Skill": 7, "Weapon Skill": 6}, [],
+     "ACTION: Grotzooka 12 +2 ED / AP -1 / Range 9-18-36 / Salvo 1 / Brutal, Spread. Buzz Saw 17 +6 ED / AP "
+     "-2 / Range 1 / Brutal, Unwieldy (2). REACTION: Kanned Rage (becomes Frenzied on an Icon). "
+     "DETERMINATION: Spend 1 Ruin to roll 4d6. ANNIHILATION: Explosive — Killa Kan Explosion 12 +5 ED / "
+     "Blast (10) on a Complication. Size Large. Default Skill Pool: 5. (Bestiary, Ork Threats, Core Rulebook 2e)"),
+]
+
+ARCHETYPE_STARTING_TALENTS = {}
+BESTIARY_ARCHETYPE_NAMES = frozenset(f"{_e[0]} (Bestiary)" for _e in _BESTIARY_ENTRIES)
+for _name, _tier, _species, _faction, _attrs7, _skill_pools, _wargear, _abilities in _BESTIARY_ENTRIES:
+    _full_name = f"{_name} (Bestiary)"
+    _attr_map = dict(zip(ATTRS, _attrs7))
+    _skills_map = {sk: max(0, int(pool) - int(_attr_map.get(SKILLS[sk], 1))) for sk, pool in _skill_pools.items()}
+    ARCHETYPES[_full_name] = {"tier": _tier, "species": _species, "xp": 0, "faction": _faction, "bestiary": True}
+    ARCHETYPE_PACKAGES[_full_name] = {"attributes": _attr_map, "skills": _skills_map}
+    ARCHETYPE_STARTING_WARGEAR[_full_name] = _wargear
+    ARCHETYPE_STARTING_TALENTS[_full_name] = [{"name": f"{_name} — Bestiary Abilities", "effect": _abilities, "cost": 0}]
+
 CORE_ARCHETYPE_NAMES = frozenset(ARCHETYPES.keys())
 
 def rank_eligible_from_xp(xp):
@@ -687,7 +896,8 @@ def init_db():
         attributes TEXT, skills TEXT, talents TEXT, powers TEXT, wargear TEXT, armour INTEGER DEFAULT 0,
         cur_wounds INTEGER DEFAULT 0, cur_shock INTEGER DEFAULT 0, cur_wrath INTEGER DEFAULT 0, cur_ammo INTEGER DEFAULT 3,
         cur_corruption INTEGER DEFAULT 0, cur_wealth INTEGER DEFAULT 0, cur_faith INTEGER DEFAULT 0,
-        notes TEXT, folder_id INTEGER, portrait BLOB, comms_on INTEGER DEFAULT 1, comms_changed_at TEXT, updated_at TEXT, revision INTEGER DEFAULT 0)""")
+        notes TEXT, folder_id INTEGER, portrait BLOB, comms_on INTEGER DEFAULT 1, comms_changed_at TEXT, updated_at TEXT, revision INTEGER DEFAULT 0,
+        temp_instance INTEGER DEFAULT 0)""")
     c.execute("""CREATE TABLE IF NOT EXISTS campaign(id INTEGER PRIMARY KEY CHECK (id=1),
         name TEXT, tier INTEGER DEFAULT 2, ruin INTEGER DEFAULT 0, session_no INTEGER DEFAULT 1)""")
     c.execute("""CREATE TABLE IF NOT EXISTS log(id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -741,7 +951,8 @@ def init_db():
         "cur_shock": "INTEGER DEFAULT 0", "cur_wrath": "INTEGER DEFAULT 0", "cur_ammo": "INTEGER DEFAULT 3",
         "cur_corruption": "INTEGER DEFAULT 0", "cur_wealth": "INTEGER DEFAULT 0", "cur_faith": "INTEGER DEFAULT 0", "notes": "TEXT",
         "folder_id": "INTEGER", "portrait": "BLOB", "comms_on": "INTEGER DEFAULT 1",
-        "comms_changed_at": "TEXT", "updated_at": "TEXT", "revision": "INTEGER DEFAULT 0"})
+        "comms_changed_at": "TEXT", "updated_at": "TEXT", "revision": "INTEGER DEFAULT 0",
+        "temp_instance": "INTEGER DEFAULT 0"})
     if not had_wealth_column:
         # Core Rulebook 2e, p.38: "Your starting Wealth is equal to your
         # Tier." Existing characters migrating to this column all land on
@@ -877,15 +1088,9 @@ def create_player(username, pw, creation_mode="archetype", tier=2, rank=1, speci
         conn.close()
 
 
-def create_npc(name, species, tier, creation_mode="archetype", rank=1, archetype=""):
-    conn = get_conn()
-    tier = max(1, min(MAX_TIER, int(tier)))
-    rank = max(1, min(3, int(rank)))
-    if creation_mode == "advanced":
-        archetype = ""
-    else:
-        archetype = archetype if archetype in ARCHETYPES else default_archetype_for_species(species, tier)
-
+def _npc_attrs_skills_gear(species, creation_mode, archetype):
+    """Shared build logic for a fresh NPC: species + archetype packages applied
+    to base attributes/skills, plus normalized starting Wargear/Ammo."""
     attrs = default_attributes()
     skills = default_skills()
     species_alias = {
@@ -909,15 +1114,152 @@ def create_npc(name, species, tier, creation_mode="archetype", rank=1, archetype
 
     starting_gear = archetype_starting_wargear(archetype) if creation_mode != "advanced" else []
     starting_gear = normalize_wargear(starting_gear + starting_ammo_for_wargear(starting_gear))
+    # Bestiary entries (see ARCHETYPE_STARTING_TALENTS) carry their printed
+    # Abilities/Bonuses/Actions as a single descriptive Talent, since those are
+    # mostly conditional/activated effects rather than passive sheet modifiers.
+    starting_talents = [dict(t) for t in ARCHETYPE_STARTING_TALENTS.get(archetype, [])]
+    return attrs, skills, starting_gear, starting_talents
+
+
+def _auto_spend_xp(attrs, skills, budget, spent_already):
+    """Greedily spends whatever is left of `budget` (after `spent_already`) on
+    the cheapest next Attribute/Skill upgrade available, one point at a time,
+    until nothing affordable remains. Used to quickly build combat-ready
+    Generic NPCs that have "all their XP spent" without a specific manual build."""
+    remaining = int(budget) - int(spent_already)
+    if remaining <= 0:
+        return attrs, skills
+    attr_cap = max(ATTR_COST.keys())
+    skill_cap = max(SKILL_COST.keys())
+    while remaining > 0:
+        best = None  # (step_cost, "attr"/"skill", key)
+        for a in ATTRS:
+            cur = int(attrs.get(a, 1))
+            if cur >= attr_cap:
+                continue
+            step_cost = ATTR_COST.get(cur + 1, 10**9) - ATTR_COST.get(cur, 0)
+            if step_cost <= remaining and (best is None or step_cost < best[0]):
+                best = (step_cost, "attr", a)
+        for s in SKILLS:
+            cur = int(skills.get(s, 0))
+            if cur >= skill_cap:
+                continue
+            step_cost = SKILL_COST.get(cur + 1, 10**9) - SKILL_COST.get(cur, 0)
+            if step_cost <= remaining and (best is None or step_cost < best[0]):
+                best = (step_cost, "skill", s)
+        if best is None:
+            break
+        step_cost, kind, key = best
+        if kind == "attr":
+            attrs[key] = int(attrs.get(key, 1)) + 1
+        else:
+            skills[key] = int(skills.get(key, 0)) + 1
+        remaining -= step_cost
+    return attrs, skills
+
+
+def create_npc(name, species, tier, creation_mode="archetype", rank=1, archetype=""):
+    conn = get_conn()
+    tier = max(1, min(MAX_TIER, int(tier)))
+    rank = max(1, min(3, int(rank)))
+    if creation_mode == "advanced":
+        archetype = ""
+    else:
+        archetype = archetype if archetype in ARCHETYPES else default_archetype_for_species(species, tier)
+
+    attrs, skills, starting_gear, starting_talents = _npc_attrs_skills_gear(species, creation_mode, archetype)
     faction = ARCHETYPES.get(archetype, {}).get("faction", "") if archetype else ""
     conn.execute("""INSERT INTO characters(user_id,kind,name,chapter,species,archetype,faction,keywords,archetype_choices,creation_mode,tier,starting_tier,rank,earned_xp,other_xp,
                     attributes,skills,talents,powers,wargear,armour,cur_wounds,cur_shock,cur_wrath,cur_corruption,cur_wealth,notes,
                     comms_on,comms_changed_at)
                     VALUES(NULL,'npc',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                  (name or "NPC", "", species, archetype, faction, json.dumps([], ensure_ascii=False), json.dumps({}, ensure_ascii=False), creation_mode, tier, tier, rank, 0, 0, json.dumps(attrs),
-                  json.dumps(skills), json.dumps([]), json.dumps([]), json.dumps(starting_gear, ensure_ascii=False), 0, 0, 0, 0,
+                  json.dumps(skills), json.dumps(starting_talents, ensure_ascii=False), json.dumps([]), json.dumps(starting_gear, ensure_ascii=False), 0, 0, 0, 0,
                   # Core Rulebook 2e, p.38: Corruption starts at 0, Wealth starts equal to Tier.
                   0, tier, "", 1, now_iso()))
+    conn.commit(); conn.close()
+
+
+def generic_npc_options():
+    """Archetypes usable for quick disposable Generic NPC mobs (Magister-only combat filler)."""
+    return list(ARCHETYPES.keys())
+
+
+def create_generic_npcs(archetype, tier, quantity, spend_xp=True):
+    """Instantiates `quantity` disposable NPC mobs of the given Archetype/Tier
+    directly into the active combat encounter. They are flagged temp_instance=1:
+    hidden from the normal roster and deleted automatically once combat ends,
+    unless the Magister explicitly saves one from its character sheet
+    (see save_temp_instance)."""
+    if archetype not in ARCHETYPES:
+        return []
+    tier = max(1, min(MAX_TIER, int(tier)))
+    quantity = max(1, min(20, int(quantity)))
+    species = ARCHETYPES[archetype].get("species", "Human")
+    faction = ARCHETYPES[archetype].get("faction", "")
+    budget = starting_xp(tier)
+    # Bestiary stat blocks are printed complete and tier-agnostic (p.322: "not
+    # strictly following the same mechanics used to build characters") —
+    # auto-spending leftover Tier XP on top of them would distort the intended
+    # numbers, so it never applies to them regardless of the Magister's toggle.
+    if archetype in BESTIARY_ARCHETYPE_NAMES:
+        spend_xp = False
+
+    conn = get_conn()
+    prefix = f"{archetype} #"
+    existing = conn.execute(
+        "SELECT name FROM characters WHERE archetype=? AND temp_instance=1", (archetype,)
+    ).fetchall()
+    next_idx = 1
+    for r in existing:
+        nm = r["name"] or ""
+        if nm.startswith(prefix):
+            try:
+                next_idx = max(next_idx, int(nm[len(prefix):].strip()) + 1)
+            except Exception:
+                pass
+
+    ids = []
+    for i in range(quantity):
+        attrs, skills, starting_gear, starting_talents = _npc_attrs_skills_gear(species, "archetype", archetype)
+        if spend_xp:
+            base_ch = {"species": species, "attributes": attrs, "skills": skills,
+                       "creation_mode": "archetype", "archetype": archetype, "talents": [], "other_xp": 0}
+            attrs, skills = _auto_spend_xp(attrs, skills, budget, xp_spent(base_ch))
+        name = f"{prefix}{next_idx + i}"
+        cur = conn.execute("""INSERT INTO characters(user_id,kind,name,chapter,species,archetype,faction,keywords,archetype_choices,creation_mode,tier,starting_tier,rank,earned_xp,other_xp,
+                        attributes,skills,talents,powers,wargear,armour,cur_wounds,cur_shock,cur_wrath,cur_corruption,cur_wealth,notes,
+                        comms_on,comms_changed_at,temp_instance)
+                        VALUES(NULL,'npc',?,?,?,?,?,?,?,'archetype',?,?,1,0,0,?,?,?,?,?,0,0,0,0,0,?,?,1,?,1)""",
+                            (name, "", species, archetype, faction, json.dumps([], ensure_ascii=False), json.dumps({}, ensure_ascii=False),
+                             tier, tier, json.dumps(attrs), json.dumps(skills), json.dumps(starting_talents, ensure_ascii=False), json.dumps([]),
+                             json.dumps(starting_gear, ensure_ascii=False), tier, "", now_iso()))
+        ids.append(int(cur.lastrowid))
+    conn.commit(); conn.close()
+    for cid in ids:
+        add_combat_participant(cid)
+    return ids
+
+
+def save_temp_instance(cid):
+    """Turns a disposable Generic NPC (temp_instance=1) into a normal, permanent
+    character sheet that survives combat ending and shows up on the roster."""
+    conn = get_conn()
+    conn.execute("UPDATE characters SET temp_instance=0 WHERE id=?", (int(cid),))
+    conn.commit(); conn.close()
+
+
+def purge_unsaved_temp_instances(character_ids=None):
+    """Deletes still-disposable Generic NPCs (temp_instance=1) — either a given
+    set of character ids, or every one left in the database if none is given.
+    Called when combat ends/clears so unsaved mobs don't linger forever."""
+    conn = get_conn()
+    if character_ids is None:
+        conn.execute("DELETE FROM characters WHERE temp_instance=1")
+    elif character_ids:
+        qmarks = ",".join("?" * len(character_ids))
+        conn.execute(f"DELETE FROM characters WHERE temp_instance=1 AND id IN ({qmarks})",
+                     [int(x) for x in character_ids])
     conn.commit(); conn.close()
 
 
@@ -1475,13 +1817,21 @@ def craft_modifiers(row):
         if m:
             trait_text += ", " + m.group(1)
 
-    # Powered (X): gain X Strength while wearing the armour.
-    for rating in re.findall(r"powered\s*\(\s*(\d+)\s*\)", trait_text, re.I):
-        mods["strength"] = max(mods.get("strength", 0), int(rating))
+    # Powered (X): gain X Strength while wearing the armour. Adds on top of
+    # any manual Strength modifier above them (e.g. a homebrew item that is
+    # both Powered and has an extra manual bonus) — only duplicate mentions
+    # of Powered within this same item's own Traits list are deduplicated
+    # via max(), since those describe the same single rating, not two
+    # independent sources.
+    powered_ratings = [int(x) for x in re.findall(r"powered\s*\(\s*(\d+)\s*\)", trait_text, re.I)]
+    if powered_ratings:
+        mods["strength"] = mods.get("strength", 0) + max(powered_ratings)
 
-    # Bulk (X): reduce Speed by X while the armour is worn.
-    for rating in re.findall(r"bulk\s*\(\s*(\d+)\s*\)", trait_text, re.I):
-        mods["speed"] = mods.get("speed", 0) - int(rating)
+    # Bulk (X): reduce Speed by X while the armour is worn. Same
+    # add-on-top-of-manual, dedupe-only-within-itself treatment as Powered.
+    bulk_ratings = [int(x) for x in re.findall(r"bulk\s*\(\s*(\d+)\s*\)", trait_text, re.I)]
+    if bulk_ratings:
+        mods["speed"] = mods.get("speed", 0) - max(bulk_ratings)
 
     # Shield: its AR is added to Defence and Resilience, rather than being
     # treated as ordinary body armour. Keep it separate to avoid double count.
@@ -1513,31 +1863,60 @@ def effective_skills(ch, gear_mods=None):
     return {k: int(v) + int(mods.get(k.lower(), 0)) for k, v in base.items()}
 
 
+def _owned_item_modifiers(owned_entry, catalog_by_id, catalog_by_name=None):
+    """Resolve one owned Talent/Power/Wargear entry to its Automatic Sheet
+    Modifiers, preferring the live catalog row (so a GM's later catalog
+    edits apply retroactively) and falling back to the entry's own frozen
+    details snapshot otherwise."""
+    row = None
+    try:
+        cid = int(owned_entry.get("craft_id", -1) or -1)
+        if cid > 0:
+            row = catalog_by_id.get(cid)
+    except Exception:
+        row = None
+    if row is None and catalog_by_name is not None:
+        row = catalog_by_name.get(str(owned_entry.get("name", "")).strip().lower())
+    if row is not None:
+        return craft_modifiers(row)
+    return craft_modifiers({"details": _gear_details_dict(owned_entry.get("details", {}))})
+
+
 def equipped_wargear_modifiers(ch):
+    """Aggregate every passive Automatic Sheet Modifier currently active on
+    this character:
+      - equipped Wargear (Traits like Powered/Bulk/Shield, Armour Rating,
+        plus any manual modifier) — only while equipped;
+      - owned Talents — permanent the moment they are purchased, since
+        Talents have no 'equipped' state;
+      - known Psychic Powers — included for GM flexibility, but craft_view's
+        Power editor warns that almost all Powers are activated/temporary
+        and should not carry a modifier here.
+    """
     mods = {}
-    catalog = list_craft_items("wargear", active_only=False)
-    by_id = {int(r["id"]): r for r in catalog}
-    by_name = {str(r.get("name", "")).strip().lower(): r for r in catalog}
+
+    wargear_catalog = list_craft_items("wargear", active_only=False)
+    wargear_by_id = {int(r["id"]): r for r in wargear_catalog}
+    wargear_by_name = {str(r.get("name", "")).strip().lower(): r for r in wargear_catalog}
     for w in normalize_wargear(ch.get("wargear", [])):
         if not w.get("equipped", True):
             continue
-        row = None
-        try:
-            cid = int(w.get("craft_id", -1) or -1)
-            if cid > 0:
-                row = by_id.get(cid)
-        except Exception:
-            row = None
-        if row is None:
-            row = by_name.get(str(w.get("name", "")).strip().lower())
-        if row is not None:
-            source_mods = craft_modifiers(row)
-        else:
-            details = _gear_details_dict(w.get("details", {}))
-            source_mods = craft_modifiers({"details": details})
-        for k, v in source_mods.items():
+        for k, v in _owned_item_modifiers(w, wargear_by_id, wargear_by_name).items():
             key = str(k).strip().lower()
             mods[key] = mods.get(key, 0) + int(v)
+
+    talent_by_id = {int(r["id"]): r for r in list_craft_items("talent", active_only=False)}
+    for t in normalize_talents(ch.get("talents", [])):
+        for k, v in _owned_item_modifiers(t, talent_by_id).items():
+            key = str(k).strip().lower()
+            mods[key] = mods.get(key, 0) + int(v)
+
+    power_by_id = {int(r["id"]): r for r in list_craft_items("power", active_only=False)}
+    for p in normalize_powers(ch.get("powers", [])):
+        for k, v in _owned_item_modifiers(p, power_by_id).items():
+            key = str(k).strip().lower()
+            mods[key] = mods.get(key, 0) + int(v)
+
     return mods
 
 def assign_craft_to_character(cid, craft_id, kind, actor_name="", actor_user_id=None, source="Craft Assignment"):
@@ -1872,7 +2251,7 @@ def _decode(row):
         ch["skills"].setdefault(s, 0)
     for k, dv in {"tier": 2, "starting_tier": 2, "rank": 1, "earned_xp": 0, "other_xp": 0, "armour": 0, "cur_wounds": 0,
                   "cur_shock": 0, "cur_wrath": 0, "cur_ammo": 3, "cur_corruption": 0, "cur_wealth": 0, "cur_faith": 0, "comms_on": 1, "kind": "player",
-                  "name": "", "chapter": "", "species": "", "archetype": "", "faction": "", "keywords": [], "archetype_choices": {}, "creation_mode": "archetype", "archetype_history": "[]", "powers": "", "wargear": "", "notes": "", "updated_at": "", "revision": 0}.items():
+                  "name": "", "chapter": "", "species": "", "archetype": "", "faction": "", "keywords": [], "archetype_choices": {}, "creation_mode": "archetype", "archetype_history": "[]", "powers": "", "wargear": "", "notes": "", "updated_at": "", "revision": 0, "temp_instance": 0}.items():
         if ch.get(k) is None:
             ch[k] = dv
     return ch
@@ -2441,6 +2820,10 @@ def set_combatant(cid, active=True):
         conn.commit()
     finally:
         conn.close()
+    if not active:
+        # Generic NPC mobs are disposable: pulling one out of combat without
+        # saving it discards the instance instead of leaving it in the roster.
+        purge_unsaved_temp_instances([cid])
 
 
 def set_combat_modifier(cid, modifier):
@@ -2514,10 +2897,14 @@ def clear_combat():
     if not eid:
         return
     conn = get_conn()
+    participant_ids = [int(r[0]) for r in conn.execute(
+        "SELECT character_id FROM combat_participant WHERE encounter_id=?", (int(eid),)).fetchall()]
     conn.execute("DELETE FROM combat_participant WHERE encounter_id=?", (int(eid),))
     conn.execute("UPDATE combat_encounter SET current_turn=0,round_no=1 WHERE id=?", (int(eid),))
     conn.commit()
     conn.close()
+    # Any Generic NPC mob still unsaved when combat clears is disposable by design.
+    purge_unsaved_temp_instances(participant_ids)
 
 
 def log_combat_end():
@@ -3575,9 +3962,6 @@ def edit_view(cid, gm_mode=False):
         mode = "advanced" if advanced else "archetype"
 
         if mode == "archetype":
-            override_key = _k(cid, "sel", "override_species")
-            st.session_state.setdefault(override_key, False)
-            st.checkbox("GM Species Override", key=override_key, help="By default the Archetype determines Species as in the Core Rulebook. Enable this only for a house rule.")
             arch_options = archetype_options()
             if st.session_state.get(ark) not in arch_options and arch_options:
                 st.session_state[ark] = arch_options[0]
@@ -3588,10 +3972,10 @@ def edit_view(cid, gm_mode=False):
                     format_func=lambda name: f"{name}  ·  T{ARCHETYPES[name]['tier']}  ·  {species_label(ARCHETYPES[name]['species'])}",
                 )
                 ad = ARCHETYPES[st.session_state[ark]]
-                if not st.session_state.get(_k(cid, "sel", "override_species"), False):
-                    st.session_state[spk] = ad["species"]
-                    cb_species_change(cid)
-                st.caption(f"Tier {ad['tier']} · {ad['species']} · {ad['xp']} XP · {ad['faction']}")
+                # Species and Archetype are independent choices the Magister sets
+                # separately (see cb_archetype_change) — this is only a hint of
+                # the Archetype's Core Rulebook default, never forced onto the sheet.
+                st.caption(f"Tier {ad['tier']} · Core Rulebook Species: {species_label(ad['species'])} · {ad['xp']} XP · {ad['faction']}")
         else:
             st.info("Advanced Character Creation: the Player chooses Species. No Archetype is used.")
             st.session_state[ark] = ""
@@ -3661,7 +4045,6 @@ def edit_view(cid, gm_mode=False):
             c[2].selectbox(
                 "Species", species_list, format_func=species_label, key=spk,
                 on_change=cb_species_change, args=(cid,),
-                disabled=not st.session_state.get(_k(cid, "sel", "override_species"), False),
             )
         else:
             # In Advanced Character Creation the Magister does not choose Species.
@@ -3673,17 +4056,37 @@ def edit_view(cid, gm_mode=False):
     else:
         c[2].markdown("**Species**")
         c[2].caption(species_label(st.session_state[spk]))
-    c = st.columns([1, 1, 1, 2])
-    c[0].metric("Tier", int(st.session_state[_k(cid, "n", "tier")]))
-    c[1].markdown("**Armour**")
-    c[1].caption("Provided by equipped Armour Wargear")
-    c[2].number_input("Other XP", 0, 100000, key=_k(cid, "n", "other"))
     if gm_mode:
-        # Earned XP is awarded only when the Magister closes a session.
-        # It is intentionally read-only here so editing a character sheet
-        # can never grant XP by accident.
-        c[3].metric("Earned XP", int(ch.get("earned_xp", 0)))
+        c = st.columns([1, 1, 1, 1.4, 1])
+        # Tier is a normal sheet field (saved through save_build() below like
+        # everything else here), so the Magister can simply type a new value.
+        c[0].number_input("Tier", 1, MAX_TIER, key=_k(cid, "n", "tier"))
+        c[1].markdown("**Armour**")
+        c[1].caption("From equipped Armour")
+        # Earned XP is awarded only when the Magister closes a session, so it
+        # stays read-only here — editing a character sheet must never grant XP
+        # by accident. Rank/Tier corrections with full undo history are still
+        # available in Progression > Corrections & Undo.
+        c[2].metric("Earned XP", int(ch.get("earned_xp", 0)))
+        rank_key = _k(cid, "sel", "gm_rank")
+        st.session_state.setdefault(rank_key, int(ch.get("rank", 1)))
+        c[3].selectbox("Rank", [1, 2, 3], format_func=rank_label, key=rank_key)
+        c[4].markdown("<div style='padding-top:28px'></div>", unsafe_allow_html=True)
+        if c[4].button("Apply Rank", key=f"gm_apply_rank_{cid}", use_container_width=True,
+                       disabled=int(st.session_state[rank_key]) == int(ch.get("rank", 1))):
+            # correct_progression_state() (unlike set_rank()) allows moving Rank
+            # in either direction, matching "the Magister can change everything".
+            # Earned XP and Tier are passed through unchanged — only Rank moves.
+            if correct_progression_state(cid, int(ch.get("earned_xp", 0)), int(st.session_state[rank_key]), int(ch.get("tier", 1))):
+                st.rerun()
+        c2 = st.columns([1, 3])
+        c2[0].number_input("Other XP", 0, 100000, key=_k(cid, "n", "other"))
     else:
+        c = st.columns([1, 1, 1, 2])
+        c[0].metric("Tier", int(st.session_state[_k(cid, "n", "tier")]))
+        c[1].markdown("**Armour**")
+        c[1].caption("Provided by equipped Armour Wargear")
+        c[2].number_input("Other XP", 0, 100000, key=_k(cid, "n", "other"))
         c[3].markdown(f"**Rank:** {rank_label(ch.get('rank', 1))}<br><small></small>", unsafe_allow_html=True)
 
     st.markdown("<div class='sheet-banner'>Core Profile · Attributes</div>", unsafe_allow_html=True)
@@ -4078,11 +4481,13 @@ def char_row(ch, folders):
             attrs = effective_attributes(ch, gear); skills = effective_skills(ch, gear)
             st.markdown("**Attributes**  " + " · ".join(f"{a[:3].upper()} {attrs.get(a,1)}" for a in ATTRS))
             st.markdown("**Skills**  " + " · ".join(f"{sk[:4]} {skills.get(sk,0)+attrs.get(at,1)}" for sk, at in SKILLS.items()))
-            st.caption(f"Wounds {int(ch.get('cur_wounds',0))}/{d['Max Wounds']} · Shock {int(ch.get('cur_shock',0))}/{d['Max Shock']} · Wrath {int(ch.get('cur_wrath',0))}/{d['Max Wrath']}")
+            corr = corruption_level_info(ch.get("cur_corruption", 0))
+            st.caption(f"Wounds {int(ch.get('cur_wounds',0))}/{d['Max Wounds']} · Shock {int(ch.get('cur_shock',0))}/{d['Max Shock']} · Wrath {int(ch.get('cur_wrath',0))}/{d['Max Wrath']} · Corruption {corr['points']} ({corr['name']})")
         c[0].caption(f"{ch['species']} · T{ch['tier']} · Rank {rank} {vs}", unsafe_allow_html=True)
     _ammo_total = current_ammo(ch, gear)
     ammo_text = f"{_ammo_total}/{ammo_capacity(ch, gear)}"
-    c[1].markdown(f"<small>Wounds {ch['cur_wounds']}/{d['Max Wounds']}<br>Shock {ch['cur_shock']}/{d['Max Shock']}<br>Wrath {ch['cur_wrath']}/{d['Max Wrath']}<br>Ammo {ammo_text}</small>", unsafe_allow_html=True)
+    corr = corruption_level_info(ch.get("cur_corruption", 0))
+    c[1].markdown(f"<small>Wounds {ch['cur_wounds']}/{d['Max Wounds']}<br>Shock {ch['cur_shock']}/{d['Max Shock']}<br>Wrath {ch['cur_wrath']}/{d['Max Wrath']}<br>Ammo {ammo_text}<br>Corruption {corr['points']} ({corr['name']})</small>", unsafe_allow_html=True)
     c[2].button("Open", key=f"op_{ch['id']}", on_click=cb_open, args=(ch["id"],))
     if ch["comms_on"]:
         c[3].button("Cut Vox", key=f"vr_{ch['id']}", on_click=set_comms, args=(ch["id"], 0))
@@ -4188,14 +4593,31 @@ def _render_craft_requirements(prefix, details=None, kind="talent"):
             "species": species, "archetypes": archetypes, "talents": required_talents + _req_list(extra_required), "attributes": attrs, "skills": skills}
 
 
-def _render_craft_modifiers(prefix, details=None, wargear_only=False):
+def _render_craft_modifiers(prefix, details=None, kind="wargear"):
+    """Manual 'Automatic Sheet Modifiers' editor, shared by Wargear, Talent
+    and Power. `kind` controls the caption (each has different rules
+    implications) and whether the Wargear-only Armour Rating group appears.
+    """
     details = dict(details or {}); old = details.get("modifiers", {}) or {}; mods = {}
     st.markdown("**Automatic Sheet Modifiers**")
-    st.caption("These are only direct numeric changes to the character sheet. Use Traits for rule effects such as Pistol, Blast or Parry.")
+    if kind == "wargear":
+        st.caption("These are only direct numeric changes to the character sheet, on top of whatever "
+                   "the Traits above already grant automatically (see 'Automatic from Traits'). Use "
+                   "Traits/this section only for effects with no rule text to resolve, like Pistol or Blast.")
+    elif kind == "talent":
+        st.caption("Permanent the moment this Talent is purchased — Talents have no 'equipped' state. "
+                   "Use this only for a Talent whose bonus is always on, not one that requires spending "
+                   "a resource or taking an Action to trigger.")
+    else:  # power
+        st.caption("⚠️ Most Psychic Powers are activated abilities lasting a scene/Round, not a "
+                   "permanent bonus — a modifier here applies forever, just from knowing the Power. "
+                   "Only use this for a Power that is genuinely passive/innate.")
     # Initiative is not repeated here: it is already one of the seven
     # Attributes above, and both fields would silently collide on the same
     # underlying "initiative" modifier key.
-    groups = [("Attributes", list(ATTRS)), ("Skills", list(SKILLS.keys())), ("Derived Traits", ["defence", "resilience", "speed"]), ("Vitals / Capacity", ["wounds", "shock", "wrath", "ammo"]), ("Armour Rating", ["armour"])]
+    groups = [("Attributes", list(ATTRS)), ("Skills", list(SKILLS.keys())), ("Derived Traits", ["defence", "resilience", "speed"]), ("Vitals / Capacity", ["wounds", "shock", "wrath", "ammo"])]
+    if kind == "wargear":
+        groups.append(("Armour Rating", ["armour"]))
     for title, keys in groups:
         with st.expander(title, expanded=False):
             cols = st.columns(4)
@@ -4203,6 +4625,21 @@ def _render_craft_modifiers(prefix, details=None, wargear_only=False):
                 n = cols[i % 4].number_input(key.replace("_", " ").title(), -20, 20, int(old.get(key, 0) or 0), key=f"{prefix}_mod_{key}")
                 if n: mods[key] = int(n)
     return mods
+
+
+def _wargear_trait_bonus_preview(details):
+    """Read-only preview of the bonus already auto-derived from this
+    Wargear's Traits/Armour Rating (Powered, Bulk, Shield) — kept visually
+    separate from the manual Automatic Sheet Modifiers below so a GM never
+    double-enters the same bonus in both places."""
+    preview = craft_modifiers({"details": {**details, "modifiers": {}}})
+    st.markdown("**Automatic from Traits**")
+    if preview:
+        st.success(", ".join(f"{k.title()} {v:+d}" for k, v in preview.items())
+                   + " — already applied while equipped. Do not repeat this below.")
+    else:
+        st.caption("No automatic bonus detected. Powered (X), Bulk (X), Shield and Armour Rating "
+                   "are recognized automatically from the Traits and Armour Rating fields above.")
 
 
 def _render_wargear_data(prefix, details=None):
@@ -4275,7 +4712,11 @@ def craft_view():
                 with st.expander(label, expanded=False):
                     if r.get("effect"): st.write(r["effect"])
                     if req.get("keywords_all"): st.caption("Required Keywords: " + ", ".join(req["keywords_all"]))
-                    if details.get("modifiers"): st.caption("Automatic modifiers: " + ", ".join(f"{k} {int(v):+d}" for k,v in details["modifiers"].items() if v))
+                    # Full effective total (Traits like Powered/Bulk/Shield + any manual entry),
+                    # not just the manually-entered part, so the catalog view matches what
+                    # actually applies to a character sheet.
+                    effective_mods = craft_modifiers(r)
+                    if effective_mods: st.caption("Sheet modifiers: " + ", ".join(f"{k.title()} {int(v):+d}" for k,v in effective_mods.items() if v))
                     if kind == "talent" and details.get("faith_talent"): st.caption("Faith Talent · grants +1 maximum Faith (p.142)")
                     if kind == "wargear":
                         extra = [f"{lab}: {details.get(key)}" for key,lab in (("category","Category"),("damage","Damage"),("ed","ED"),("ap","AP"),("range","Range"),("salvo","Salvo"),("traits","Traits"),("keywords","Keywords")) if details.get(key) not in (None,"",[])]
@@ -4302,13 +4743,20 @@ def craft_view():
                 cost = 0; st.caption("Wargear has no XP cost. Value is recorded separately.")
             req = _render_craft_requirements(f"craft_new_{kind}_req", {}, kind); details = {"requirements": req}
             if kind == "wargear":
-                details["modifiers"] = _render_craft_modifiers(f"craft_new_{kind}_mods", details, True)
+                # Traits/Armour Rating first, so the auto-bonus preview below
+                # reflects what was just typed, and the manual modifiers
+                # section comes last so it's visually the "extra" one.
                 details.update(_render_wargear_data(f"craft_new_{kind}_gear", details))
-            elif kind == "power": details.update(_render_power_data(f"craft_new_{kind}_power", details))
+                _wargear_trait_bonus_preview(details)
+                details["modifiers"] = _render_craft_modifiers(f"craft_new_{kind}_mods", details, "wargear")
+            elif kind == "power":
+                details.update(_render_power_data(f"craft_new_{kind}_power", details))
+                details["modifiers"] = _render_craft_modifiers(f"craft_new_{kind}_mods", details, "power")
             elif kind == "talent":
                 details["faith_talent"] = st.checkbox(
                     "Faith Talent (Adeptus Ministorum / Adepta Sororitas)", value=False, key=f"craft_new_{kind}_faith",
                     help="Core Rulebook p.142: purchasing a Faith Talent grants +1 maximum Faith.")
+                details["modifiers"] = _render_craft_modifiers(f"craft_new_{kind}_mods", details, "talent")
             source = st.text_input("Source / Book", key=f"craft_new_source_{kind}")
             if st.button(f"Register {title}", type="primary", use_container_width=True, key=f"craft_register_{kind}"):
                 if not cname.strip() or not cdesc.strip(): st.error("Name and Description / Effect are required.")
@@ -4330,12 +4778,17 @@ def craft_view():
                 if row["kind"] == "wargear": st.caption("Wargear has no XP cost.")
                 ereq = _render_craft_requirements(f"edit_req_{edit_id}", details, row["kind"]); newdetails = {"requirements": ereq}
                 if row["kind"] == "wargear":
-                    newdetails["modifiers"] = _render_craft_modifiers(f"edit_wargear_mod_{edit_id}", details, True); newdetails.update(_render_wargear_data(f"edit_wargear_{edit_id}", details))
-                elif row["kind"] == "power": newdetails.update(_render_power_data(f"edit_power_{edit_id}", details))
+                    newdetails.update(_render_wargear_data(f"edit_wargear_{edit_id}", details))
+                    _wargear_trait_bonus_preview(newdetails)
+                    newdetails["modifiers"] = _render_craft_modifiers(f"edit_wargear_mod_{edit_id}", details, "wargear")
+                elif row["kind"] == "power":
+                    newdetails.update(_render_power_data(f"edit_power_{edit_id}", details))
+                    newdetails["modifiers"] = _render_craft_modifiers(f"edit_power_mod_{edit_id}", details, "power")
                 elif row["kind"] == "talent":
                     newdetails["faith_talent"] = st.checkbox(
                         "Faith Talent (Adeptus Ministorum / Adepta Sororitas)", value=bool(details.get("faith_talent")), key=f"edit_{edit_id}_faith",
                         help="Core Rulebook p.142: purchasing a Faith Talent grants +1 maximum Faith.")
+                    newdetails["modifiers"] = _render_craft_modifiers(f"edit_talent_mod_{edit_id}", details, "talent")
                 esource = st.text_input("Source / Book", row.get("source", ""), key=f"edit_source_{edit_id}")
                 b1,b2=st.columns(2)
                 if b1.button("Save Changes", type="primary", use_container_width=True, key=f"edit_save_{edit_id}"):
@@ -4502,7 +4955,8 @@ def render_session_combat_logs(session_no):
 @st.fragment
 def _gm_tab_characters():
     folders = list_folders()
-    all_chars = list_characters()
+    # Disposable Generic NPC mobs (Combat tab) stay off the main roster unless saved.
+    all_chars = [c for c in list_characters() if not c.get("temp_instance")]
     folder_map = {f["id"]: f["name"] for f in folders}
     folder_options = [None] + [f["id"] for f in folders]
 
@@ -4646,7 +5100,7 @@ def _gm_tab_characters():
 @st.fragment
 def _gm_tab_vox():
     folders = list_folders()
-    chars = list_characters()
+    chars = [c for c in list_characters() if not c.get("temp_instance")]
     folder_map = {f["id"]: f["name"] for f in folders}
     groups = {None: []}
     for f in folders:
@@ -4701,7 +5155,7 @@ def _gm_tab_progression():
 
     def progression_section(title, kind):
         st.markdown(f"#### {title}")
-        chars = list_characters(kind)
+        chars = [c for c in list_characters(kind) if not c.get("temp_instance")]
         if not chars:
             st.info(f"No {title.lower()}.")
             return
@@ -4748,7 +5202,7 @@ def _gm_tab_progression():
     st.divider()
     st.markdown("#### Archetype Ascension")
     st.caption("Archetype Ascension requires Rank 3 and moves to the next Tier within the same Faction. The new Archetype does not grant new Attribute or Skill bonuses.")
-    eligible_arch = [c for c in list_characters() if c.get("creation_mode") == "archetype" and int(c.get("rank", 1)) >= 3 and int(c.get("tier", 1)) < MAX_TIER]
+    eligible_arch = [c for c in list_characters() if not c.get("temp_instance") and c.get("creation_mode") == "archetype" and int(c.get("rank", 1)) >= 3 and int(c.get("tier", 1)) < MAX_TIER]
     if eligible_arch:
         for ac in eligible_arch:
             current_arch = ARCHETYPES.get(ac.get("archetype"), {})
@@ -4771,7 +5225,7 @@ def _gm_tab_progression():
     st.divider()
     st.markdown("#### Corrections & Undo")
     st.caption("GM-only recovery tools for mistakes. These can remove XP, restore Rank/Tier, and undo an Ascension or other progression change. Normal advancement rules are not enforced here.")
-    correction_chars = list_characters()
+    correction_chars = [c for c in list_characters() if not c.get("temp_instance")]
     if correction_chars:
         correction_labels = {int(c["id"]): f"{c['name'] or 'Unnamed'} · {c['kind'].upper()} · Tier {c['tier']} · {rank_label(c['rank'])} · {c['earned_xp']} XP" for c in correction_chars}
         correction_id = st.selectbox("Character", list(correction_labels.keys()), format_func=lambda x: correction_labels[x], key="progression_correction_character")
@@ -4815,7 +5269,7 @@ def _gm_tab_session():
     st.caption("Close the session, award table XP and individual bonuses, record notes, and mark the NPCs involved.")
     current_session = int(camp.get("session_no", 1))
     players = list_characters("player")
-    npcs = list_characters("npc")
+    npcs = [c for c in list_characters("npc") if not c.get("temp_instance")]
     old_records = get_session_records(20)
 
     with st.form("session_record_form"):
@@ -4939,7 +5393,7 @@ def _gm_tab_combat():
             is_current_turn = (idx == current_idx)
             with st.container(border=True):
                 # Position number + name/details popover + reorder/remove, all in one row.
-                head = st.columns([0.5, 3.7, 0.6, 1], gap="small")
+                head = st.columns([0.5, 3.2, 0.9, 0.6, 1], gap="small")
                 pos_cls = "combat-pos combat-pos-active" if is_current_turn else "combat-pos"
                 head[0].markdown(f"<div class='{pos_cls}'>{idx + 1}</div>", unsafe_allow_html=True)
                 with head[1]:
@@ -4951,18 +5405,21 @@ def _gm_tab_combat():
                         attrs = effective_attributes(ch, gear); skills = effective_skills(ch, gear)
                         st.markdown("**Attributes**  " + " · ".join(f"{a[:3].upper()} {attrs.get(a, 1)}" for a in ATTRS))
                         st.markdown("**Skills**  " + " · ".join(f"{sk[:4]} {skills.get(sk, 0) + attrs.get(at, 1)}" for sk, at in SKILLS.items()))
-                    st.caption(f"{role_label} · {species_label(ch.get('species'))} · T{ch.get('tier', 1)} · {rank_label(rank)} · {folder_name}")
+                    temp_tag = " · ⚠ TEMP (unsaved)" if ch.get("temp_instance") else ""
+                    st.caption(f"{role_label} · {species_label(ch.get('species'))} · T{ch.get('tier', 1)} · {rank_label(rank)} · {folder_name}{temp_tag}")
                     # Combat-critical Traits stay visible at a glance instead of hiding behind the popover.
                     st.caption(f"Defence {int(d.get('Defence', 0) or 0)} · Resilience {int(d.get('Resilience', 0) or 0)} "
                                f"· Speed {int(d.get('Speed', 0) or 0)} · Resolve {int(d.get('Resolve', 0) or 0)}")
-                with head[2]:
+                head[2].button("Open", key=f"combat_open_{ch['id']}", use_container_width=True,
+                               on_click=cb_open, args=(ch["id"],))
+                with head[3]:
                     if st.button("↑", key=f"combat_up_{ch['id']}", disabled=(idx == 0), use_container_width=True):
                         move_combatant(ch["id"], -1)
                         st.rerun()
                     if st.button("↓", key=f"combat_down_{ch['id']}", disabled=(idx == len(current) - 1), use_container_width=True):
                         move_combatant(ch["id"], 1)
                         st.rerun()
-                if head[3].button("Remove", key=f"combat_current_remove_{ch['id']}", use_container_width=True):
+                if head[4].button("Remove", key=f"combat_current_remove_{ch['id']}", use_container_width=True):
                     set_combatant(ch["id"], False)
                     st.rerun()
 
@@ -5035,6 +5492,31 @@ def _gm_tab_combat():
                     set_combatant(ch["id"], not in_combat)
                     st.rerun()
                 cols[2].caption("IN COMBAT" if in_combat else "")
+
+    with st.expander("Generate Generic NPCs · quick mobs for combat", expanded=False):
+        st.caption("Instances only — they have no permanent character sheet, all their XP for the Tier is "
+                   "auto-spent, and they are deleted automatically when combat ends unless you click "
+                   "\"Save Character\" on their sheet first.")
+        gc = st.columns([2.2, 1, 1, 1.4])
+        mob_arch = gc[0].selectbox(
+            "Archetype", generic_npc_options(),
+            format_func=lambda name: f"{name}  ·  T{ARCHETYPES[name]['tier']}  ·  {ARCHETYPES[name]['faction']}",
+            key="mob_archetype",
+        )
+        mob_tier = gc[1].number_input("Tier", 1, MAX_TIER, int(ARCHETYPES[mob_arch]["tier"]), key="mob_tier")
+        mob_qty = gc[2].number_input("Quantity", 1, 20, 3, key="mob_qty")
+        mob_spend = gc[3].checkbox("Spend all XP", value=True, key="mob_spend_xp",
+                                    help="Auto-buys Attribute/Skill upgrades with whatever XP the Tier budget leaves after the Archetype package, so the mob isn't stuck at bare minimums. Ignored for (Bestiary) entries — their printed stat block is used as-is.",
+                                    disabled=(mob_arch in BESTIARY_ARCHETYPE_NAMES))
+        if mob_arch in BESTIARY_ARCHETYPE_NAMES:
+            st.caption("(Bestiary) entries use the Core Rulebook's printed Attributes/Skills/Wargear directly — "
+                       "Defence/Resilience/Wounds/Shock still run through this sheet's normal formula, so expect "
+                       "some drift from the exact numbers in the book (the rulebook itself calls this out).")
+        if st.button("Create Generic NPCs", key="mob_create", use_container_width=True):
+            new_ids = create_generic_npcs(mob_arch, int(mob_tier), int(mob_qty), bool(mob_spend))
+            if new_ids:
+                st.success(f"{len(new_ids)} {mob_arch} instance(s) added to combat.")
+            st.rerun()
 
     session_no_now = int(camp.get("session_no", 1) or 1)
     session_logs = get_combat_logs(session_no=session_no_now)
@@ -5109,7 +5591,15 @@ def gm_view():
 
     if st.session_state.get("editing"):
         cid = st.session_state.editing
-        st.button("Back", on_click=cb_close)
+        bc = st.columns([1, 2, 5])
+        bc[0].button("Back", on_click=cb_close)
+        editing_ch = load_character(cid)
+        if editing_ch and editing_ch.get("temp_instance"):
+            if bc[1].button("Save Character", key="save_temp_instance_btn", use_container_width=True):
+                save_temp_instance(cid)
+                st.rerun()
+            bc[2].caption("⚠ This is a disposable Generic NPC instance — it will be deleted when combat ends "
+                          "unless you save it now to keep it as a permanent character sheet.")
         t = st.tabs(["Battle View", "Edit"])
         with t[0]:
             battle_view(cid)

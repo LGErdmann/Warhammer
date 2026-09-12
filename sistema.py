@@ -2593,11 +2593,23 @@ def ascend_archetype(cid, new_archetype):
     history = get_archetype_history(ch)
     if ch.get("archetype"):
         history.append({"archetype": ch["archetype"], "tier": int(ch["tier"]), "retained": True})
+    # Core Rulebook 2e p.155: "add all of the Archetype benefits (Archetype
+    # Abilities, Wargear, Influence, etc.)... and retain all of the benefits
+    # from your previous Archetype" — so the new Archetype's starting Wargear
+    # is merged into (not swapped for) whatever the character already has.
+    current_gear = normalize_wargear(ch.get("wargear", []))
+    package_gear = archetype_starting_wargear(new_archetype)
+    existing_names = {str(x.get("name", "")).strip().lower() for x in current_gear}
+    for gear in package_gear:
+        if str(gear.get("name", "")).strip().lower() not in existing_names:
+            current_gear.append(gear)
+    if package_gear:
+        current_gear = normalize_wargear(current_gear + starting_ammo_for_wargear(package_gear))
     conn = get_conn()
-    conn.execute("UPDATE characters SET archetype=?, tier=?, archetype_history=?, updated_at=?, revision=revision+1 WHERE id=?",
-                 (new_archetype, int(data["tier"]), json.dumps(history), now_iso(), cid))
+    conn.execute("UPDATE characters SET archetype=?, tier=?, archetype_history=?, wargear=?, updated_at=?, revision=revision+1 WHERE id=?",
+                 (new_archetype, int(data["tier"]), json.dumps(history), json.dumps(current_gear, ensure_ascii=False), now_iso(), cid))
     conn.commit(); conn.close()
-    return True, f"Character ascended to {new_archetype}. Required Attributes and Skills were already met; the new Archetype does not grant them again."
+    return True, f"Character ascended to {new_archetype}, gaining its starting Wargear. Required Attributes and Skills were already met; the new Archetype does not grant them again."
 
 
 def set_tier(cid, tier, force=False):
@@ -3151,6 +3163,13 @@ def inject_theme():
         .grid{ gap:5px; }
         .statcard{ flex:1 1 42%; min-width:0; padding:5px 8px; }
         .statcard .v{ font-size:1.1rem; }
+        .statcard .l{ font-size:.68rem; }
+        /* Talent/Power/Wargear entries are already bordered blocks; just
+           tighten them up to match the desktop's information density. */
+        .tal, .wg{ padding:6px 8px; margin-bottom:5px; }
+        .tal .tn{ font-size:.86rem; }
+        .wg > b{ font-size:.86rem; }
+        .wgdesc, .taleffect{ font-size:.76rem; margin-top:4px; padding-top:4px; }
         /* The Skills table's 4-column grid: keep it on one line per Skill,
            just narrower, rather than stacking (it would stop reading as a
            table at all). */
@@ -3161,6 +3180,31 @@ def inject_theme():
         /* Popovers (character/combatant details) should not overflow off
            the side of a narrow screen. */
         div[data-testid="stPopoverBody"]{ max-width:92vw !important; }
+        /* Shrink metric/caption text closer to the desktop density instead
+           of everything ballooning to fill a narrow screen. */
+        [data-testid="stMetricValue"]{ font-size:1.05rem !important; }
+        [data-testid="stMetricLabel"]{ font-size:.68rem !important; }
+        [data-testid="stMetric"]{ padding:4px 8px !important; }
+        .stMarkdown p, .stCaption, [data-testid="stCaptionContainer"]{ font-size:.82rem !important; }
+        /* Compact metric + stacked -/+ widgets (Wounds/Shock/Wrath/Ammo/Ruin)
+           are already a single self-contained "block" (a bordered stMetric
+           plus two small buttons) — the blanket column-stacking rule above
+           was blowing each one up into three separate full-width rows
+           instead of keeping it as one tight card, so it's exempted here
+           and kept as a compact horizontal block like the desktop layout. */
+        [class*="_vsb"] div[data-testid="stHorizontalBlock"]{
+            flex-direction:row !important; gap:.3rem !important; align-items:stretch !important;
+        }
+        [class*="_vsb"] div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]{
+            width:auto !important; min-width:0 !important; flex:unset !important;
+        }
+        [class*="_vsb"] div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:first-child{
+            flex:1 1 auto !important;
+        }
+        [class*="_vsb"] div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:last-child{
+            flex:0 0 52px !important; width:52px !important;
+        }
+        [class*="_vsb"] .stButton>button{ min-height:0 !important; padding:3px 4px !important; font-size:.68rem !important; }
     }
     </style>
     """, unsafe_allow_html=True)
@@ -3349,11 +3393,12 @@ def _vital_stat_block(col, label, value, maximum=None, cid=None, field=None, edi
             else:
                 plus_args = (cid, +1, actor_role, actor_user_id, actor_name)
                 minus_args = (cid, -1, actor_role, actor_user_id, actor_name)
-            row = st.columns([5, 1], gap="small")
-            row[0].metric(label, display)
-            with row[1]:
-                st.button("+", key=f"{key_prefix}plus", on_click=fn, args=plus_args, use_container_width=True)
-                st.button("−", key=f"{key_prefix}minus", on_click=fn, args=minus_args, use_container_width=True)
+            with st.container(key=f"{key_prefix}_vsb"):
+                row = st.columns([5, 1], gap="small")
+                row[0].metric(label, display)
+                with row[1]:
+                    st.button("+", key=f"{key_prefix}plus", on_click=fn, args=plus_args, use_container_width=True)
+                    st.button("−", key=f"{key_prefix}minus", on_click=fn, args=minus_args, use_container_width=True)
         else:
             st.metric(label, display)
         _gear_mod_caption(max_mod)
@@ -3366,21 +3411,22 @@ def _ammo_stat_block(col, cid, ch, editable=False, actor_role="gm", actor_user_i
     ammo_max = ammo_capacity(ch, gear_mods)
     with col:
         if editable:
-            acols = st.columns([5, 1], gap="small")
-            with acols[0]:
-                st.markdown("<div class='vital-label'>AMMO</div>", unsafe_allow_html=True)
-                st.markdown(f"<div class='ammo-vital-value'><b>{ammo_total}</b> / {ammo_max}</div>", unsafe_allow_html=True)
-            with acols[1]:
-                if st.button("+", key=f"{key_prefix}plus", disabled=ammo_total >= ammo_max, use_container_width=True):
-                    result = adjust_ammo_pool(cid, 1, actor_role=actor_role, actor_user_id=actor_user_id,
-                                              actor_name=actor_name, source=f"{source_prefix} +1")
-                    if result[0]: st.rerun()
-                    else: st.error(result[1])
-                if st.button("−", key=f"{key_prefix}minus", disabled=ammo_total <= 0, use_container_width=True):
-                    result = adjust_ammo_pool(cid, -1, actor_role=actor_role, actor_user_id=actor_user_id,
-                                              actor_name=actor_name, source=f"{source_prefix} -1")
-                    if result[0]: st.rerun()
-                    else: st.error(result[1])
+            with st.container(key=f"{key_prefix}_vsb"):
+                acols = st.columns([5, 1], gap="small")
+                with acols[0]:
+                    st.markdown("<div class='vital-label'>AMMO</div>", unsafe_allow_html=True)
+                    st.markdown(f"<div class='ammo-vital-value'><b>{ammo_total}</b> / {ammo_max}</div>", unsafe_allow_html=True)
+                with acols[1]:
+                    if st.button("+", key=f"{key_prefix}plus", disabled=ammo_total >= ammo_max, use_container_width=True):
+                        result = adjust_ammo_pool(cid, 1, actor_role=actor_role, actor_user_id=actor_user_id,
+                                                  actor_name=actor_name, source=f"{source_prefix} +1")
+                        if result[0]: st.rerun()
+                        else: st.error(result[1])
+                    if st.button("−", key=f"{key_prefix}minus", disabled=ammo_total <= 0, use_container_width=True):
+                        result = adjust_ammo_pool(cid, -1, actor_role=actor_role, actor_user_id=actor_user_id,
+                                                  actor_name=actor_name, source=f"{source_prefix} -1")
+                        if result[0]: st.rerun()
+                        else: st.error(result[1])
         else:
             st.markdown("<div class='vital-label'>AMMO</div>", unsafe_allow_html=True)
             st.markdown(f"<div class='ammo-vital-value'><b>{ammo_total}</b> / {ammo_max}</div>", unsafe_allow_html=True)
@@ -4589,20 +4635,31 @@ def edit_view(cid, gm_mode=False):
 #  PAGES
 # ============================================================
 @contextmanager
-def _section(title, help_text, expanded=False):
+def _section(title, help_text, expanded=False, key=None):
     """Standard collapsed-by-default section wrapper used across every
     Magister tab: a title, a small circled '?' that shows its explanation on
     hover (no click needed), and content hidden until clicked open.
+
+    `expanded` only sets the INITIAL state. A stable `key` (auto-derived from
+    `title` when omitted) makes Streamlit track the open/closed state in
+    st.session_state, so once the Magister manually expands a section it
+    stays expanded across reruns (switching tabs, other widgets changing,
+    etc.) instead of snapping back to `expanded` every time. Callers whose
+    title text changes at runtime (a live count, an edit-mode toggle) MUST
+    pass an explicit `key`, since an auto-derived one would change together
+    with the title and lose the remembered state right when it matters most.
 
     (st.expander in this Streamlit version has no `help=` parameter, so the
     tooltip is a plain HTML span with a native browser hover title, placed
     next to the section's own expander.)
     """
+    if key is None:
+        key = "sec_" + re.sub(r"[^a-z0-9]+", "_", title.lower()).strip("_")
     hcol, qcol = st.columns([30, 1])
     with qcol:
         st.markdown(f"<span class='info-tip' title='{html.escape(str(help_text))}'>?</span>", unsafe_allow_html=True)
     with hcol:
-        exp = st.expander(title, expanded=expanded)
+        exp = st.expander(title, expanded=expanded, key=key)
     with exp:
         yield
 
@@ -4889,7 +4946,8 @@ def craft_view():
             q = search.lower(); visible = [r for r in visible if q in str(r.get("name", "")).lower() or q in str(r.get("effect", "")).lower()]
         with _section(f"Catalog · {len(visible)} entries",
                       "Every registered entry of this kind. Click one to see its full rules text, "
-                      "requirements, and sheet modifiers, or to Disable/Edit/Delete it."):
+                      "requirements, and sheet modifiers, or to Disable/Edit/Delete it.",
+                      key=f"craft_catalog_section_{kind}"):
             for r in visible:
                 details = craft_details(r); req = _requirement_data(r)
                 label = f"{r['name']} · {int(r.get('cost',0) or 0)} XP · #{r['id']}" if kind in ("talent", "power") else f"{r['name']} · #{r['id']}"
@@ -4958,7 +5016,7 @@ def craft_view():
         if row:
             with _section(f"Edit: {row['name']}",
                           "Edit this entry's fields directly. Save Changes overwrites it in place; Cancel discards edits.",
-                          expanded=True):
+                          expanded=True, key=f"craft_edit_section_{edit_id}"):
                 details = craft_details(row)
                 ename = st.text_input("Name", row["name"], key=f"edit_name_{edit_id}")
                 eeffect = st.text_area("Description / Effect", row.get("effect", ""), height=100, key=f"edit_effect_{edit_id}")
@@ -4996,7 +5054,7 @@ def archetypes_view():
     with _section("Edit Custom Archetype" if edit_row else "Create Custom Archetype",
                   "Defines a homebrew Archetype: Tier, Species, Faction, XP cost, an Ability, its starting "
                   "Attribute/Skill package, and starting Wargear, usable everywhere Core Archetypes are.",
-                  expanded=bool(edit_row)):
+                  expanded=bool(edit_row), key="archetype_editor_section"):
         name = st.text_input("Name", value=str(edit_row["name"]) if edit_row else "", key="arch_editor_name")
         c = st.columns(4)
         tier = c[0].number_input("Tier", 1, MAX_TIER, int(edit_row["tier"]) if edit_row else 1, key="arch_editor_tier")
@@ -5070,7 +5128,7 @@ def archetypes_view():
             st.session_state.pop("archetype_edit_id", None); st.rerun()
 
     with _section(f"Custom Archetypes · {len(custom_rows)}", "Every homebrew Archetype created for this "
-                  "campaign, with quick Edit/Delete actions."):
+                  "campaign, with quick Edit/Delete actions.", key="archetype_list_section"):
         if not custom_rows:
             st.info("No custom Archetypes have been created yet.")
             return
@@ -5362,7 +5420,15 @@ def _gm_tab_progression():
                 next_rank_xp = RANKS[next_rank]["min_xp"] if next_rank <= 3 else None
                 rank_missing = max(0, next_rank_xp - earned) if next_rank_xp is not None else 0
                 next_tier = tier + 1
-                tier_missing = max(0, 100 - earned) if next_tier <= MAX_TIER else 0
+                # Core Rulebook 2e p.147: a Tier increase costs 100 XP "in the
+                # current Tier", and earned_xp is a lifetime cumulative total
+                # that is never reset on Ascension (Rank isn't either). So the
+                # real threshold for the next Tier is (next_tier - starting_tier)
+                # x 100, matching the formula set_tier() already uses, not a
+                # flat 100 XP regardless of how many Tiers were already bought.
+                starting_tier = int(c.get("starting_tier", tier) or tier)
+                next_tier_threshold = max(0, (next_tier - starting_tier) * 100)
+                tier_missing = max(0, next_tier_threshold - earned) if next_tier <= MAX_TIER else 0
                 with st.container(border=True):
                     st.markdown(f"**{c['name'] or 'Unnamed'}** · Tier {tier} · {rank_label(rank)}")
                     pc = st.columns(4)
@@ -5381,7 +5447,7 @@ def _gm_tab_progression():
                     else:
                         ac[0].button("Maximum Rank", disabled=True, use_container_width=True, key=f"prog_r_max_{kind}_{c['id']}")
                     if next_tier <= MAX_TIER:
-                        ready = earned >= 100
+                        ready = earned >= next_tier_threshold
                         label = f"Approve Tier {next_tier}" if ready else f"Approve Tier {next_tier} Early"
                         if ac[1].button(label, key=f"prog_t_{c['id']}", use_container_width=True):
                             if set_tier(c["id"], next_tier, force=not ready):
@@ -5562,7 +5628,7 @@ def _gm_tab_combat():
     with _section(f"Active Combat · {len(current)} combatant(s)",
                   "The live attack order for the current encounter: Round/Turn tracking, each combatant's "
                   "quick stats, and Wounds/Shock/Ammo/Wrath trackers. Reorder with ↑/↓, click Open for the full sheet.",
-                  expanded=False):
+                  expanded=False, key="combat_active_section"):
         current_idx = -1
         if current:
             state = combat_state()
@@ -5649,7 +5715,7 @@ def _gm_tab_combat():
 
     with _section(f"Add Combatants · {len(current)} in combat",
                   "Add or remove Players/NPCs from the active combat encounter, filtered by folder or search.",
-                  expanded=False):
+                  expanded=False, key="combat_add_section"):
         fc = st.columns([1.8, 2.5])
         folder_options = [None] + [f["id"] for f in folders]
         selected_folder = fc[0].selectbox(
@@ -5730,7 +5796,8 @@ def _gm_tab_combat():
     session_logs = get_combat_logs(session_no=session_no_now)
     with _section(f"Combat Log · Session {session_no_now} · {len(session_logs)} combat(s)",
                   "A permanent record of every combat ended this Session: participants and their "
-                  "final Wounds/Shock/Wrath. Click a combat to see the details."):
+                  "final Wounds/Shock/Wrath. Click a combat to see the details.",
+                  key="combat_log_section"):
         st.caption("Click a combat to see each participant's final Wounds/Shock/Wrath.")
         if not session_logs:
             st.caption("No combats logged this session yet. Ending a combat above records one here.")
@@ -5755,11 +5822,12 @@ def _gm_tab_campaign():
     with _section("Ruin", "Ruin is the Magister's shared resource pool, spent to let Threats roll "
                   "Determination, use Ruin Actions, and trigger other GM-side effects during play."):
         # Same compact metric + stacked −/+ pattern as the Battle Sheet vitals.
-        rc = st.columns([5, 1], gap="small")
-        rc[0].metric("Ruin", camp["ruin"])
-        with rc[1]:
-            st.button("+", key="ruinplus", on_click=adjust_ruin, args=(+1,), use_container_width=True)
-            st.button("−", key="ruinminus", on_click=adjust_ruin, args=(-1,), use_container_width=True)
+        with st.container(key="ruin_campaign_vsb"):
+            rc = st.columns([5, 1], gap="small")
+            rc[0].metric("Ruin", camp["ruin"])
+            with rc[1]:
+                st.button("+", key="ruinplus", on_click=adjust_ruin, args=(+1,), use_container_width=True)
+                st.button("−", key="ruinminus", on_click=adjust_ruin, args=(-1,), use_container_width=True)
     with _section("Session Log", "A free-form, timestamped log of table notes/events. Entries are permanent "
                   "and visible to the Magister only, oldest at the bottom."):
         with st.form("voxlog"):
@@ -5883,11 +5951,12 @@ def main():
         if role == "gm":
             # Same compact metric + stacked −/+ pattern as the Battle Sheet
             # vitals and the Campaign tab's Ruin counter.
-            ruin_cols = st.columns([5, 1], gap="small")
-            ruin_cols[0].metric("Ruin", camp["ruin"])
-            with ruin_cols[1]:
-                st.button("+", key="sidebar_ruin_plus", on_click=adjust_ruin, args=(+1,), use_container_width=True)
-                st.button("−", key="sidebar_ruin_minus", on_click=adjust_ruin, args=(-1,), use_container_width=True)
+            with st.container(key="ruin_sidebar_vsb"):
+                ruin_cols = st.columns([5, 1], gap="small")
+                ruin_cols[0].metric("Ruin", camp["ruin"])
+                with ruin_cols[1]:
+                    st.button("+", key="sidebar_ruin_plus", on_click=adjust_ruin, args=(+1,), use_container_width=True)
+                    st.button("−", key="sidebar_ruin_minus", on_click=adjust_ruin, args=(-1,), use_container_width=True)
         st.divider()
         if st.button("Sign Out"):
             st.session_state.user = None; st.session_state.editing = None; st.rerun()

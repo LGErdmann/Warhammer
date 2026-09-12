@@ -909,7 +909,8 @@ def init_db():
         notes TEXT, folder_id INTEGER, portrait BLOB, comms_on INTEGER DEFAULT 1, comms_changed_at TEXT, updated_at TEXT, revision INTEGER DEFAULT 0,
         temp_instance INTEGER DEFAULT 0)""")
     c.execute("""CREATE TABLE IF NOT EXISTS campaign(id INTEGER PRIMARY KEY CHECK (id=1),
-        name TEXT, tier INTEGER DEFAULT 2, ruin INTEGER DEFAULT 0, session_no INTEGER DEFAULT 1)""")
+        name TEXT, tier INTEGER DEFAULT 2, ruin INTEGER DEFAULT 0, session_no INTEGER DEFAULT 1,
+        spectator_code TEXT DEFAULT '', spectator_show_players INTEGER DEFAULT 0, spectator_show_monsters INTEGER DEFAULT 0)""")
     c.execute("""CREATE TABLE IF NOT EXISTS log(id INTEGER PRIMARY KEY AUTOINCREMENT,
         ts TEXT, author TEXT, text TEXT)""")
     c.execute("""CREATE TABLE IF NOT EXISTS session_record(id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -951,7 +952,9 @@ def init_db():
     conn.commit()
     # migration: ensure columns exist in databases created by older versions
     _ensure_columns(conn, "campaign", {"name": "TEXT", "tier": "INTEGER DEFAULT 2",
-                                       "ruin": "INTEGER DEFAULT 0", "session_no": "INTEGER DEFAULT 1"})
+                                       "ruin": "INTEGER DEFAULT 0", "session_no": "INTEGER DEFAULT 1",
+                                       "spectator_code": "TEXT DEFAULT ''", "spectator_show_players": "INTEGER DEFAULT 0",
+                                       "spectator_show_monsters": "INTEGER DEFAULT 0"})
     had_wealth_column = "cur_wealth" in {r[1] for r in conn.execute("PRAGMA table_info(characters)").fetchall()}
     _ensure_columns(conn, "characters", {
         "user_id": "INTEGER", "kind": "TEXT DEFAULT 'player'", "name": "TEXT", "chapter": "TEXT",
@@ -2709,6 +2712,7 @@ def get_campaign():
     conn = get_conn(); row = conn.execute("SELECT * FROM campaign WHERE id=1").fetchone(); conn.close()
     c = dict(row) if row else {}
     c.setdefault("name", "The Crusade"); c.setdefault("tier", 2); c.setdefault("ruin", 0); c.setdefault("session_no", 1)
+    c.setdefault("spectator_code", ""); c.setdefault("spectator_show_players", 0); c.setdefault("spectator_show_monsters", 0)
     return c
 
 
@@ -2717,6 +2721,39 @@ def save_campaign(name, tier, ruin, session_no):
     conn.execute("UPDATE campaign SET name=?,tier=?,ruin=?,session_no=? WHERE id=1",
                  (name, int(tier), int(ruin), int(session_no)))
     conn.commit(); conn.close()
+
+
+def generate_spectator_code():
+    """Mints a new random Spectator Code, invalidating any previous one."""
+    code = "".join(secrets.choice("ABCDEFGHJKLMNPQRSTUVWXYZ23456789") for _ in range(6))
+    conn = get_conn()
+    conn.execute("UPDATE campaign SET spectator_code=? WHERE id=1", (code,))
+    conn.commit(); conn.close()
+    return code
+
+
+def clear_spectator_code():
+    conn = get_conn()
+    conn.execute("UPDATE campaign SET spectator_code='' WHERE id=1")
+    conn.commit(); conn.close()
+
+
+def set_spectator_visibility(show_players=None, show_monsters=None):
+    conn = get_conn()
+    if show_players is not None:
+        conn.execute("UPDATE campaign SET spectator_show_players=? WHERE id=1", (1 if show_players else 0,))
+    if show_monsters is not None:
+        conn.execute("UPDATE campaign SET spectator_show_monsters=? WHERE id=1", (1 if show_monsters else 0,))
+    conn.commit(); conn.close()
+
+
+def verify_spectator_code(code):
+    code = str(code or "").strip().upper()
+    if not code:
+        return False
+    camp = get_campaign()
+    stored = str(camp.get("spectator_code", "") or "").strip().upper()
+    return bool(stored) and secrets.compare_digest(stored, code)
 
 
 def adjust_ruin(delta):
@@ -3131,6 +3168,36 @@ def inject_theme():
     .sheet-banner{ background:linear-gradient(110deg,#21170c,#120c07); border:1px solid #5a4421; border-left:4px solid var(--gold); padding:7px 10px; margin:8px 0 9px; font-family:'Cinzel',serif; color:var(--gold2); letter-spacing:.08em; text-transform:uppercase; }
     .foot{ text-align:center; color:var(--gold); opacity:.5; font-family:'Cinzel',serif; letter-spacing:.3em;
         font-size:.75rem; margin-top:20px; }
+
+    /* ============================================================
+       SPECTATOR VOX-FEED — deliberately the most theatrical page in the
+       app: it shows almost nothing (only current Shock, gated by the
+       Magister), so the presentation is what carries it.
+       ============================================================ */
+    .spectator-banner{ text-align:center; font-family:'Cinzel',serif; font-weight:900; font-size:2rem;
+        color:var(--gold2); letter-spacing:.16em; padding:18px 0 6px; border-bottom:2px solid var(--gold);
+        text-shadow:0 0 14px rgba(232,201,106,.35); }
+    .spectator-banner .sub{ display:block; font-size:.8rem; letter-spacing:.3em; color:var(--bone); opacity:.75;
+        text-transform:uppercase; margin-top:5px; }
+    .spectator-banner .spectator-static{ display:block; margin-top:8px; color:var(--blood2); opacity:.55;
+        letter-spacing:.6em; font-size:.85rem; animation:spectator-flicker 2.6s infinite; }
+    @keyframes spectator-flicker{ 0%,100%{opacity:.55;} 45%{opacity:.15;} 50%{opacity:.65;} 55%{opacity:.2;} }
+    .spectator-flavor{ text-align:center; color:var(--bone); opacity:.6; font-style:italic; font-size:.82rem;
+        margin:10px auto 18px; max-width:640px; line-height:1.5; }
+    .spectator-panel-ttl{ font-family:'Cinzel',serif; color:var(--gold); text-transform:uppercase;
+        letter-spacing:.18em; text-align:center; border-bottom:1px solid var(--gold); padding-bottom:6px;
+        margin-bottom:12px; font-size:1rem; }
+    .spectator-locked{ text-align:center; font-family:'Cinzel',serif; color:var(--red); opacity:.75;
+        letter-spacing:.1em; padding:26px 8px; font-size:.85rem; }
+    .shock-row{ display:flex; align-items:center; gap:10px; padding:7px 4px; border-bottom:1px solid #241c10; }
+    .shock-name{ font-family:'Cinzel',serif; color:var(--gold2); letter-spacing:.1em; font-size:.78rem;
+        min-width:56px; }
+    .shock-bar{ flex:1; height:12px; background:#160f0a; border:1px solid #4a3a20; border-radius:6px; overflow:hidden; }
+    .shock-fill{ height:100%; background:linear-gradient(90deg,var(--green),#79c98e); transition:width .4s ease; }
+    .shock-fill.spectator-warn{ background:linear-gradient(90deg,#c9922e,#e8c96a); }
+    .shock-fill.spectator-danger{ background:linear-gradient(90deg,var(--blood),var(--red)); }
+    .shock-value{ font-family:'Cinzel',serif; color:var(--bone); opacity:.85; font-size:.78rem; min-width:44px;
+        text-align:right; }
 
     /* ============================================================
        RESPONSIVE / MOBILE
@@ -4680,7 +4747,22 @@ def login_page():
                 st.session_state.user = user; st.rerun()
             else:
                 st.error("Access denied.")
-        
+
+        # Hidden Spectator Code entry: an inconspicuous rune rather than a
+        # labelled "Spectator Login" control, per the Magister's request that
+        # it not be obvious on the login screen. Anyone who knows to look can
+        # still find it; nobody stumbles on it by accident.
+        with st.expander("◈", expanded=False):
+            with st.form("spectator_login"):
+                spec_code = st.text_input("", placeholder="Vox-Cipher", label_visibility="collapsed")
+                spec_ok = st.form_submit_button("Tune In")
+            if spec_ok:
+                if verify_spectator_code(spec_code):
+                    st.session_state.user = {"id": None, "username": "Spectator", "role": "spectator"}
+                    st.rerun()
+                else:
+                    st.error("Signal not recognised.")
+
     st.markdown("<div class='foot'>THE EMPEROR PROTECTS</div>", unsafe_allow_html=True)
 
 
@@ -5828,6 +5910,26 @@ def _gm_tab_campaign():
             with rc[1]:
                 st.button("+", key="ruinplus", on_click=adjust_ruin, args=(+1,), use_container_width=True)
                 st.button("−", key="ruinminus", on_click=adjust_ruin, args=(-1,), use_container_width=True)
+    with _section("Spectator Feed", "A public, read-only Vox-feed page for people watching the table (streamers, "
+                  "absent players, etc.) that only ever shows current Shock — nothing else. They join by typing "
+                  "the code below on the login screen (hidden there so it isn't stumbled on by accident)."):
+        code = str(camp.get("spectator_code", "") or "")
+        cc2 = st.columns([2, 1])
+        if code:
+            cc2[0].markdown(f"<div class='row'>Spectator Code: <b style='letter-spacing:.25em;font-family:Cinzel'>{html.escape(code)}</b></div>", unsafe_allow_html=True)
+        else:
+            cc2[0].caption("No active Spectator Code. Generate one to let people watch.")
+        if cc2[1].button("Generate New Code", key="spectator_new_code", use_container_width=True):
+            generate_spectator_code(); st.rerun()
+        if code and st.button("Revoke Code", key="spectator_revoke_code"):
+            clear_spectator_code(); st.rerun()
+        st.caption("Nothing else about a Player or NPC is ever exposed to Spectators, even when visible below.")
+        vc = st.columns(2)
+        show_players = vc[0].checkbox("Show Players' Shock", value=bool(camp.get("spectator_show_players")), key="spectator_show_players_cb")
+        show_monsters = vc[1].checkbox("Show Monsters' Shock", value=bool(camp.get("spectator_show_monsters")), key="spectator_show_monsters_cb")
+        if show_players != bool(camp.get("spectator_show_players")) or show_monsters != bool(camp.get("spectator_show_monsters")):
+            set_spectator_visibility(show_players, show_monsters); st.rerun()
+
     with _section("Session Log", "A free-form, timestamped log of table notes/events. Entries are permanent "
                   "and visible to the Magister only, oldest at the bottom."):
         with st.form("voxlog"):
@@ -5915,6 +6017,67 @@ def gm_view():
         _gm_tab_maintenance()
 
 
+@st.fragment(run_every=REFRESH_S)
+def spectator_view():
+    """A public, read-only Vox-feed for spectators (streamers, absent Players,
+    etc.) who joined via a Spectator Code, entered through the hidden '◈'
+    control on the login screen. By design this is the ONLY thing a Spectator
+    can ever see: each side's current Shock, and only for whichever side the
+    Magister has toggled visible in Campaign > Spectator Feed. No names beyond
+    what's needed to tell combatants apart, no Wounds, no Wrath, no Tier, no
+    Notes, nothing else — deliberately superficial."""
+    camp = get_campaign()
+    st.markdown(
+        "<div class='spectator-banner'>✠ VOX-AUSPEX FEED ✠"
+        f"<span class='sub'>{html.escape(camp.get('name', ''))} &nbsp;·&nbsp; Session {camp.get('session_no', 1)}</span>"
+        "<span class='spectator-static'>ᛝ ⟟ ᛝ ⟟ ᛝ</span></div>",
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        "<div class='spectator-flavor'>Cogitator-relayed vitality signals only. All tactical and "
+        "biographical data remains encrypted at the Adeptus Administratum.</div>",
+        unsafe_allow_html=True,
+    )
+
+    def shock_panel(title, chars, visible):
+        st.markdown(f"<div class='spectator-panel-ttl'>{title}</div>", unsafe_allow_html=True)
+        if not visible:
+            st.markdown("<div class='spectator-locked'>✠ VOX-LINK SEVERED BY THE MAGISTER ✠</div>", unsafe_allow_html=True)
+            return
+        if not chars:
+            st.markdown("<div class='spectator-locked'>NO SIGNAL DETECTED</div>", unsafe_allow_html=True)
+            return
+        rows = []
+        for i, ch in enumerate(chars, 1):
+            gear = equipped_wargear_modifiers(ch)
+            d = derived_traits(ch, gear)
+            cur = max(0, int(ch.get("cur_shock", 0) or 0))
+            mx = max(1, int(d.get("Max Shock", 1) or 1))
+            pct = max(0, min(100, round(100 * cur / mx)))
+            danger = " spectator-danger" if pct >= 75 else (" spectator-warn" if pct >= 40 else "")
+            codename = f"{title[:1]}-{i:02d}"
+            rows.append(
+                f"<div class='shock-row'><span class='shock-name'>{codename}</span>"
+                f"<div class='shock-bar'><div class='shock-fill{danger}' style='width:{pct}%'></div></div>"
+                f"<span class='shock-value'>{cur}/{mx}</span></div>"
+            )
+        st.markdown("".join(rows), unsafe_allow_html=True)
+
+    left, right = st.columns(2)
+    with left:
+        with st.container(border=True):
+            players = [c for c in list_characters("player") if not c.get("temp_instance")]
+            shock_panel("IMPERIAL FORCES", players, bool(camp.get("spectator_show_players")))
+    with right:
+        with st.container(border=True):
+            npcs = [c for c in list_characters("npc") if not c.get("temp_instance")]
+            shock_panel("HOSTILE CONTACTS", npcs, bool(camp.get("spectator_show_monsters")))
+
+    st.markdown("<div class='foot'>✠ THE EMPEROR PROTECTS ✠</div>", unsafe_allow_html=True)
+    if st.button("Disconnect", key="spectator_disconnect"):
+        st.session_state.user = None; st.rerun()
+
+
 def player_view():
     _language_flag_toggle()
     camp = get_campaign()
@@ -5942,6 +6105,9 @@ def main():
 
     if st.session_state.user is None:
         login_page(); return
+
+    if st.session_state.user["role"] == "spectator":
+        spectator_view(); return
 
     with st.sidebar:
         camp = get_campaign(); role = st.session_state.user["role"]

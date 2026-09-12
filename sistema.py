@@ -951,14 +951,15 @@ def init_db():
         rounds INTEGER DEFAULT 1, participants TEXT DEFAULT '[]')""")
     c.execute("""CREATE TABLE IF NOT EXISTS wargear_requisition(
         id INTEGER PRIMARY KEY AUTOINCREMENT, character_id INTEGER NOT NULL, source_craft_id INTEGER,
-        name TEXT NOT NULL, effect TEXT DEFAULT '', details TEXT DEFAULT '{}', status TEXT DEFAULT 'pending',
-        requested_at TEXT, resolved_at TEXT, resolved_by TEXT DEFAULT '')""")
+        name TEXT NOT NULL, effect TEXT DEFAULT '', details TEXT DEFAULT '{}', quantity INTEGER DEFAULT 1,
+        status TEXT DEFAULT 'pending', requested_at TEXT, resolved_at TEXT, resolved_by TEXT DEFAULT '')""")
     conn.commit()
     # migration: ensure columns exist in databases created by older versions
     _ensure_columns(conn, "campaign", {"name": "TEXT", "tier": "INTEGER DEFAULT 2",
                                        "ruin": "INTEGER DEFAULT 0", "session_no": "INTEGER DEFAULT 1",
                                        "spectator_code": "TEXT DEFAULT ''", "spectator_show_players": "INTEGER DEFAULT 0",
                                        "spectator_show_monsters": "INTEGER DEFAULT 0"})
+    _ensure_columns(conn, "wargear_requisition", {"quantity": "INTEGER DEFAULT 1"})
     had_wealth_column = "cur_wealth" in {r[1] for r in conn.execute("PRAGMA table_info(characters)").fetchall()}
     _ensure_columns(conn, "characters", {
         "user_id": "INTEGER", "kind": "TEXT DEFAULT 'player'", "name": "TEXT", "chapter": "TEXT",
@@ -1501,6 +1502,9 @@ def sync_official_craft_catalog(force=False):
 
 
 def craft_details(row):
+    if row is not None and not isinstance(row, dict):
+        try: row = dict(row)
+        except Exception: row = {}
     details = row.get("details", {}) if isinstance(row, dict) else {}
     if isinstance(details, str):
         try: details = json.loads(details)
@@ -2045,7 +2049,7 @@ def assign_craft_to_character(cid, craft_id, kind, actor_name="", actor_user_id=
         conn.close()
 
 
-def create_wargear_requisition(cid, name="", effect="", details=None, source_craft_id=None):
+def create_wargear_requisition(cid, name="", effect="", details=None, source_craft_id=None, quantity=1):
     """A Player asks for a piece of Wargear, either a brand-new item they
     describe themselves or one already in the catalog. It sits as 'pending'
     (visible on the Player's sheet in red, granting nothing) until the
@@ -2061,11 +2065,13 @@ def create_wargear_requisition(cid, name="", effect="", details=None, source_cra
     else:
         if not str(name or "").strip():
             return False, "Name is required."
+    stackable, _ = _infer_stackable_gear(name, details or {})
+    quantity = max(1, int(quantity or 1)) if stackable else 1
     conn = get_conn()
-    conn.execute("""INSERT INTO wargear_requisition(character_id,source_craft_id,name,effect,details,status,requested_at)
-                    VALUES(?,?,?,?,?, 'pending', ?)""",
+    conn.execute("""INSERT INTO wargear_requisition(character_id,source_craft_id,name,effect,details,quantity,status,requested_at)
+                    VALUES(?,?,?,?,?,?, 'pending', ?)""",
                  (int(cid), int(source_craft_id) if source_craft_id else None, str(name).strip(),
-                  str(effect or ""), json.dumps(details or {}, ensure_ascii=False), now_iso()))
+                  str(effect or ""), json.dumps(details or {}, ensure_ascii=False), int(quantity), now_iso()))
     conn.commit(); conn.close()
     return True, "Requisition submitted for the Magister's review."
 
@@ -2090,11 +2096,13 @@ def list_requisitions(character_id=None, status=None):
     return out
 
 
-def update_requisition_item(rid, name, effect, details):
+def update_requisition_item(rid, name, effect, details, quantity=1):
     """The Magister may tidy up a Player's custom item before approving it."""
+    stackable, _ = _infer_stackable_gear(name, details or {})
+    quantity = max(1, int(quantity or 1)) if stackable else 1
     conn = get_conn()
-    conn.execute("UPDATE wargear_requisition SET name=?, effect=?, details=? WHERE id=? AND status='pending'",
-                 (str(name).strip(), str(effect or ""), json.dumps(details or {}, ensure_ascii=False), int(rid)))
+    conn.execute("UPDATE wargear_requisition SET name=?, effect=?, details=?, quantity=? WHERE id=? AND status='pending'",
+                 (str(name).strip(), str(effect or ""), json.dumps(details or {}, ensure_ascii=False), int(quantity), int(rid)))
     conn.commit(); conn.close()
 
 
@@ -2140,11 +2148,18 @@ def resolve_requisition(rid, approve, actor_name=""):
     ok, msg = assign_craft_to_character(cid, craft_id, "wargear", source="Requisition Approved")
     if not ok:
         return False, msg
+    quantity = max(1, int(row["quantity"]) if "quantity" in row.keys() and row["quantity"] else 1)
+    result_msg = "Requisition approved and added to the character's Wargear."
+    if quantity > 1:
+        ok2, msg2 = adjust_wargear_quantity(cid, craft_id, quantity - 1, actor_name=actor_name,
+                                             source="Requisition Approved", actor_role="gm")
+        result_msg = (f"Requisition approved: {quantity}x added to the character's Wargear." if ok2
+                       else f"Approved 1 unit, but could not add the remaining {quantity - 1}: {msg2}")
     conn = get_conn()
     conn.execute("UPDATE wargear_requisition SET status='approved', source_craft_id=?, resolved_at=?, resolved_by=? WHERE id=?",
                  (int(craft_id), now_iso(), actor_name, int(rid)))
     conn.commit(); conn.close()
-    return True, "Requisition approved and added to the character's Wargear."
+    return True, result_msg
 
 
 def adjust_wargear_quantity(cid, craft_id, delta, actor_name="", actor_user_id=None, source="Wargear Quantity Change", actor_role="gm"):
@@ -4066,6 +4081,7 @@ TRANSLATE_PT = {
     "Name is required.": "O nome é obrigatório.",
     "That catalog item no longer exists.": "Esse item do catálogo não existe mais.",
     "Description / Effect": "Descrição / Efeito",
+    "Quantity": "Quantidade",
     "Name and Description / Effect are required.": "Nome e Descrição / Efeito são obrigatórios.",
     "Same fields as the Magister's own Craft catalog. Nothing here applies to your sheet "
     "until the Magister approves it.":
@@ -4269,8 +4285,9 @@ def battle_view(cid):
         pending_req = [r for r in list_requisitions(character_id=cid) if r["status"] == "pending"]
         for r in pending_req:
             label = "Em Análise" if st.session_state.get("ui_lang") == "pt" else "Under Review"
+            qty_suffix = f" ×{int(r.get('quantity', 1) or 1)}" if int(r.get('quantity', 1) or 1) > 1 else ""
             st.markdown(
-                f"<div class='wg wg-pending'><b>{html.escape(r['name'])}</b>"
+                f"<div class='wg wg-pending'><b>{html.escape(r['name'])}{qty_suffix}</b>"
                 f"<span class='wg-pending-tag'>{label}</span>"
                 f"<div class='wgdesc'>{html.escape(r.get('effect','') or '')}</div></div>",
                 unsafe_allow_html=True,
@@ -6090,7 +6107,7 @@ def _gm_tab_campaign():
             st.markdown(f"<div class='row'><b>{lg['ts']}</b> - {lg['text']}</div>", unsafe_allow_html=True)
 
 
-@st.fragment
+@st.fragment(run_every=REFRESH_S)
 def _gm_tab_requisitions():
     pending = list_requisitions(status="pending")
     with _section(f"Pending Requisitions · {len(pending)}",
@@ -6108,7 +6125,8 @@ def _gm_tab_requisitions():
             d = derived_traits(ch, gear)
             with st.container(border=True):
                 head = st.columns([3, 1, 1, 1])
-                head[0].markdown(f"**{html.escape(ch.get('name') or 'Unnamed')}** requests:")
+                qty_suffix = f" ×{int(r.get('quantity', 1) or 1)}" if int(r.get('quantity', 1) or 1) > 1 else ""
+                head[0].markdown(f"**{html.escape(ch.get('name') or 'Unnamed')}** requests{qty_suffix}:")
                 head[1].metric("Wealth", int(ch.get("cur_wealth", 0) or 0))
                 head[2].metric("Influence", int(d.get("Influence", 0) or 0))
                 is_custom = not r.get("source_craft_id")
@@ -6124,8 +6142,11 @@ def _gm_tab_requisitions():
                     newdetails.update(_render_wargear_data(f"req_gear_{r['id']}", details))
                     _wargear_trait_bonus_preview(newdetails)
                     newdetails["modifiers"] = _render_craft_modifiers(f"req_mods_{r['id']}", newdetails, "wargear")
+                    equantity = int(r.get("quantity", 1) or 1)
+                    if newdetails.get("stackable"):
+                        equantity = st.number_input("Quantity", 1, 99, equantity, key=f"req_qty_{r['id']}")
                     if st.button("Save Edits", key=f"req_save_{r['id']}"):
-                        update_requisition_item(r["id"], ename, eeffect, newdetails)
+                        update_requisition_item(r["id"], ename, eeffect, newdetails, equantity)
                         st.rerun()
                 else:
                     st.markdown(f"<div class='wg'><b>{html.escape(r['name'])}</b>"
@@ -6180,14 +6201,59 @@ def _gm_tab_maintenance():
             if st.button("Prepare Backup for Download", key="maint_prepare_backup"):
                 st.session_state["maint_backup_ready"] = True
             if st.session_state.get("maint_backup_ready"):
+                # The live database runs in WAL mode (see get_conn()), so recent
+                # writes can still be sitting in the separate cogitador.db-wal
+                # file rather than in cogitador.db itself. Folding the WAL back
+                # into the main file first means the downloaded snapshot is
+                # always complete and self-contained (no need to also grab the
+                # -wal/-shm sidecar files for the backup to be valid).
+                checkpoint_conn = get_conn()
+                checkpoint_conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                checkpoint_conn.close()
                 with open(DB_PATH, "rb") as f:
                     st.download_button("Download backup (cogitador.db)", f.read(),
                                        file_name="cogitador.db", mime="application/octet-stream")
         up = st.file_uploader("Restore backup", type=["db"])
         if up is not None and st.button("Overwrite everything"):
-            with open(DB_PATH, "wb") as f:
-                f.write(up.getbuffer())
-            st.rerun()
+            data = up.getbuffer()
+            # A restore that silently corrupts the live database (this is
+            # exactly what used to happen) is one of the worst possible
+            # failure modes here, so validate the upload BEFORE touching
+            # anything on disk.
+            if bytes(data[:16]) != b"SQLite format 3\x00":
+                st.error("That file is not a valid SQLite database (wrong file header). Nothing was overwritten.")
+            else:
+                tmp_path = DB_PATH + ".upload_tmp"
+                try:
+                    with open(tmp_path, "wb") as f:
+                        f.write(data)
+                    check_conn = sqlite3.connect(tmp_path)
+                    check_conn.execute("SELECT name FROM sqlite_master LIMIT 1")
+                    check_conn.execute("PRAGMA integrity_check(1)").fetchone()
+                    check_conn.close()
+                except sqlite3.DatabaseError as exc:
+                    st.error(f"That file failed SQLite's integrity check and was not used: {exc}")
+                else:
+                    # Stale -wal/-shm/-journal sidecar files from the PREVIOUS
+                    # database are the root cause of the corruption bug this
+                    # replaces: SQLite tries to replay them against the newly
+                    # restored file's completely different page layout, which
+                    # surfaces as an opaque sqlite3.DatabaseError on the very
+                    # next connection. Both are cleared before AND after the
+                    # swap so nothing stale is left pointing at the old data.
+                    for suffix in ("-wal", "-shm", "-journal"):
+                        try: os.remove(DB_PATH + suffix)
+                        except FileNotFoundError: pass
+                    os.replace(tmp_path, DB_PATH)
+                    for suffix in ("-wal", "-shm", "-journal"):
+                        try: os.remove(DB_PATH + suffix)
+                        except FileNotFoundError: pass
+                    st.session_state.pop("maint_backup_ready", None)
+                    st.rerun()
+                finally:
+                    if os.path.exists(tmp_path):
+                        try: os.remove(tmp_path)
+                        except OSError: pass
 
 
 def gm_view():
@@ -6318,6 +6384,9 @@ def _player_tab_requisition(cid):
         details.update(_render_wargear_data(f"reqnew_gear_{cid}", details))
         _wargear_trait_bonus_preview(details)
         details["modifiers"] = _render_craft_modifiers(f"reqnew_mods_{cid}", details, "wargear")
+        rqty = 1
+        if details.get("stackable"):
+            rqty = st.number_input(T("Quantity"), 1, 99, 1, key=f"reqnew_qty_{cid}")
         if st.button(T("Submit Requisition"), type="primary", use_container_width=True, key=f"reqnew_submit_{cid}"):
             if not rname.strip() or not rdesc.strip():
                 st.error(T("Name and Description / Effect are required."))
@@ -6325,6 +6394,7 @@ def _player_tab_requisition(cid):
                 ok, msg = create_wargear_requisition(
                     cid, name=rname.strip(), effect=rdesc.strip(),
                     details={**details, "structured_rules": True, "custom": True, "official": False},
+                    quantity=rqty,
                 )
                 (st.success if ok else st.error)(T(msg) if ok else msg)
                 if ok: st.rerun()
@@ -6337,8 +6407,12 @@ def _player_tab_requisition(cid):
             row = next(r for r in catalog if r["name"] == picked)
             if row.get("effect"):
                 st.caption(row["effect"])
+            stackable, _ = _infer_stackable_gear(row["name"], craft_details(row))
+            cqty = 1
+            if stackable:
+                cqty = st.number_input(T("Quantity"), 1, 99, 1, key=f"req_catalog_qty_{cid}")
             if st.button(T("Request This Item"), key=f"req_catalog_btn_{cid}"):
-                ok, msg = create_wargear_requisition(cid, source_craft_id=int(row["id"]))
+                ok, msg = create_wargear_requisition(cid, source_craft_id=int(row["id"]), quantity=cqty)
                 (st.success if ok else st.error)(T(msg) if ok else msg)
                 if ok: st.rerun()
         else:
@@ -6352,8 +6426,9 @@ def _player_tab_requisition(cid):
         badge = {"pending": ("Em Análise" if st.session_state.get("ui_lang") == "pt" else "Under Review", "#c9922e"),
                  "approved": ("Aprovado" if st.session_state.get("ui_lang") == "pt" else "Approved", "#3fae5a"),
                  "denied": ("Negado" if st.session_state.get("ui_lang") == "pt" else "Denied", "#d13a3a")}.get(r["status"], (r["status"], "#999"))
+        qty_suffix = f" ×{int(r.get('quantity', 1) or 1)}" if int(r.get('quantity', 1) or 1) > 1 else ""
         cols = st.columns([5, 1.4, 1])
-        cols[0].markdown(f"<div class='tal'><span class='tn'>{html.escape(r['name'])}</span>"
+        cols[0].markdown(f"<div class='tal'><span class='tn'>{html.escape(r['name'])}{qty_suffix}</span>"
                           f"<div class='taleffect'>{html.escape(r.get('effect','') or '')}</div></div>", unsafe_allow_html=True)
         cols[1].markdown(f"<span style='color:{badge[1]};font-family:Cinzel;letter-spacing:.05em;font-size:.8rem'>{badge[0].upper()}</span>", unsafe_allow_html=True)
         if r["status"] != "pending":

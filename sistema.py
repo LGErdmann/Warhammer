@@ -2332,21 +2332,25 @@ def _audit_value(value):
 
 
 def record_player_audit(cid, user_id, actor, source, changes):
-    """Write one audit row per changed character-sheet field made by a Player."""
-    if not changes or not user_id or not actor:
-        return
-    conn = get_conn(); ts = now_iso(); rows = []
-    for field, old_value, new_value in changes:
-        if _audit_value(old_value) == _audit_value(new_value):
-            continue
-        rows.append((int(cid), int(user_id), str(actor), str(source), str(field),
-                     _audit_value(old_value), _audit_value(new_value), ts))
-    if rows:
-        conn.executemany("""INSERT INTO player_audit
-            (character_id,user_id,actor,source,field,old_value,new_value,changed_at)
-            VALUES(?,?,?,?,?,?,?,?)""", rows)
-        conn.commit()
-    conn.close()
+    """Write one audit row per changed character-sheet field made by a Player.
+
+    Temporarily disabled at the user's request — body commented out below.
+    Uncomment to re-enable the Player audit trail."""
+    return
+    # if not changes or not user_id or not actor:
+    #     return
+    # conn = get_conn(); ts = now_iso(); rows = []
+    # for field, old_value, new_value in changes:
+    #     if _audit_value(old_value) == _audit_value(new_value):
+    #         continue
+    #     rows.append((int(cid), int(user_id), str(actor), str(source), str(field),
+    #                  _audit_value(old_value), _audit_value(new_value), ts))
+    # if rows:
+    #     conn.executemany("""INSERT INTO player_audit
+    #         (character_id,user_id,actor,source,field,old_value,new_value,changed_at)
+    #         VALUES(?,?,?,?,?,?,?,?)""", rows)
+    #     conn.commit()
+    # conn.close()
 
 
 def get_player_audit(character_id, limit=300):
@@ -3053,8 +3057,7 @@ def inject_theme():
     .info-tip:hover{ opacity:1; background:var(--panel2); }
     .st-key-lang_flags{ position:fixed !important; top:60px; right:16px; z-index:1000000;
         background:var(--panel); border:1px solid var(--gold); border-radius:6px; padding:2px 4px; }
-    .st-key-lang_flags button{ font-size:1.3rem !important; line-height:1 !important; padding:2px 8px !important; }
-    .st-key-lang_flags [data-testid="stHorizontalBlock"]{ gap:.35rem; }
+    .st-key-lang_flags button{ font-size:1.1rem !important; line-height:1 !important; padding:4px 10px !important; }
     .combat-pos{ font-family:'Cinzel',serif; font-weight:900; color:var(--gold2); font-size:1.3rem; text-align:center; line-height:2.2; }
     .combat-pos-active{ color:#171209; background:var(--gold2); border-radius:50%; width:1.9em; height:1.9em; margin:0 auto; line-height:1.9em; box-shadow:0 0 8px var(--gold2); }
     /* Visão de Batalha */
@@ -3831,15 +3834,16 @@ def T(text):
 
 
 def _language_flag_toggle():
-    """Fixed-corner PT/EN flag toggle for the two Player pages. Session-local
-    and purely visual: it only changes which strings T() returns, never any
-    stored character data."""
+    """Fixed-corner PT/EN toggle for the two Player pages: a single button
+    showing the currently active language; clicking it flips to the other
+    one (and its own label flips with it). Session-local and purely visual,
+    it only changes which strings T() returns, never any stored character data."""
+    lang = st.session_state.get("ui_lang", "en")
+    label = "🇧🇷 BR" if lang == "pt" else "🇺🇸 US"
     with st.container(key="lang_flags"):
-        c1, c2 = st.columns(2)
-        if c1.button("🇧🇷", key="lang_flag_pt", help="Português"):
-            st.session_state["ui_lang"] = "pt"; st.rerun()
-        if c2.button("🇺🇸", key="lang_flag_en", help="English"):
-            st.session_state["ui_lang"] = "en"; st.rerun()
+        if st.button(label, key="lang_toggle_btn", help="Português / English"):
+            st.session_state["ui_lang"] = "en" if lang == "pt" else "pt"
+            st.rerun()
 
 
 @st.fragment(run_every=REFRESH_S)
@@ -4675,6 +4679,11 @@ def vox_toggle_list(chars):
             c[2].button("Activate Vox", key=f"vt_{ch['id']}", on_click=set_comms, args=(ch["id"], 1))
 
 
+# Player Audit tab temporarily disabled at the user's request. The whole
+# function body below is block-commented (triple-quoted) so it is inert but
+# easy to restore: remove the leading/trailing '''  lines to bring it back,
+# and uncomment its tab wiring in gm_view().
+'''
 @st.fragment(run_every=REFRESH_S)
 def players_audit_view():
     players = get_player_registry()
@@ -4707,6 +4716,7 @@ def players_audit_view():
             with left: st.caption("Before"); st.code(str(r.get("old_value", "")), language="text")
             with right: st.caption("After"); st.code(str(r.get("new_value", "")), language="text")
             st.divider()
+'''
 
 
 def _req_list(value):
@@ -5804,27 +5814,31 @@ def gm_view():
             edit_view(cid, gm_mode=True)
         return
 
-    tabs = st.tabs(["Characters", "Players", "Craft", "Archetypes", "Vox", "Progression", "Session", "Combat", "Campaign", "Maintenance"])
+    # Player Audit tab temporarily disabled at the user's request.
+    # Restore by uncommenting the original tabs line below (and the
+    # `players_audit_view()` call further down) and removing the replacement.
+    # tabs = st.tabs(["Characters", "Players", "Craft", "Archetypes", "Vox", "Progression", "Session", "Combat", "Campaign", "Maintenance"])
+    tabs = st.tabs(["Characters", "Craft", "Archetypes", "Vox", "Progression", "Session", "Combat", "Campaign", "Maintenance"])
 
     with tabs[0]:
         _gm_tab_characters()
+    # with tabs[1]:
+    #     players_audit_view()
     with tabs[1]:
-        players_audit_view()
-    with tabs[2]:
         craft_view()
-    with tabs[3]:
+    with tabs[2]:
         archetypes_view()
-    with tabs[4]:
+    with tabs[3]:
         _gm_tab_vox()
-    with tabs[5]:
+    with tabs[4]:
         _gm_tab_progression()
-    with tabs[6]:
+    with tabs[5]:
         _gm_tab_session()
-    with tabs[7]:
+    with tabs[6]:
         _gm_tab_combat()
-    with tabs[8]:
+    with tabs[7]:
         _gm_tab_campaign()
-    with tabs[9]:
+    with tabs[8]:
         _gm_tab_maintenance()
 
 

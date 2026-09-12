@@ -3056,14 +3056,13 @@ def inject_theme():
         font-family:'Cinzel',serif; font-size:.72rem; font-weight:700; cursor:help; opacity:.85; user-select:none; }
     .info-tip:hover{ opacity:1; background:var(--panel2); }
     .st-key-lang_flags{ position:fixed !important; top:60px; right:16px; z-index:1000000;
-        width:40px !important; min-width:40px !important; max-width:40px !important; height:40px !important;
+        width:44px !important; min-width:44px !important; max-width:44px !important; height:40px !important;
         flex:none !important; padding:0 !important; border:1px solid var(--gold); border-radius:6px; overflow:hidden; }
-    .st-key-lang_flags button{ width:38px !important; height:38px !important; min-height:38px !important;
+    .st-key-lang_flags button{ width:42px !important; height:38px !important; min-height:38px !important;
         padding:0 !important; margin:0 !important; border:none !important; border-radius:5px !important;
-        background-size:cover !important; background-position:center !important; background-repeat:no-repeat !important;
-        color:transparent !important; font-size:0 !important; line-height:0 !important; }
-    .st-key-lang_toggle_en button{ background-image:url('https://flagcdn.com/w80/us.png') !important; }
-    .st-key-lang_toggle_pt button{ background-image:url('https://flagcdn.com/w80/br.png') !important; }
+        background:var(--panel) !important; font-family:'Cinzel',serif !important; font-weight:900 !important;
+        letter-spacing:.05em !important; font-size:.85rem !important; color:var(--gold2) !important; }
+    .st-key-lang_flags button:hover{ background:linear-gradient(var(--blood),var(--blood2)) !important; color:#fff !important; }
     .combat-pos{ font-family:'Cinzel',serif; font-weight:900; color:var(--gold2); font-size:1.3rem; text-align:center; line-height:2.2; }
     .combat-pos-active{ color:#171209; background:var(--gold2); border-radius:50%; width:1.9em; height:1.9em; margin:0 auto; line-height:1.9em; box-shadow:0 0 8px var(--gold2); }
     /* Visão de Batalha */
@@ -3841,19 +3840,14 @@ def T(text):
 
 def _language_flag_toggle():
     """Small fixed-corner PT/EN toggle for the two Player pages: a single
-    square button showing the currently active language's flag (fetched from
-    flagcdn.com, since flag emoji render as plain "US"/"BR" text on Windows);
-    clicking it flips to the other language and the flag flips with it.
-    Session-local and purely visual, it only changes which strings T()
-    returns, never any stored character data.
-
-    The flag image is a CSS background-image keyed off the button's own
-    `st-key-lang_toggle_en` / `st-key-lang_toggle_pt` class (see inject_theme()),
-    since st.button() cannot embed an <img> tag directly in its label."""
+    square button, styled in the app's own Cinzel/gold theme, showing the
+    currently active language as text ("BR"/"US"); clicking it flips to the
+    other language and the label flips with it. Session-local and purely
+    visual, it only changes which strings T() returns, never any stored
+    character data."""
     lang = st.session_state.get("ui_lang", "en")
-    btn_key = "lang_toggle_pt" if lang == "pt" else "lang_toggle_en"
     with st.container(key="lang_flags"):
-        if st.button("PT" if lang == "pt" else "EN", key=btn_key, help="Português / English"):
+        if st.button("BR" if lang == "pt" else "US", key="lang_toggle_btn", help="Português / English"):
             st.session_state["ui_lang"] = "en" if lang == "pt" else "pt"
             st.rerun()
 
@@ -5568,7 +5562,7 @@ def _gm_tab_combat():
     with _section(f"Active Combat · {len(current)} combatant(s)",
                   "The live attack order for the current encounter: Round/Turn tracking, each combatant's "
                   "quick stats, and Wounds/Shock/Ammo/Wrath trackers. Reorder with ↑/↓, click Open for the full sheet.",
-                  expanded=bool(current)):
+                  expanded=False):
         current_idx = -1
         if current:
             state = combat_state()
@@ -5655,7 +5649,7 @@ def _gm_tab_combat():
 
     with _section(f"Add Combatants · {len(current)} in combat",
                   "Add or remove Players/NPCs from the active combat encounter, filtered by folder or search.",
-                  expanded=(not current)):
+                  expanded=False):
         fc = st.columns([1.8, 2.5])
         folder_options = [None] + [f["id"] for f in folders]
         selected_folder = fc[0].selectbox(

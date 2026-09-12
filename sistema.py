@@ -716,6 +716,15 @@ def xp_spent(ch):
         except Exception:
             pass
 
+    # Psychic Powers cost XP just like Talents (the catalog carries a real
+    # cost for each), but were never added here — available_xp then never
+    # dropped after buying one, letting Powers be bought for effectively free.
+    for p in ch.get("powers", []):
+        try:
+            total += int(p.get("cost", 0))
+        except Exception:
+            pass
+
     total += int(ch.get("other_xp", 0))
     return total
 
@@ -4223,7 +4232,12 @@ def edit_view(cid, gm_mode=False):
                      "other_xp": int(st.session_state[_k(cid, "n", "other")]),
                      "talents": normalize_talents(ch.get("talents", [])),
                      "archetype_choices": st.session_state.get(_k(cid, "meta", "archetype_choices"), ch.get("archetype_choices", {}))}
-    available_xp = starting_xp(camp["tier"], advanced=(mode == "advanced")) + int(ch.get("earned_xp", 0)) - xp_spent(current_build)
+    # The XP budget is the character's OWN Tier (Core Rulebook 2e: "starting
+    # XP" is Tier x100), not the campaign's current Tier setting — those only
+    # coincide for Players kept in lockstep with the campaign. A Generic NPC
+    # mob (or any NPC) can be built at a different Tier on purpose, and using
+    # the campaign Tier here made "XP Spent"/"XP Available" wrong for them.
+    available_xp = starting_xp(current_build["tier"], advanced=(mode == "advanced")) + int(ch.get("earned_xp", 0)) - xp_spent(current_build)
     keys = sorted(character_keywords(current_build))
 
     st.markdown("<div class='sheet-banner'>Advancements · Talents</div>", unsafe_allow_html=True)
@@ -4445,7 +4459,7 @@ def edit_view(cid, gm_mode=False):
         st.stop()
 
     cur = dict(current_build); cur.update({"talents": talents})
-    spent = xp_spent(cur); start = starting_xp(camp["tier"], advanced=(mode == "advanced")); avail = start + int(ch["earned_xp"]) - spent
+    spent = xp_spent(cur); start = starting_xp(cur["tier"], advanced=(mode == "advanced")); avail = start + int(ch["earned_xp"]) - spent
     st.divider()
     x = st.columns(4)
     x[0].metric("Starting XP", start); x[1].metric("Earned XP", ch["earned_xp"])

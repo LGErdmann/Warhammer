@@ -2334,7 +2334,7 @@ def _audit_value(value):
 def record_player_audit(cid, user_id, actor, source, changes):
     """Write one audit row per changed character-sheet field made by a Player.
 
-    Temporarily disabled at the user's request — body commented out below.
+    Temporarily disabled at the user's request, body commented out below.
     Uncomment to re-enable the Player audit trail."""
     return
     # if not changes or not user_id or not actor:
@@ -3056,8 +3056,14 @@ def inject_theme():
         font-family:'Cinzel',serif; font-size:.72rem; font-weight:700; cursor:help; opacity:.85; user-select:none; }
     .info-tip:hover{ opacity:1; background:var(--panel2); }
     .st-key-lang_flags{ position:fixed !important; top:60px; right:16px; z-index:1000000;
-        background:var(--panel); border:1px solid var(--gold); border-radius:6px; padding:2px 4px; }
-    .st-key-lang_flags button{ font-size:1.1rem !important; line-height:1 !important; padding:4px 10px !important; }
+        width:40px !important; min-width:40px !important; max-width:40px !important; height:40px !important;
+        flex:none !important; padding:0 !important; border:1px solid var(--gold); border-radius:6px; overflow:hidden; }
+    .st-key-lang_flags button{ width:38px !important; height:38px !important; min-height:38px !important;
+        padding:0 !important; margin:0 !important; border:none !important; border-radius:5px !important;
+        background-size:cover !important; background-position:center !important; background-repeat:no-repeat !important;
+        color:transparent !important; font-size:0 !important; line-height:0 !important; }
+    .st-key-lang_toggle_en button{ background-image:url('https://flagcdn.com/w80/us.png') !important; }
+    .st-key-lang_toggle_pt button{ background-image:url('https://flagcdn.com/w80/br.png') !important; }
     .combat-pos{ font-family:'Cinzel',serif; font-weight:900; color:var(--gold2); font-size:1.3rem; text-align:center; line-height:2.2; }
     .combat-pos-active{ color:#171209; background:var(--gold2); border-radius:50%; width:1.9em; height:1.9em; margin:0 auto; line-height:1.9em; box-shadow:0 0 8px var(--gold2); }
     /* Visão de Batalha */
@@ -3834,14 +3840,20 @@ def T(text):
 
 
 def _language_flag_toggle():
-    """Fixed-corner PT/EN toggle for the two Player pages: a single button
-    showing the currently active language; clicking it flips to the other
-    one (and its own label flips with it). Session-local and purely visual,
-    it only changes which strings T() returns, never any stored character data."""
+    """Small fixed-corner PT/EN toggle for the two Player pages: a single
+    square button showing the currently active language's flag (fetched from
+    flagcdn.com, since flag emoji render as plain "US"/"BR" text on Windows);
+    clicking it flips to the other language and the flag flips with it.
+    Session-local and purely visual, it only changes which strings T()
+    returns, never any stored character data.
+
+    The flag image is a CSS background-image keyed off the button's own
+    `st-key-lang_toggle_en` / `st-key-lang_toggle_pt` class (see inject_theme()),
+    since st.button() cannot embed an <img> tag directly in its label."""
     lang = st.session_state.get("ui_lang", "en")
-    label = "🇧🇷 BR" if lang == "pt" else "🇺🇸 US"
+    btn_key = "lang_toggle_pt" if lang == "pt" else "lang_toggle_en"
     with st.container(key="lang_flags"):
-        if st.button(label, key="lang_toggle_btn", help="Português / English"):
+        if st.button("PT" if lang == "pt" else "EN", key=btn_key, help="Português / English"):
             st.session_state["ui_lang"] = "en" if lang == "pt" else "pt"
             st.rerun()
 
@@ -4680,43 +4692,42 @@ def vox_toggle_list(chars):
 
 
 # Player Audit tab temporarily disabled at the user's request. The whole
-# function body below is block-commented (triple-quoted) so it is inert but
-# easy to restore: remove the leading/trailing '''  lines to bring it back,
-# and uncomment its tab wiring in gm_view().
-'''
-@st.fragment(run_every=REFRESH_S)
-def players_audit_view():
-    players = get_player_registry()
-    with _section("Player Registry & Audit", "Every Player's Tier/Rank at a glance, and a full change-log per "
-                  "Player (who changed what, when, and the before/after value). Updates automatically."):
-        st.caption("Live audit of changes made by Players. This panel synchronizes automatically.")
-        if not players:
-            st.info("No Players are registered."); return
-        for c in players:
-            count = count_player_audit(c["id"])
-            cols = st.columns([3.5, 1, 1.5, 1.2])
-            cols[0].markdown(f"**{c['name'] or 'Unnamed'}** · `{c.get('username') or 'unlinked'}`")
-            cols[1].caption(f"T{c['tier']} · {rank_label(c['rank'])}")
-            cols[2].metric("Changes", count)
-            if cols[3].button("Audit", key=f"audit_open_{c['id']}", use_container_width=True):
-                st.session_state["audit_player_id"] = int(c["id"]); st.rerun()
-        ids = [int(c["id"]) for c in players]
-        selected = st.session_state.get("audit_player_id")
-        if selected not in ids: selected = ids[0]; st.session_state["audit_player_id"] = selected
-        labels = {int(c["id"]): f"{c['name'] or 'Unnamed'} · {c.get('username') or 'unlinked'}" for c in players}
-        selected = st.selectbox("Player", ids, index=ids.index(selected), format_func=lambda x: labels[x], key="audit_player_select")
-        st.session_state["audit_player_id"] = selected
-        rows = get_player_audit(selected, 500)
-        st.divider(); st.markdown(f"### Audit: {labels[selected]}")
-        if not rows: st.info("No Player changes have been recorded yet."); return
-        for r in rows:
-            stamp = str(r["changed_at"]).replace("T", " ")[:19]
-            st.markdown(f"**{stamp}** · {r['actor']} · `{r['source']}` · **{r['field']}**")
-            left, right = st.columns(2)
-            with left: st.caption("Before"); st.code(str(r.get("old_value", "")), language="text")
-            with right: st.caption("After"); st.code(str(r.get("new_value", "")), language="text")
-            st.divider()
-'''
+# function below is disabled with real '#' comments (a bare triple-quoted
+# string here would be auto-displayed by Streamlit's "magic" top-level
+# expression output, which is exactly what happened the first time this was
+# tried). Uncomment every line below, and its tab wiring in gm_view(), to restore.
+# @st.fragment(run_every=REFRESH_S)
+# def players_audit_view():
+#     players = get_player_registry()
+#     with _section("Player Registry & Audit", "Every Player's Tier/Rank at a glance, and a full change-log per "
+#                   "Player (who changed what, when, and the before/after value). Updates automatically."):
+#         st.caption("Live audit of changes made by Players. This panel synchronizes automatically.")
+#         if not players:
+#             st.info("No Players are registered."); return
+#         for c in players:
+#             count = count_player_audit(c["id"])
+#             cols = st.columns([3.5, 1, 1.5, 1.2])
+#             cols[0].markdown(f"**{c['name'] or 'Unnamed'}** · `{c.get('username') or 'unlinked'}`")
+#             cols[1].caption(f"T{c['tier']} · {rank_label(c['rank'])}")
+#             cols[2].metric("Changes", count)
+#             if cols[3].button("Audit", key=f"audit_open_{c['id']}", use_container_width=True):
+#                 st.session_state["audit_player_id"] = int(c["id"]); st.rerun()
+#         ids = [int(c["id"]) for c in players]
+#         selected = st.session_state.get("audit_player_id")
+#         if selected not in ids: selected = ids[0]; st.session_state["audit_player_id"] = selected
+#         labels = {int(c["id"]): f"{c['name'] or 'Unnamed'} · {c.get('username') or 'unlinked'}" for c in players}
+#         selected = st.selectbox("Player", ids, index=ids.index(selected), format_func=lambda x: labels[x], key="audit_player_select")
+#         st.session_state["audit_player_id"] = selected
+#         rows = get_player_audit(selected, 500)
+#         st.divider(); st.markdown(f"### Audit: {labels[selected]}")
+#         if not rows: st.info("No Player changes have been recorded yet."); return
+#         for r in rows:
+#             stamp = str(r["changed_at"]).replace("T", " ")[:19]
+#             st.markdown(f"**{stamp}** · {r['actor']} · `{r['source']}` · **{r['field']}**")
+#             left, right = st.columns(2)
+#             with left: st.caption("Before"); st.code(str(r.get("old_value", "")), language="text")
+#             with right: st.caption("After"); st.code(str(r.get("new_value", "")), language="text")
+#             st.divider()
 
 
 def _req_list(value):

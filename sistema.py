@@ -5093,9 +5093,16 @@ def gm_view():
         if os.path.exists(DB_PATH):
             size = os.path.getsize(DB_PATH) / (1024 * 1024)
             st.write(f"Database size: {size:.2f} MB (SQLite storage grows automatically).")
-            with open(DB_PATH, "rb") as f:
-                st.download_button("Download backup (cogitador.db)", f.read(),
-                                   file_name="cogitador.db", mime="application/octet-stream")
+            # Reading the whole DB file into memory here unconditionally used to run
+            # on every single interaction anywhere in the Magister view (st.tabs()
+            # computes every tab's body on every rerun, not just the visible one),
+            # not just when this tab is open. Gate the actual read behind a click.
+            if st.button("Prepare Backup for Download", key="maint_prepare_backup"):
+                st.session_state["maint_backup_ready"] = True
+            if st.session_state.get("maint_backup_ready"):
+                with open(DB_PATH, "rb") as f:
+                    st.download_button("Download backup (cogitador.db)", f.read(),
+                                       file_name="cogitador.db", mime="application/octet-stream")
         up = st.file_uploader("Restore backup", type=["db"])
         if up is not None and st.button("Overwrite everything"):
             with open(DB_PATH, "wb") as f:

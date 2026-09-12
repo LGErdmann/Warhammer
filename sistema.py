@@ -4254,6 +4254,7 @@ def _craft_kind_label(kind):
     return {"talent": "Talent", "wargear": "Wargear", "power": "Psychic Power"}.get(kind, kind.title())
 
 
+@st.fragment
 def craft_view():
     st.markdown("#### Craft")
     st.caption("Talents and Psychic Powers are purchased with XP. Wargear is equipment and never has an XP purchase cost.")
@@ -4341,6 +4342,7 @@ def craft_view():
                     save_craft_item({**row,"name":ename.strip(),"effect":eeffect.strip(),"cost":int(ecost),"source":esource.strip(),"details":{**newdetails,"structured_rules":True,"custom":True,"official":False}}, int(edit_id)); st.session_state.pop("craft_edit_id",None); st.rerun()
                 if b2.button("Cancel", use_container_width=True, key=f"edit_cancel_{edit_id}"): st.session_state.pop("craft_edit_id",None); st.rerun()
 
+@st.fragment
 def archetypes_view():
     st.markdown("#### Archetypes")
     st.caption("Create campaign-specific Archetypes. Custom Archetypes use the same creation, progression and starting-equipment systems as Core Archetypes.")
@@ -4485,8 +4487,623 @@ def render_session_combat_logs(session_no):
         render_combat_log_entry(log)
 
 
-def gm_view():
+# Each of the Magister tabs below is its own @st.fragment. Streamlit's
+# st.tabs() computes every tab's body on every rerun regardless of which one
+# is visible — it only hides the others with CSS — so without this,
+# clicking anything in one tab (e.g. Combat) silently recomputed all nine
+# other tabs (Characters, Craft, Progression, Session, ...) on every single
+# interaction. Wrapping each tab's body in a fragment scopes a rerun
+# triggered inside it to just that tab. Nested fragments (e.g. char_row()
+# inside _gm_tab_characters, or players_audit_view()/craft_view() which are
+# fragments themselves) are supported by this Streamlit version. Any action
+# whose effect must be visible outside its own tab already calls st.rerun()
+# explicitly, which always triggers a full-app rerun even from inside a
+# fragment, so those keep working exactly as before.
+@st.fragment
+def _gm_tab_characters():
+    folders = list_folders()
+    all_chars = list_characters()
+    folder_map = {f["id"]: f["name"] for f in folders}
+    folder_options = [None] + [f["id"] for f in folders]
+
+    st.markdown("#### Table Organization")
+    st.caption("* = Advanced Character Creation")
+    st.caption("Use folders as campaign groups. They also define which characters share the Vox network.")
+
+    # Quick folder creation
+    fc = st.columns([4, 1])
+    newf = fc[0].text_input("New Folder", key="newfolder", placeholder="e.g. Alpha Squad, Ship, Enemies...")
+    if fc[1].button("Create Folder", use_container_width=True):
+        if newf.strip():
+            create_folder(newf.strip()); st.rerun()
+
+    # Manage folders without hiding the main character list.
+    if folders:
+        st.markdown("**Existing Folders**")
+        for f in folders:
+            c = st.columns([3.8, 1, 1])
+            nm = c[0].text_input("Name", f["name"], key=f"fn_{f['id']}", label_visibility="collapsed")
+            if nm.strip() and nm != f["name"]:
+                rename_folder(f["id"], nm.strip())
+            count = sum(1 for ch in all_chars if ch.get("folder_id") == f["id"])
+            c[1].markdown(f"**{count}** character(s)")
+            if c[2].button("Delete", key=f"fd_{f['id']}"):
+                delete_folder(f["id"]); st.rerun()
+
+    st.divider()
+    cre = st.columns(2)
+    with cre[0]:
+        st.markdown("#### Recruit Player")
+        # This control is intentionally outside the form so changing it
+        # immediately shows/hides the Species and Archetype fields.
+        padvanced = st.checkbox("Advanced Character Creation", value=False, key="recruit_player_advanced")
+        with st.form("newp"):
+            nu = st.text_input("Username")
+            npw = st.text_input("Password", type="password")
+            st.markdown("**Character Definition**")
+            pc2 = st.columns(2)
+            ptier = pc2[0].number_input("Tier", 1, MAX_TIER, int(get_campaign()["tier"]))
+            prank = pc2[1].selectbox("Rank", [1, 2, 3], format_func=rank_label)
+            if not padvanced:
+                pc1 = st.columns(2)
+                pspecies = pc1[0].selectbox("Species", PLAYER_SPECIES, format_func=species_label)
+                parch = pc1[1].selectbox(
+                    "Archetype", archetype_options(),
+                    format_func=lambda name: f"{name}  ·  T{ARCHETYPES[name]['tier']}  ·  {ARCHETYPES[name]['faction']}"
+                )
+                st.caption("The Magister defines Species, Archetype, Tier and Rank. The Player cannot edit them.")
+            else:
+                pspecies = ""
+                parch = ""
+                st.info("Advanced Character Creation: the Player chooses Species on the character sheet. No Archetype is used.")
+            if st.form_submit_button("Recruit"):
+                if nu.strip() and npw:
+                    mode = "advanced" if padvanced else "archetype"
+                    ok, msg = create_player(nu.strip(), npw, mode, ptier, prank, pspecies, parch)
+                    (st.success if ok else st.error)(msg)
+                    if ok:
+                        st.rerun()
+    with cre[1]:
+        st.markdown("#### Create NPC")
+        # Keep NPC creation visually aligned with Player recruitment.
+        # Advanced NPCs still let the Magister define Species, but have no Archetype.
+        nadvanced = st.checkbox("Advanced Character Creation", value=False, key="create_npc_advanced")
+        with st.form("newn"):
+            nn = st.text_input("Name")
+            st.markdown("**Character Definition**")
+            nc = st.columns(2)
+            nt = nc[0].number_input("Tier", 1, MAX_TIER, int(get_campaign()["tier"]))
+            nrank = nc[1].selectbox("Rank", [1, 2, 3], format_func=rank_label)
+            nc2 = st.columns(2)
+            nsp = nc2[0].selectbox("Species", NPC_SPECIES, format_func=species_label)
+            if not nadvanced:
+                narc = nc2[1].selectbox(
+                    "Archetype", archetype_options(),
+                    format_func=lambda name: f"{name}  ·  T{ARCHETYPES[name]['tier']}  ·  {ARCHETYPES[name]['faction']}"
+                )
+                st.caption("The Magister defines Species, Archetype, Tier and Rank for this NPC.")
+            else:
+                narc = ""
+                st.info("Advanced Character Creation: the Magister defines Species. No Archetype is used.")
+            if st.form_submit_button("Create NPC"):
+                create_npc(nn.strip(), nsp, nt, "advanced" if nadvanced else "archetype", nrank, narc)
+                st.rerun()
+
+    st.divider()
+    view = st.radio("View", ["By Folder", "All", "Players", "NPCs"], horizontal=True, key="gm_servo_view")
+
+    if view == "By Folder":
+        groups = {None: []}
+        for f in folders:
+            groups[f["id"]] = []
+        for ch in all_chars:
+            groups.setdefault(ch.get("folder_id"), []).append(ch)
+
+        for fid, items in groups.items():
+            label = folder_map.get(fid, "No folder")
+            icon = "◈" if fid is not None else "◇"
+            with st.expander(f"{icon} {label}  ·  {len(items)} character(s)", expanded=False):
+                if not items:
+                    st.caption("No characters in this folder.")
+                    continue
+                for ch in items:
+                    a = st.columns([4.2, 1.7, 1.1, 1.1])
+                    with a[0]:
+                        char_row(ch, folders)
+                    opts = folder_options
+                    idx = opts.index(ch.get("folder_id")) if ch.get("folder_id") in opts else 0
+                    a[1].selectbox("Folder", opts, index=idx, key=f"mv_{ch['id']}",
+                                   format_func=lambda x: folder_map.get(x, "No folder") if x is not None else "No folder",
+                                   label_visibility="collapsed",
+                                   on_change=lambda cid=ch["id"]: set_folder(cid, st.session_state[f"mv_{cid}"]))
+                    a[2].markdown("✠ **Vox**")
+                    if ch["comms_on"]:
+                        if a[3].button("Cut Vox", key=f"gmvc_{ch['id']}"):
+                            set_comms(ch["id"], 0); st.rerun()
+                    else:
+                        if a[3].button("Activate Vox", key=f"gmvc_{ch['id']}"):
+                            set_comms(ch["id"], 1); st.rerun()
+
+    else:
+        filtered = all_chars
+        if view == "Players":
+            filtered = [c for c in all_chars if c["kind"] == "player"]
+        elif view == "NPCs":
+            filtered = [c for c in all_chars if c["kind"] == "npc"]
+        for ch in filtered:
+            a = st.columns([4.5, 2, 1.1])
+            with a[0]:
+                char_row(ch, folders)
+            opts = folder_options
+            idx = opts.index(ch.get("folder_id")) if ch.get("folder_id") in opts else 0
+            a[1].selectbox("Folder", opts, index=idx, key=f"mva_{ch['id']}",
+                           format_func=lambda x: folder_map.get(x, "No folder") if x is not None else "No folder",
+                           label_visibility="collapsed",
+                           on_change=lambda cid=ch["id"]: set_folder(cid, st.session_state[f"mva_{cid}"]))
+            a[2].markdown("✠" + (" ON" if ch["comms_on"] else " OFF"))
+
+
+@st.fragment
+def _gm_tab_vox():
+    folders = list_folders()
+    chars = list_characters()
+    folder_map = {f["id"]: f["name"] for f in folders}
+    groups = {None: []}
+    for f in folders:
+        groups[f["id"]] = []
+    for ch in chars:
+        groups.setdefault(ch.get("folder_id"), []).append(ch)
+
+    st.markdown("#### Vox Network by Folder")
+    st.caption("Each folder is a closed network. A character only receives signals from characters in the same folder.")
+
+    folder_choices = [None] + [f["id"] for f in folders]
+    selected_fid = st.selectbox(
+        "Network / Folder", folder_choices, key="vox_folder_select",
+        format_func=lambda x: "No folder (isolated)" if x is None else folder_map.get(x, "Folder"),
+    )
+
+    if selected_fid is None:
+        st.warning("Characters without a folder do not share Vox.")
+    else:
+        members = groups.get(selected_fid, [])
+        on_count = sum(1 for ch in members if ch["comms_on"])
+        c = st.columns([2, 2, 2])
+        c[0].metric("Members", len(members))
+        c[1].metric("Vox Active", on_count)
+        c[2].metric("Cut", len(members) - on_count)
+        b = st.columns(2)
+        if b[0].button("Activate Folder Vox", use_container_width=True):
+            set_comms_for_folder(selected_fid, 1); st.rerun()
+        if b[1].button("Cut Folder Vox", use_container_width=True):
+            set_comms_for_folder(selected_fid, 0); st.rerun()
+
+        st.divider()
+        if not members:
+            st.info("This folder is empty.")
+        else:
+            vox_toggle_list(members)
+
+    st.divider()
+    st.markdown("#### All Networks")
+    for fid, members in groups.items():
+        label = "No folder" if fid is None else folder_map.get(fid, "Folder")
+        on_count = sum(1 for ch in members if ch["comms_on"])
+        st.markdown(f"**{label}** · {len(members)} member(s) · {on_count} active")
+    st.markdown("#### Magister Monitor")
+    vox_live()
+
+
+@st.fragment
+def _gm_tab_progression():
+    st.markdown("#### Progression")
+    st.caption("Rank and Tier are controlled by the Magister. XP thresholds unlock normal advancement; the Magister may also approve an early advancement.")
+
+    def progression_section(title, kind):
+        st.markdown(f"#### {title}")
+        chars = list_characters(kind)
+        if not chars:
+            st.info(f"No {title.lower()}.")
+            return
+        for c in chars:
+            earned = int(c.get("earned_xp", 0))
+            rank = int(c.get("rank", 1))
+            tier = int(c.get("tier", 1))
+            next_rank = rank + 1
+            next_rank_xp = RANKS[next_rank]["min_xp"] if next_rank <= 3 else None
+            rank_missing = max(0, next_rank_xp - earned) if next_rank_xp is not None else 0
+            next_tier = tier + 1
+            tier_missing = max(0, 100 - earned) if next_tier <= MAX_TIER else 0
+            with st.container(border=True):
+                st.markdown(f"**{c['name'] or 'Unnamed'}** · Tier {tier} · {rank_label(rank)}")
+                pc = st.columns(4)
+                pc[0].metric("Earned XP", earned)
+                pc[1].metric("Next Rank", "Maximum" if next_rank > 3 else f"{rank_label(next_rank)}")
+                pc[2].metric("XP to Next Rank", "-" if next_rank > 3 else str(rank_missing))
+                pc[3].metric("XP to Next Tier", "-" if next_tier > MAX_TIER else str(tier_missing))
+                ac = st.columns(2)
+                if next_rank <= 3:
+                    ready = earned >= next_rank_xp
+                    label = f"Approve Rank {next_rank}" if ready else f"Approve Rank {next_rank} Early"
+                    if ac[0].button(label, key=f"prog_r_{c['id']}", use_container_width=True):
+                        if set_rank(c["id"], next_rank, force=not ready):
+                            add_log("Magister", f"{c['name']} advanced to Rank {next_rank}{' early' if not ready else ''}.")
+                            st.rerun()
+                else:
+                    ac[0].button("Maximum Rank", disabled=True, use_container_width=True, key=f"prog_r_max_{kind}_{c['id']}")
+                if next_tier <= MAX_TIER:
+                    ready = earned >= 100
+                    label = f"Approve Tier {next_tier}" if ready else f"Approve Tier {next_tier} Early"
+                    if ac[1].button(label, key=f"prog_t_{c['id']}", use_container_width=True):
+                        if set_tier(c["id"], next_tier, force=not ready):
+                            add_log("Magister", f"{c['name']} advanced to Tier {next_tier}{' early' if not ready else ''}.")
+                            st.rerun()
+                else:
+                    ac[1].button("Maximum Tier", disabled=True, use_container_width=True, key=f"prog_t_max_{kind}_{c['id']}")
+
+    progression_section("Players", "player")
+    st.divider()
+    progression_section("NPCs", "npc")
+
+    st.divider()
+    st.markdown("#### Archetype Ascension")
+    st.caption("Archetype Ascension requires Rank 3 and moves to the next Tier within the same Faction. The new Archetype does not grant new Attribute or Skill bonuses.")
+    eligible_arch = [c for c in list_characters() if c.get("creation_mode") == "archetype" and int(c.get("rank", 1)) >= 3 and int(c.get("tier", 1)) < MAX_TIER]
+    if eligible_arch:
+        for ac in eligible_arch:
+            current_arch = ARCHETYPES.get(ac.get("archetype"), {})
+            choices = [name for name, data in ARCHETYPES.items()
+                       if int(data.get("tier", 0)) == int(ac["tier"]) + 1
+                       and (not current_arch.get("faction") or data.get("faction") == current_arch.get("faction"))]
+            if not choices:
+                continue
+            st.markdown(f"**{ac['name']}** · Tier {ac['tier']} · {rank_label(ac['rank'])}")
+            new_arch = st.selectbox("Next Archetype", choices, key=f"prog_arch_{ac['id']}")
+            if st.button("Approve Archetype Ascension", key=f"prog_arch_btn_{ac['id']}", use_container_width=True):
+                ok, msg = ascend_archetype(ac["id"], new_arch)
+                (st.success if ok else st.error)(msg)
+                if ok:
+                    add_log("Magister", f"{ac['name']} ascended to {new_arch}.")
+                    st.rerun()
+    else:
+        st.info("No character is currently eligible for Archetype Ascension.")
+
+    st.divider()
+    st.markdown("#### Corrections & Undo")
+    st.caption("GM-only recovery tools for mistakes. These can remove XP, restore Rank/Tier, and undo an Ascension or other progression change. Normal advancement rules are not enforced here.")
+    correction_chars = list_characters()
+    if correction_chars:
+        correction_labels = {int(c["id"]): f"{c['name'] or 'Unnamed'} · {c['kind'].upper()} · Tier {c['tier']} · {rank_label(c['rank'])} · {c['earned_xp']} XP" for c in correction_chars}
+        correction_id = st.selectbox("Character", list(correction_labels.keys()), format_func=lambda x: correction_labels[x], key="progression_correction_character")
+        cc = load_character(correction_id)
+        if cc:
+            with st.container(border=True):
+                st.markdown(f"**{cc['name'] or 'Unnamed'}**")
+                cols = st.columns(3)
+                new_xp = cols[0].number_input("Earned XP", min_value=0, max_value=100000, value=int(cc.get("earned_xp", 0)), step=5, key=f"corr_xp_{correction_id}")
+                new_rank = cols[1].selectbox("Rank", [1, 2, 3], index=max(0, min(2, int(cc.get("rank", 1)) - 1)), format_func=rank_label, key=f"corr_rank_{correction_id}")
+                new_tier = cols[2].number_input("Tier", min_value=1, max_value=MAX_TIER, value=int(cc.get("tier", 1)), step=1, key=f"corr_tier_{correction_id}")
+                if st.button("Apply Progression Correction", key=f"corr_apply_{correction_id}", type="primary", use_container_width=True):
+                    if correct_progression_state(correction_id, new_xp, new_rank, new_tier):
+                        add_log("Magister", f"Corrected progression for {cc['name'] or 'Unnamed'}: Tier {new_tier}, Rank {new_rank}, {new_xp} XP.")
+                        st.success("Progression corrected. The previous state was saved for undo.")
+                        st.rerun()
+
+                st.markdown("**Recent progression history**")
+                history_rows = get_progression_undo(correction_id, 10)
+                if history_rows:
+                    for h in history_rows:
+                        stamp = str(h["created_at"]).replace("T", " ")[:19]
+                        hc = st.columns([4, 1.5])
+                        hc[0].caption(f"{stamp} · {h['action']}")
+                        if hc[1].button("Undo", key=f"undo_prog_{h['id']}", use_container_width=True):
+                            ok, msg = restore_progression_undo(h["id"])
+                            if ok:
+                                add_log("Magister", f"Undid progression change for {cc['name'] or 'Unnamed'}: {h['action']}")
+                                st.success(msg)
+                                st.rerun()
+                            else:
+                                st.error(msg)
+                else:
+                    st.caption("No progression corrections or advancement changes have been recorded yet.")
+
+
+@st.fragment
+def _gm_tab_session():
     camp = get_campaign()
+    st.markdown("#### Session")
+    st.caption("Close the session, award table XP and individual bonuses, record notes, and mark the NPCs involved.")
+    current_session = int(camp.get("session_no", 1))
+    players = list_characters("player")
+    npcs = list_characters("npc")
+    old_records = get_session_records(20)
+
+    with st.form("session_record_form"):
+        sc = st.columns([1.2, 2.8, 1.2])
+        session_no = sc[0].number_input("Session", 1, 9999, current_session)
+        title = sc[1].text_input("Session Title", placeholder="e.g. The Fall of Gilead")
+        base_xp = sc[2].number_input("Table XP", 0, 10000, 20, step=5)
+        notes = st.text_area("Session Notes", placeholder="Events, rewards, consequences, rulings, loot, reminders...")
+
+        st.markdown("**NPCs involved**")
+        npc_ids = []
+        if npcs:
+            ncols = st.columns(3)
+            for i, npc in enumerate(npcs):
+                if ncols[i % 3].checkbox(f"{npc['name'] or 'Unnamed NPC'} · T{npc['tier']}", key=f"session_npc_{npc['id']}"):
+                    npc_ids.append(npc["id"])
+        else:
+            st.caption("No NPCs available.")
+
+        st.markdown("**Player XP**")
+        award_rows = []
+        if players:
+            h = st.columns([3.5, 1.4, 1.4, 1.4])
+            h[0].markdown("**Character**")
+            h[1].markdown("**Present**")
+            h[2].markdown("**Base XP**")
+            h[3].markdown("**Bonus XP**")
+            for pl in players:
+                cols = st.columns([3.5, 1.4, 1.4, 1.4])
+                present = cols[1].checkbox("Present", value=True, key=f"session_present_{pl['id']}", label_visibility="collapsed")
+                cols[0].markdown(f"**{pl['name'] or 'Unnamed'}** · T{pl['tier']} · {rank_label(pl['rank'])}")
+                cols[2].number_input("Base", min_value=0, max_value=10000, value=int(base_xp), step=5, key=f"session_base_{pl['id']}", label_visibility="collapsed", disabled=not present)
+                cols[3].number_input("Bonus", min_value=0, max_value=10000, value=0, step=5, key=f"session_bonus_{pl['id']}", label_visibility="collapsed", disabled=not present)
+                if present:
+                    award_rows.append((pl["id"], st.session_state[f"session_base_{pl['id']}"], st.session_state[f"session_bonus_{pl['id']}"]))
+        else:
+            st.info("No players are registered.")
+
+        advance = st.checkbox("Advance campaign to the next session", value=True)
+        submit = st.form_submit_button("Close Session & Award XP", use_container_width=True)
+        if submit:
+            sid = create_session_record(session_no, title, notes, base_xp, npc_ids)
+            award_session_xp(sid, award_rows, close_session=True, advance_campaign=advance)
+            total_awarded = sum(int(a[1]) + int(a[2]) for a in award_rows)
+            add_log("Magister", f"Session {int(session_no)} closed. {total_awarded} XP awarded across {len(award_rows)} player(s).")
+            st.success("Session closed and XP awarded.")
+            st.rerun()
+
+    st.divider()
+    st.markdown("#### Session History")
+    if not old_records:
+        st.caption("No session records yet.")
+    for sr in old_records:
+        status = "Closed" if sr["closed_at"] else "Draft"
+        label = f"Session {sr['session_no']} · {sr['title'] or 'Untitled'} · {status}"
+        with st.expander(label):
+            st.write(sr["notes"] or "No notes.")
+            try:
+                marked_ids = json.loads(sr["npc_ids"] or "[]")
+            except Exception:
+                marked_ids = []
+            marked = [n["name"] for n in npcs if n["id"] in marked_ids]
+            st.write("NPCs involved: " + (", ".join(marked) if marked else "None"))
+            awards = get_session_awards(sr["id"])
+            if awards:
+                for aw in awards:
+                    st.markdown(f"**{aw['name']}** · +{aw['total_xp']} XP (base {aw['base_xp']} + bonus {aw['bonus_xp']})")
+            st.markdown("**Combat Log**")
+            render_session_combat_logs(sr["session_no"])
+
+
+@st.fragment
+def _gm_tab_combat():
+    camp = get_campaign()
+    head_row = st.columns([5, 1.3])
+    head_row[0].markdown("#### Combat")
+    if head_row[1].button("End Combat", use_container_width=True, key="combat_clear"):
+        logged = log_combat_end()
+        st.session_state["combat_just_logged"] = bool(logged)
+        st.rerun()
+    if st.session_state.pop("combat_just_logged", False):
+        st.success("Combat logged. See the Combat Log below or in Session history.")
+
+    all_combat_chars = list_characters()
+    folders = list_folders()
+    folder_map = {f["id"]: f["name"] for f in folders}
+    current = get_combatants()
+    active = {c["id"] for c in current}
+
+    current_idx = -1
+    if current:
+        state = combat_state()
+        current_idx = min(state["current"], len(current) - 1)
+        turn_cols = st.columns([1.1, 1.3, 1.3, 3], gap="small")
+        turn_cols[0].metric("Round", state["round"])
+        if turn_cols[1].button("◀ Previous Turn", use_container_width=True, key="combat_turn_prev"):
+            advance_combat_turn(-1)
+            st.rerun()
+        if turn_cols[2].button("Next Turn ▶", use_container_width=True, key="combat_turn_next"):
+            advance_combat_turn(+1)
+            st.rerun()
+        current_name = html.escape(current[current_idx].get("name") or "Unnamed")
+        turn_cols[3].markdown(
+            f"<div style='padding-top:8px'>Current turn: <b>{current_name}</b> (#{current_idx + 1})</div>",
+            unsafe_allow_html=True,
+        )
+
+    if not current:
+        st.info("No characters are currently in combat. Add Players or NPCs below.")
+    else:
+        st.caption("↑ / ↓ reorder the attack sequence · click a name for Attributes and Skills.")
+        user = st.session_state.user or {}
+        for idx, ch in enumerate(current):
+            gear = equipped_wargear_modifiers(ch)
+            d = derived_traits(ch, gear)
+            is_npc = ch.get("kind") == "npc"
+            role_label = "NPC" if is_npc else "PLAYER"
+            rank = int(ch.get("rank", 1) or 1)
+            folder_name = folder_map.get(ch.get("folder_id"), "No folder")
+
+            is_current_turn = (idx == current_idx)
+            with st.container(border=True):
+                # Position number + name/details popover + reorder/remove, all in one row.
+                head = st.columns([0.5, 3.7, 0.6, 1], gap="small")
+                pos_cls = "combat-pos combat-pos-active" if is_current_turn else "combat-pos"
+                head[0].markdown(f"<div class='{pos_cls}'>{idx + 1}</div>", unsafe_allow_html=True)
+                with head[1]:
+                    pop_label = ("▶ " + (ch.get("name") or "Unnamed")) if is_current_turn else (ch.get("name") or "Unnamed")
+                    with st.popover(pop_label, use_container_width=True, key=f"combat_pop_{ch['id']}"):
+                        st.markdown(f"**{species_label(ch.get('species', ''))}** · T{ch.get('tier', 1)} · {rank_label(rank)}")
+                        if ch.get("archetype"):
+                            st.caption(str(ch.get("archetype")))
+                        attrs = effective_attributes(ch, gear); skills = effective_skills(ch, gear)
+                        st.markdown("**Attributes**  " + " · ".join(f"{a[:3].upper()} {attrs.get(a, 1)}" for a in ATTRS))
+                        st.markdown("**Skills**  " + " · ".join(f"{sk[:4]} {skills.get(sk, 0) + attrs.get(at, 1)}" for sk, at in SKILLS.items()))
+                    st.caption(f"{role_label} · {species_label(ch.get('species'))} · T{ch.get('tier', 1)} · {rank_label(rank)} · {folder_name}")
+                    # Combat-critical Traits stay visible at a glance instead of hiding behind the popover.
+                    st.caption(f"Defence {int(d.get('Defence', 0) or 0)} · Resilience {int(d.get('Resilience', 0) or 0)} "
+                               f"· Speed {int(d.get('Speed', 0) or 0)} · Resolve {int(d.get('Resolve', 0) or 0)}")
+                with head[2]:
+                    if st.button("↑", key=f"combat_up_{ch['id']}", disabled=(idx == 0), use_container_width=True):
+                        move_combatant(ch["id"], -1)
+                        st.rerun()
+                    if st.button("↓", key=f"combat_down_{ch['id']}", disabled=(idx == len(current) - 1), use_container_width=True):
+                        move_combatant(ch["id"], 1)
+                        st.rerun()
+                if head[3].button("Remove", key=f"combat_current_remove_{ch['id']}", use_container_width=True):
+                    set_combatant(ch["id"], False)
+                    st.rerun()
+
+                # Wounds/Shock/Ammo/Wrath, in the same compact metric + stacked −/+ pattern as the Battle Sheet.
+                vcols = st.columns(4, gap="small")
+                _vital_stat_block(vcols[0], "Wounds", max(0, int(ch.get("cur_wounds", 0) or 0)), int(d.get("Max Wounds", 0) or 0),
+                                  cid=ch["id"], field="cur_wounds", editable=is_npc, actor_role="gm",
+                                  actor_user_id=user.get("id"), actor_name=user.get("username", "Magister"),
+                                  key_prefix=f"combat_w_{ch['id']}", max_mod=int(gear.get("wounds", 0) or 0))
+                _vital_stat_block(vcols[1], "Shock", max(0, int(ch.get("cur_shock", 0) or 0)), int(d.get("Max Shock", 0) or 0),
+                                  cid=ch["id"], field="cur_shock", editable=is_npc, actor_role="gm",
+                                  actor_user_id=user.get("id"), actor_name=user.get("username", "Magister"),
+                                  key_prefix=f"combat_s_{ch['id']}", max_mod=int(gear.get("shock", 0) or 0))
+                _ammo_stat_block(vcols[2], ch["id"], ch, editable=is_npc, actor_role="gm",
+                                 actor_user_id=user.get("id"), actor_name=user.get("username", "Magister"),
+                                 key_prefix=f"combat_a_{ch['id']}", source_prefix="Combat Quick Panel",
+                                 cap_mod=ammo_capacity_bonus(ch, gear), gear_mods=gear)
+                _vital_stat_block(vcols[3], "Wrath", max(0, int(ch.get("cur_wrath", 0) or 0)), int(d.get("Max Wrath", 0) or 0),
+                                  max_mod=int(gear.get("wrath", 0) or 0))
+
+            if idx < len(current) - 1:
+                st.markdown("<div class='combat-arrow'>▼</div>", unsafe_allow_html=True)
+
+    with st.expander(f"Add Combatants · {len(current)} in combat", expanded=(not current)):
+        fc = st.columns([1.8, 2.5])
+        folder_options = [None] + [f["id"] for f in folders]
+        selected_folder = fc[0].selectbox(
+            "Filter by Folder",
+            folder_options,
+            format_func=lambda x: "All Folders" if x is None else folder_map.get(x, "Folder"),
+            key="combat_folder",
+        )
+        search = fc[1].text_input(
+            "Search Character",
+            placeholder="Search by name, species, archetype, or faction",
+            key="combat_search",
+        )
+
+        filtered = []
+        q = search.strip().lower()
+        for ch in all_combat_chars:
+            if selected_folder is not None and ch.get("folder_id") != selected_folder:
+                continue
+            hay = " ".join([
+                str(ch.get("name") or ""),
+                str(ch.get("species") or ""),
+                str(ch.get("archetype") or ""),
+                str(ch.get("chapter") or ""),
+                str(ch.get("faction") or ""),
+            ]).lower()
+            if q and q not in hay:
+                continue
+            filtered.append(ch)
+
+        st.caption("Players and NPCs are read-only here except for the manual attack order and NPC quick vitals.")
+        if not filtered:
+            st.caption("No characters match the current filter.")
+        else:
+            for ch in filtered:
+                in_combat = ch["id"] in active
+                cols = st.columns([5, 1.2, 2])
+                kind_label = "NPC" if ch["kind"] == "npc" else "PLAYER"
+                ncls = "npc" if ch["kind"] == "npc" else ""
+                cols[0].markdown(
+                    f"<span class='{ncls}'><b>{html.escape(ch.get('name') or 'Unnamed')}</b></span> · {kind_label} · "
+                    f"{species_label(ch.get('species'))} · T{ch.get('tier', 1)} · {rank_label(ch.get('rank', 1))}",
+                    unsafe_allow_html=True,
+                )
+                if cols[1].button("Remove" if in_combat else "Add", key=f"combat_toggle_{ch['id']}", use_container_width=True):
+                    set_combatant(ch["id"], not in_combat)
+                    st.rerun()
+                cols[2].caption("IN COMBAT" if in_combat else "")
+
+    session_no_now = int(camp.get("session_no", 1) or 1)
+    session_logs = get_combat_logs(session_no=session_no_now)
+    with st.expander(f"Combat Log · Session {session_no_now} · {len(session_logs)} combat(s)", expanded=False):
+        st.caption("Click a combat to see each participant's final Wounds/Shock/Wrath.")
+        if not session_logs:
+            st.caption("No combats logged this session yet. Ending a combat above records one here.")
+        else:
+            for log in session_logs:
+                render_combat_log_entry(log)
+
+
+@st.fragment
+def _gm_tab_campaign():
+    camp = get_campaign()
+    st.markdown("#### Campaign Configuration")
+    with st.form("campf"):
+        cc = st.columns([3, 1, 1])
+        cname = cc[0].text_input("Campaign Name", camp["name"])
+        ctier = cc[1].number_input("Campaign Tier", 1, MAX_TIER, int(camp["tier"]))
+        sess = cc[2].number_input("Session", 1, 999, int(camp["session_no"]))
+        if st.form_submit_button("Save"):
+            save_campaign(cname, ctier, camp["ruin"], sess); st.rerun()
+    st.caption(f"Standard character XP: {starting_xp(camp['tier'])} (Tier {camp['tier']} × 100). Advanced Character Creation adds Tier ×10 bonus XP.")
+    st.divider()
+    st.markdown("#### Ruin")
+    # Same compact metric + stacked −/+ pattern as the Battle Sheet vitals.
+    rc = st.columns([5, 1], gap="small")
+    rc[0].metric("Ruin", camp["ruin"])
+    with rc[1]:
+        st.button("+", key="ruinplus", on_click=adjust_ruin, args=(+1,), use_container_width=True)
+        st.button("−", key="ruinminus", on_click=adjust_ruin, args=(-1,), use_container_width=True)
+    st.divider()
+    st.markdown("#### Session Log")
+    with st.form("voxlog"):
+        msg = st.text_area("New Entry")
+        if st.form_submit_button("Record"):
+            if msg.strip():
+                add_log("Magister", msg.strip()); st.rerun()
+    for lg in get_logs():
+        st.markdown(f"<div class='row'><b>{lg['ts']}</b> - {lg['text']}</div>", unsafe_allow_html=True)
+
+
+@st.fragment
+def _gm_tab_maintenance():
+    st.markdown("#### File Maintenance")
+    st.caption("The .db backup contains everything: players, NPCs, folders, XP, Vox, portraits. "
+               "On free hosting the disk may reset; download backups regularly.")
+    if os.path.exists(DB_PATH):
+        size = os.path.getsize(DB_PATH) / (1024 * 1024)
+        st.write(f"Database size: {size:.2f} MB (SQLite storage grows automatically).")
+        # Reading the whole DB file into memory here unconditionally used to run
+        # on every single interaction anywhere in the Magister view (st.tabs()
+        # computes every tab's body on every rerun, not just the visible one),
+        # not just when this tab is open. Gate the actual read behind a click.
+        if st.button("Prepare Backup for Download", key="maint_prepare_backup"):
+            st.session_state["maint_backup_ready"] = True
+        if st.session_state.get("maint_backup_ready"):
+            with open(DB_PATH, "rb") as f:
+                st.download_button("Download backup (cogitador.db)", f.read(),
+                                   file_name="cogitador.db", mime="application/octet-stream")
+    up = st.file_uploader("Restore backup", type=["db"])
+    if up is not None and st.button("Overwrite everything"):
+        with open(DB_PATH, "wb") as f:
+            f.write(up.getbuffer())
+        st.rerun()
+
+
+def gm_view():
     st.markdown("<div class='banner'>✠ MAGISTER SANCTUM ✠<span class='sub'>Campaign Command</span></div>",
                 unsafe_allow_html=True)
 
@@ -4502,612 +5119,26 @@ def gm_view():
 
     tabs = st.tabs(["Characters", "Players", "Craft", "Archetypes", "Vox", "Progression", "Session", "Combat", "Campaign", "Maintenance"])
 
-    # ---- Characters / Folders ----
     with tabs[0]:
-        folders = list_folders()
-        all_chars = list_characters()
-        folder_map = {f["id"]: f["name"] for f in folders}
-        folder_options = [None] + [f["id"] for f in folders]
-
-        st.markdown("#### Table Organization")
-        st.caption("* = Advanced Character Creation")
-        st.caption("Use folders as campaign groups. They also define which characters share the Vox network.")
-
-        # Quick folder creation
-        fc = st.columns([4, 1])
-        newf = fc[0].text_input("New Folder", key="newfolder", placeholder="e.g. Alpha Squad, Ship, Enemies...")
-        if fc[1].button("Create Folder", use_container_width=True):
-            if newf.strip():
-                create_folder(newf.strip()); st.rerun()
-
-        # Manage folders without hiding the main character list.
-        if folders:
-            st.markdown("**Existing Folders**")
-            for f in folders:
-                c = st.columns([3.8, 1, 1])
-                nm = c[0].text_input("Name", f["name"], key=f"fn_{f['id']}", label_visibility="collapsed")
-                if nm.strip() and nm != f["name"]:
-                    rename_folder(f["id"], nm.strip())
-                count = sum(1 for ch in all_chars if ch.get("folder_id") == f["id"])
-                c[1].markdown(f"**{count}** character(s)")
-                if c[2].button("Delete", key=f"fd_{f['id']}"):
-                    delete_folder(f["id"]); st.rerun()
-
-        st.divider()
-        cre = st.columns(2)
-        with cre[0]:
-            st.markdown("#### Recruit Player")
-            # This control is intentionally outside the form so changing it
-            # immediately shows/hides the Species and Archetype fields.
-            padvanced = st.checkbox("Advanced Character Creation", value=False, key="recruit_player_advanced")
-            with st.form("newp"):
-                nu = st.text_input("Username")
-                npw = st.text_input("Password", type="password")
-                st.markdown("**Character Definition**")
-                pc2 = st.columns(2)
-                ptier = pc2[0].number_input("Tier", 1, MAX_TIER, int(get_campaign()["tier"]))
-                prank = pc2[1].selectbox("Rank", [1, 2, 3], format_func=rank_label)
-                if not padvanced:
-                    pc1 = st.columns(2)
-                    pspecies = pc1[0].selectbox("Species", PLAYER_SPECIES, format_func=species_label)
-                    parch = pc1[1].selectbox(
-                        "Archetype", archetype_options(),
-                        format_func=lambda name: f"{name}  ·  T{ARCHETYPES[name]['tier']}  ·  {ARCHETYPES[name]['faction']}"
-                    )
-                    st.caption("The Magister defines Species, Archetype, Tier and Rank. The Player cannot edit them.")
-                else:
-                    pspecies = ""
-                    parch = ""
-                    st.info("Advanced Character Creation: the Player chooses Species on the character sheet. No Archetype is used.")
-                if st.form_submit_button("Recruit"):
-                    if nu.strip() and npw:
-                        mode = "advanced" if padvanced else "archetype"
-                        ok, msg = create_player(nu.strip(), npw, mode, ptier, prank, pspecies, parch)
-                        (st.success if ok else st.error)(msg)
-                        if ok:
-                            st.rerun()
-        with cre[1]:
-            st.markdown("#### Create NPC")
-            # Keep NPC creation visually aligned with Player recruitment.
-            # Advanced NPCs still let the Magister define Species, but have no Archetype.
-            nadvanced = st.checkbox("Advanced Character Creation", value=False, key="create_npc_advanced")
-            with st.form("newn"):
-                nn = st.text_input("Name")
-                st.markdown("**Character Definition**")
-                nc = st.columns(2)
-                nt = nc[0].number_input("Tier", 1, MAX_TIER, int(get_campaign()["tier"]))
-                nrank = nc[1].selectbox("Rank", [1, 2, 3], format_func=rank_label)
-                nc2 = st.columns(2)
-                nsp = nc2[0].selectbox("Species", NPC_SPECIES, format_func=species_label)
-                if not nadvanced:
-                    narc = nc2[1].selectbox(
-                        "Archetype", archetype_options(),
-                        format_func=lambda name: f"{name}  ·  T{ARCHETYPES[name]['tier']}  ·  {ARCHETYPES[name]['faction']}"
-                    )
-                    st.caption("The Magister defines Species, Archetype, Tier and Rank for this NPC.")
-                else:
-                    narc = ""
-                    st.info("Advanced Character Creation: the Magister defines Species. No Archetype is used.")
-                if st.form_submit_button("Create NPC"):
-                    create_npc(nn.strip(), nsp, nt, "advanced" if nadvanced else "archetype", nrank, narc)
-                    st.rerun()
-
-        st.divider()
-        view = st.radio("View", ["By Folder", "All", "Players", "NPCs"], horizontal=True, key="gm_servo_view")
-
-        if view == "By Folder":
-            groups = {None: []}
-            for f in folders:
-                groups[f["id"]] = []
-            for ch in all_chars:
-                groups.setdefault(ch.get("folder_id"), []).append(ch)
-
-            for fid, items in groups.items():
-                label = folder_map.get(fid, "No folder")
-                icon = "◈" if fid is not None else "◇"
-                with st.expander(f"{icon} {label}  ·  {len(items)} character(s)", expanded=False):
-                    if not items:
-                        st.caption("No characters in this folder.")
-                        continue
-                    for ch in items:
-                        a = st.columns([4.2, 1.7, 1.1, 1.1])
-                        with a[0]:
-                            char_row(ch, folders)
-                        opts = folder_options
-                        idx = opts.index(ch.get("folder_id")) if ch.get("folder_id") in opts else 0
-                        a[1].selectbox("Folder", opts, index=idx, key=f"mv_{ch['id']}",
-                                       format_func=lambda x: folder_map.get(x, "No folder") if x is not None else "No folder",
-                                       label_visibility="collapsed",
-                                       on_change=lambda cid=ch["id"]: set_folder(cid, st.session_state[f"mv_{cid}"]))
-                        a[2].markdown("✠ **Vox**")
-                        if ch["comms_on"]:
-                            if a[3].button("Cut Vox", key=f"gmvc_{ch['id']}"):
-                                set_comms(ch["id"], 0); st.rerun()
-                        else:
-                            if a[3].button("Activate Vox", key=f"gmvc_{ch['id']}"):
-                                set_comms(ch["id"], 1); st.rerun()
-
-        else:
-            filtered = all_chars
-            if view == "Players":
-                filtered = [c for c in all_chars if c["kind"] == "player"]
-            elif view == "NPCs":
-                filtered = [c for c in all_chars if c["kind"] == "npc"]
-            for ch in filtered:
-                a = st.columns([4.5, 2, 1.1])
-                with a[0]:
-                    char_row(ch, folders)
-                opts = folder_options
-                idx = opts.index(ch.get("folder_id")) if ch.get("folder_id") in opts else 0
-                a[1].selectbox("Folder", opts, index=idx, key=f"mva_{ch['id']}",
-                               format_func=lambda x: folder_map.get(x, "No folder") if x is not None else "No folder",
-                               label_visibility="collapsed",
-                               on_change=lambda cid=ch["id"]: set_folder(cid, st.session_state[f"mva_{cid}"]))
-                a[2].markdown("✠" + (" ON" if ch["comms_on"] else " OFF"))
-
-    # ---- Players / Audit ----
+        _gm_tab_characters()
     with tabs[1]:
         players_audit_view()
-
-    # ---- Craft ----
     with tabs[2]:
         craft_view()
-
-    # ---- Archetypes ----
     with tabs[3]:
         archetypes_view()
-
-    # ---- Vox ----
     with tabs[4]:
-        folders = list_folders()
-        chars = list_characters()
-        folder_map = {f["id"]: f["name"] for f in folders}
-        groups = {None: []}
-        for f in folders:
-            groups[f["id"]] = []
-        for ch in chars:
-            groups.setdefault(ch.get("folder_id"), []).append(ch)
-
-        st.markdown("#### Vox Network by Folder")
-        st.caption("Each folder is a closed network. A character only receives signals from characters in the same folder.")
-
-        # Quick network selection
-        folder_choices = [None] + [f["id"] for f in folders]
-        selected_fid = st.selectbox(
-            "Network / Folder", folder_choices, key="vox_folder_select",
-            format_func=lambda x: "No folder (isolated)" if x is None else folder_map.get(x, "Folder"),
-        )
-
-        if selected_fid is None:
-            st.warning("Characters without a folder do not share Vox.")
-        else:
-            members = groups.get(selected_fid, [])
-            on_count = sum(1 for ch in members if ch["comms_on"])
-            c = st.columns([2, 2, 2])
-            c[0].metric("Members", len(members))
-            c[1].metric("Vox Active", on_count)
-            c[2].metric("Cut", len(members) - on_count)
-            b = st.columns(2)
-            if b[0].button("Activate Folder Vox", use_container_width=True):
-                set_comms_for_folder(selected_fid, 1); st.rerun()
-            if b[1].button("Cut Folder Vox", use_container_width=True):
-                set_comms_for_folder(selected_fid, 0); st.rerun()
-
-            st.divider()
-            if not members:
-                st.info("This folder is empty.")
-            else:
-                vox_toggle_list(members)
-
-        st.divider()
-        st.markdown("#### All Networks")
-        for fid, members in groups.items():
-            label = "No folder" if fid is None else folder_map.get(fid, "Folder")
-            on_count = sum(1 for ch in members if ch["comms_on"])
-            st.markdown(f"**{label}** · {len(members)} member(s) · {on_count} active")
-        st.markdown("#### Magister Monitor")
-        vox_live()
-
-    # ---- Progression ----
+        _gm_tab_vox()
     with tabs[5]:
-        st.markdown("#### Progression")
-        st.caption("Rank and Tier are controlled by the Magister. XP thresholds unlock normal advancement; the Magister may also approve an early advancement.")
-
-        def progression_section(title, kind):
-            st.markdown(f"#### {title}")
-            chars = list_characters(kind)
-            if not chars:
-                st.info(f"No {title.lower()}.")
-                return
-            for c in chars:
-                earned = int(c.get("earned_xp", 0))
-                rank = int(c.get("rank", 1))
-                tier = int(c.get("tier", 1))
-                next_rank = rank + 1
-                next_rank_xp = RANKS[next_rank]["min_xp"] if next_rank <= 3 else None
-                rank_missing = max(0, next_rank_xp - earned) if next_rank_xp is not None else 0
-                next_tier = tier + 1
-                tier_missing = max(0, 100 - earned) if next_tier <= MAX_TIER else 0
-                with st.container(border=True):
-                    st.markdown(f"**{c['name'] or 'Unnamed'}** · Tier {tier} · {rank_label(rank)}")
-                    pc = st.columns(4)
-                    pc[0].metric("Earned XP", earned)
-                    pc[1].metric("Next Rank", "Maximum" if next_rank > 3 else f"{rank_label(next_rank)}")
-                    pc[2].metric("XP to Next Rank", "-" if next_rank > 3 else str(rank_missing))
-                    pc[3].metric("XP to Next Tier", "-" if next_tier > MAX_TIER else str(tier_missing))
-                    ac = st.columns(2)
-                    if next_rank <= 3:
-                        ready = earned >= next_rank_xp
-                        label = f"Approve Rank {next_rank}" if ready else f"Approve Rank {next_rank} Early"
-                        if ac[0].button(label, key=f"prog_r_{c['id']}", use_container_width=True):
-                            if set_rank(c["id"], next_rank, force=not ready):
-                                add_log("Magister", f"{c['name']} advanced to Rank {next_rank}{' early' if not ready else ''}.")
-                                st.rerun()
-                    else:
-                        ac[0].button("Maximum Rank", disabled=True, use_container_width=True, key=f"prog_r_max_{kind}_{c['id']}")
-                    if next_tier <= MAX_TIER:
-                        ready = earned >= 100
-                        label = f"Approve Tier {next_tier}" if ready else f"Approve Tier {next_tier} Early"
-                        if ac[1].button(label, key=f"prog_t_{c['id']}", use_container_width=True):
-                            if set_tier(c["id"], next_tier, force=not ready):
-                                add_log("Magister", f"{c['name']} advanced to Tier {next_tier}{' early' if not ready else ''}.")
-                                st.rerun()
-                    else:
-                        ac[1].button("Maximum Tier", disabled=True, use_container_width=True, key=f"prog_t_max_{kind}_{c['id']}")
-
-        progression_section("Players", "player")
-        st.divider()
-        progression_section("NPCs", "npc")
-
-        st.divider()
-        st.markdown("#### Archetype Ascension")
-        st.caption("Archetype Ascension requires Rank 3 and moves to the next Tier within the same Faction. The new Archetype does not grant new Attribute or Skill bonuses.")
-        eligible_arch = [c for c in list_characters() if c.get("creation_mode") == "archetype" and int(c.get("rank", 1)) >= 3 and int(c.get("tier", 1)) < MAX_TIER]
-        if eligible_arch:
-            for ac in eligible_arch:
-                current_arch = ARCHETYPES.get(ac.get("archetype"), {})
-                choices = [name for name, data in ARCHETYPES.items()
-                           if int(data.get("tier", 0)) == int(ac["tier"]) + 1
-                           and (not current_arch.get("faction") or data.get("faction") == current_arch.get("faction"))]
-                if not choices:
-                    continue
-                st.markdown(f"**{ac['name']}** · Tier {ac['tier']} · {rank_label(ac['rank'])}")
-                new_arch = st.selectbox("Next Archetype", choices, key=f"prog_arch_{ac['id']}")
-                if st.button("Approve Archetype Ascension", key=f"prog_arch_btn_{ac['id']}", use_container_width=True):
-                    ok, msg = ascend_archetype(ac["id"], new_arch)
-                    (st.success if ok else st.error)(msg)
-                    if ok:
-                        add_log("Magister", f"{ac['name']} ascended to {new_arch}.")
-                        st.rerun()
-        else:
-            st.info("No character is currently eligible for Archetype Ascension.")
-
-        st.divider()
-        st.markdown("#### Corrections & Undo")
-        st.caption("GM-only recovery tools for mistakes. These can remove XP, restore Rank/Tier, and undo an Ascension or other progression change. Normal advancement rules are not enforced here.")
-        correction_chars = list_characters()
-        if correction_chars:
-            correction_labels = {int(c["id"]): f"{c['name'] or 'Unnamed'} · {c['kind'].upper()} · Tier {c['tier']} · {rank_label(c['rank'])} · {c['earned_xp']} XP" for c in correction_chars}
-            correction_id = st.selectbox("Character", list(correction_labels.keys()), format_func=lambda x: correction_labels[x], key="progression_correction_character")
-            cc = load_character(correction_id)
-            if cc:
-                with st.container(border=True):
-                    st.markdown(f"**{cc['name'] or 'Unnamed'}**")
-                    cols = st.columns(3)
-                    new_xp = cols[0].number_input("Earned XP", min_value=0, max_value=100000, value=int(cc.get("earned_xp", 0)), step=5, key=f"corr_xp_{correction_id}")
-                    new_rank = cols[1].selectbox("Rank", [1, 2, 3], index=max(0, min(2, int(cc.get("rank", 1)) - 1)), format_func=rank_label, key=f"corr_rank_{correction_id}")
-                    new_tier = cols[2].number_input("Tier", min_value=1, max_value=MAX_TIER, value=int(cc.get("tier", 1)), step=1, key=f"corr_tier_{correction_id}")
-                    if st.button("Apply Progression Correction", key=f"corr_apply_{correction_id}", type="primary", use_container_width=True):
-                        if correct_progression_state(correction_id, new_xp, new_rank, new_tier):
-                            add_log("Magister", f"Corrected progression for {cc['name'] or 'Unnamed'}: Tier {new_tier}, Rank {new_rank}, {new_xp} XP.")
-                            st.success("Progression corrected. The previous state was saved for undo.")
-                            st.rerun()
-
-                    st.markdown("**Recent progression history**")
-                    history_rows = get_progression_undo(correction_id, 10)
-                    if history_rows:
-                        for h in history_rows:
-                            stamp = str(h["created_at"]).replace("T", " ")[:19]
-                            hc = st.columns([4, 1.5])
-                            hc[0].caption(f"{stamp} · {h['action']}")
-                            if hc[1].button("Undo", key=f"undo_prog_{h['id']}", use_container_width=True):
-                                ok, msg = restore_progression_undo(h["id"])
-                                if ok:
-                                    add_log("Magister", f"Undid progression change for {cc['name'] or 'Unnamed'}: {h['action']}")
-                                    st.success(msg)
-                                    st.rerun()
-                                else:
-                                    st.error(msg)
-                    else:
-                        st.caption("No progression corrections or advancement changes have been recorded yet.")
-
-    # ---- Session ----
+        _gm_tab_progression()
     with tabs[6]:
-        st.markdown("#### Session")
-        st.caption("Close the session, award table XP and individual bonuses, record notes, and mark the NPCs involved.")
-        current_session = int(camp.get("session_no", 1))
-        players = list_characters("player")
-        npcs = list_characters("npc")
-        old_records = get_session_records(20)
-
-        with st.form("session_record_form"):
-            sc = st.columns([1.2, 2.8, 1.2])
-            session_no = sc[0].number_input("Session", 1, 9999, current_session)
-            title = sc[1].text_input("Session Title", placeholder="e.g. The Fall of Gilead")
-            base_xp = sc[2].number_input("Table XP", 0, 10000, 20, step=5)
-            notes = st.text_area("Session Notes", placeholder="Events, rewards, consequences, rulings, loot, reminders...")
-
-            st.markdown("**NPCs involved**")
-            npc_ids = []
-            if npcs:
-                ncols = st.columns(3)
-                for i, npc in enumerate(npcs):
-                    if ncols[i % 3].checkbox(f"{npc['name'] or 'Unnamed NPC'} · T{npc['tier']}", key=f"session_npc_{npc['id']}"):
-                        npc_ids.append(npc["id"])
-            else:
-                st.caption("No NPCs available.")
-
-            st.markdown("**Player XP**")
-            award_rows = []
-            if players:
-                h = st.columns([3.5, 1.4, 1.4, 1.4])
-                h[0].markdown("**Character**")
-                h[1].markdown("**Present**")
-                h[2].markdown("**Base XP**")
-                h[3].markdown("**Bonus XP**")
-                for pl in players:
-                    cols = st.columns([3.5, 1.4, 1.4, 1.4])
-                    present = cols[1].checkbox("Present", value=True, key=f"session_present_{pl['id']}", label_visibility="collapsed")
-                    cols[0].markdown(f"**{pl['name'] or 'Unnamed'}** · T{pl['tier']} · {rank_label(pl['rank'])}")
-                    cols[2].number_input("Base", min_value=0, max_value=10000, value=int(base_xp), step=5, key=f"session_base_{pl['id']}", label_visibility="collapsed", disabled=not present)
-                    cols[3].number_input("Bonus", min_value=0, max_value=10000, value=0, step=5, key=f"session_bonus_{pl['id']}", label_visibility="collapsed", disabled=not present)
-                    if present:
-                        award_rows.append((pl["id"], st.session_state[f"session_base_{pl['id']}"], st.session_state[f"session_bonus_{pl['id']}"]))
-            else:
-                st.info("No players are registered.")
-
-            advance = st.checkbox("Advance campaign to the next session", value=True)
-            submit = st.form_submit_button("Close Session & Award XP", use_container_width=True)
-            if submit:
-                sid = create_session_record(session_no, title, notes, base_xp, npc_ids)
-                award_session_xp(sid, award_rows, close_session=True, advance_campaign=advance)
-                total_awarded = sum(int(a[1]) + int(a[2]) for a in award_rows)
-                add_log("Magister", f"Session {int(session_no)} closed. {total_awarded} XP awarded across {len(award_rows)} player(s).")
-                st.success("Session closed and XP awarded.")
-                st.rerun()
-
-        st.divider()
-        st.markdown("#### Session History")
-        if not old_records:
-            st.caption("No session records yet.")
-        for sr in old_records:
-            status = "Closed" if sr["closed_at"] else "Draft"
-            label = f"Session {sr['session_no']} · {sr['title'] or 'Untitled'} · {status}"
-            with st.expander(label):
-                st.write(sr["notes"] or "No notes.")
-                try:
-                    marked_ids = json.loads(sr["npc_ids"] or "[]")
-                except Exception:
-                    marked_ids = []
-                marked = [n["name"] for n in npcs if n["id"] in marked_ids]
-                st.write("NPCs involved: " + (", ".join(marked) if marked else "None"))
-                awards = get_session_awards(sr["id"])
-                if awards:
-                    for aw in awards:
-                        st.markdown(f"**{aw['name']}** · +{aw['total_xp']} XP (base {aw['base_xp']} + bonus {aw['bonus_xp']})")
-                st.markdown("**Combat Log**")
-                render_session_combat_logs(sr["session_no"])
-
-    # ---- Combat ----
+        _gm_tab_session()
     with tabs[7]:
-        head_row = st.columns([5, 1.3])
-        head_row[0].markdown("#### Combat")
-        if head_row[1].button("End Combat", use_container_width=True, key="combat_clear"):
-            logged = log_combat_end()
-            st.session_state["combat_just_logged"] = bool(logged)
-            st.rerun()
-        if st.session_state.pop("combat_just_logged", False):
-            st.success("Combat logged. See the Combat Log below or in Session history.")
-
-        all_combat_chars = list_characters()
-        folders = list_folders()
-        folder_map = {f["id"]: f["name"] for f in folders}
-        current = get_combatants()
-        active = {c["id"] for c in current}
-
-        current_idx = -1
-        if current:
-            state = combat_state()
-            current_idx = min(state["current"], len(current) - 1)
-            turn_cols = st.columns([1.1, 1.3, 1.3, 3], gap="small")
-            turn_cols[0].metric("Round", state["round"])
-            if turn_cols[1].button("◀ Previous Turn", use_container_width=True, key="combat_turn_prev"):
-                advance_combat_turn(-1)
-                st.rerun()
-            if turn_cols[2].button("Next Turn ▶", use_container_width=True, key="combat_turn_next"):
-                advance_combat_turn(+1)
-                st.rerun()
-            current_name = html.escape(current[current_idx].get("name") or "Unnamed")
-            turn_cols[3].markdown(
-                f"<div style='padding-top:8px'>Current turn: <b>{current_name}</b> (#{current_idx + 1})</div>",
-                unsafe_allow_html=True,
-            )
-
-        if not current:
-            st.info("No characters are currently in combat. Add Players or NPCs below.")
-        else:
-            st.caption("↑ / ↓ reorder the attack sequence · click a name for Attributes and Skills.")
-            user = st.session_state.user or {}
-            for idx, ch in enumerate(current):
-                gear = equipped_wargear_modifiers(ch)
-                d = derived_traits(ch, gear)
-                is_npc = ch.get("kind") == "npc"
-                role_label = "NPC" if is_npc else "PLAYER"
-                rank = int(ch.get("rank", 1) or 1)
-                folder_name = folder_map.get(ch.get("folder_id"), "No folder")
-
-                is_current_turn = (idx == current_idx)
-                with st.container(border=True):
-                    # Position number + name/details popover + reorder/remove, all in one row.
-                    head = st.columns([0.5, 3.7, 0.6, 1], gap="small")
-                    pos_cls = "combat-pos combat-pos-active" if is_current_turn else "combat-pos"
-                    head[0].markdown(f"<div class='{pos_cls}'>{idx + 1}</div>", unsafe_allow_html=True)
-                    with head[1]:
-                        pop_label = ("▶ " + (ch.get("name") or "Unnamed")) if is_current_turn else (ch.get("name") or "Unnamed")
-                        with st.popover(pop_label, use_container_width=True, key=f"combat_pop_{ch['id']}"):
-                            st.markdown(f"**{species_label(ch.get('species', ''))}** · T{ch.get('tier', 1)} · {rank_label(rank)}")
-                            if ch.get("archetype"):
-                                st.caption(str(ch.get("archetype")))
-                            attrs = effective_attributes(ch, gear); skills = effective_skills(ch, gear)
-                            st.markdown("**Attributes**  " + " · ".join(f"{a[:3].upper()} {attrs.get(a, 1)}" for a in ATTRS))
-                            st.markdown("**Skills**  " + " · ".join(f"{sk[:4]} {skills.get(sk, 0) + attrs.get(at, 1)}" for sk, at in SKILLS.items()))
-                        st.caption(f"{role_label} · {species_label(ch.get('species'))} · T{ch.get('tier', 1)} · {rank_label(rank)} · {folder_name}")
-                        # Combat-critical Traits stay visible at a glance instead of hiding behind the popover.
-                        st.caption(f"Defence {int(d.get('Defence', 0) or 0)} · Resilience {int(d.get('Resilience', 0) or 0)} "
-                                   f"· Speed {int(d.get('Speed', 0) or 0)} · Resolve {int(d.get('Resolve', 0) or 0)}")
-                    with head[2]:
-                        if st.button("↑", key=f"combat_up_{ch['id']}", disabled=(idx == 0), use_container_width=True):
-                            move_combatant(ch["id"], -1)
-                            st.rerun()
-                        if st.button("↓", key=f"combat_down_{ch['id']}", disabled=(idx == len(current) - 1), use_container_width=True):
-                            move_combatant(ch["id"], 1)
-                            st.rerun()
-                    if head[3].button("Remove", key=f"combat_current_remove_{ch['id']}", use_container_width=True):
-                        set_combatant(ch["id"], False)
-                        st.rerun()
-
-                    # Wounds/Shock/Ammo/Wrath, in the same compact metric + stacked −/+ pattern as the Battle Sheet.
-                    vcols = st.columns(4, gap="small")
-                    _vital_stat_block(vcols[0], "Wounds", max(0, int(ch.get("cur_wounds", 0) or 0)), int(d.get("Max Wounds", 0) or 0),
-                                      cid=ch["id"], field="cur_wounds", editable=is_npc, actor_role="gm",
-                                      actor_user_id=user.get("id"), actor_name=user.get("username", "Magister"),
-                                      key_prefix=f"combat_w_{ch['id']}", max_mod=int(gear.get("wounds", 0) or 0))
-                    _vital_stat_block(vcols[1], "Shock", max(0, int(ch.get("cur_shock", 0) or 0)), int(d.get("Max Shock", 0) or 0),
-                                      cid=ch["id"], field="cur_shock", editable=is_npc, actor_role="gm",
-                                      actor_user_id=user.get("id"), actor_name=user.get("username", "Magister"),
-                                      key_prefix=f"combat_s_{ch['id']}", max_mod=int(gear.get("shock", 0) or 0))
-                    _ammo_stat_block(vcols[2], ch["id"], ch, editable=is_npc, actor_role="gm",
-                                     actor_user_id=user.get("id"), actor_name=user.get("username", "Magister"),
-                                     key_prefix=f"combat_a_{ch['id']}", source_prefix="Combat Quick Panel",
-                                     cap_mod=ammo_capacity_bonus(ch, gear), gear_mods=gear)
-                    _vital_stat_block(vcols[3], "Wrath", max(0, int(ch.get("cur_wrath", 0) or 0)), int(d.get("Max Wrath", 0) or 0),
-                                      max_mod=int(gear.get("wrath", 0) or 0))
-
-                if idx < len(current) - 1:
-                    st.markdown("<div class='combat-arrow'>▼</div>", unsafe_allow_html=True)
-
-        with st.expander(f"Add Combatants · {len(current)} in combat", expanded=(not current)):
-            fc = st.columns([1.8, 2.5])
-            folder_options = [None] + [f["id"] for f in folders]
-            selected_folder = fc[0].selectbox(
-                "Filter by Folder",
-                folder_options,
-                format_func=lambda x: "All Folders" if x is None else folder_map.get(x, "Folder"),
-                key="combat_folder",
-            )
-            search = fc[1].text_input(
-                "Search Character",
-                placeholder="Search by name, species, archetype, or faction",
-                key="combat_search",
-            )
-
-            filtered = []
-            q = search.strip().lower()
-            for ch in all_combat_chars:
-                if selected_folder is not None and ch.get("folder_id") != selected_folder:
-                    continue
-                hay = " ".join([
-                    str(ch.get("name") or ""),
-                    str(ch.get("species") or ""),
-                    str(ch.get("archetype") or ""),
-                    str(ch.get("chapter") or ""),
-                    str(ch.get("faction") or ""),
-                ]).lower()
-                if q and q not in hay:
-                    continue
-                filtered.append(ch)
-
-            st.caption("Players and NPCs are read-only here except for the manual attack order and NPC quick vitals.")
-            if not filtered:
-                st.caption("No characters match the current filter.")
-            else:
-                for ch in filtered:
-                    in_combat = ch["id"] in active
-                    cols = st.columns([5, 1.2, 2])
-                    kind_label = "NPC" if ch["kind"] == "npc" else "PLAYER"
-                    ncls = "npc" if ch["kind"] == "npc" else ""
-                    cols[0].markdown(
-                        f"<span class='{ncls}'><b>{html.escape(ch.get('name') or 'Unnamed')}</b></span> · {kind_label} · "
-                        f"{species_label(ch.get('species'))} · T{ch.get('tier', 1)} · {rank_label(ch.get('rank', 1))}",
-                        unsafe_allow_html=True,
-                    )
-                    if cols[1].button("Remove" if in_combat else "Add", key=f"combat_toggle_{ch['id']}", use_container_width=True):
-                        set_combatant(ch["id"], not in_combat)
-                        st.rerun()
-                    cols[2].caption("IN COMBAT" if in_combat else "")
-
-        session_no_now = int(camp.get("session_no", 1) or 1)
-        session_logs = get_combat_logs(session_no=session_no_now)
-        with st.expander(f"Combat Log · Session {session_no_now} · {len(session_logs)} combat(s)", expanded=False):
-            st.caption("Click a combat to see each participant's final Wounds/Shock/Wrath.")
-            if not session_logs:
-                st.caption("No combats logged this session yet. Ending a combat above records one here.")
-            else:
-                for log in session_logs:
-                    render_combat_log_entry(log)
-
-    # ---- Campaign ----
+        _gm_tab_combat()
     with tabs[8]:
-        st.markdown("#### Campaign Configuration")
-        with st.form("campf"):
-            cc = st.columns([3, 1, 1])
-            cname = cc[0].text_input("Campaign Name", camp["name"])
-            ctier = cc[1].number_input("Campaign Tier", 1, MAX_TIER, int(camp["tier"]))
-            sess = cc[2].number_input("Session", 1, 999, int(camp["session_no"]))
-            if st.form_submit_button("Save"):
-                save_campaign(cname, ctier, camp["ruin"], sess); st.rerun()
-        st.caption(f"Standard character XP: {starting_xp(camp['tier'])} (Tier {camp['tier']} × 100). Advanced Character Creation adds Tier ×10 bonus XP.")
-        st.divider()
-        st.markdown("#### Ruin")
-        # Same compact metric + stacked −/+ pattern as the Battle Sheet vitals.
-        rc = st.columns([5, 1], gap="small")
-        rc[0].metric("Ruin", camp["ruin"])
-        with rc[1]:
-            st.button("+", key="ruinplus", on_click=adjust_ruin, args=(+1,), use_container_width=True)
-            st.button("−", key="ruinminus", on_click=adjust_ruin, args=(-1,), use_container_width=True)
-        st.divider()
-        st.markdown("#### Session Log")
-        with st.form("voxlog"):
-            msg = st.text_area("New Entry")
-            if st.form_submit_button("Record"):
-                if msg.strip():
-                    add_log("Magister", msg.strip()); st.rerun()
-        for lg in get_logs():
-            st.markdown(f"<div class='row'><b>{lg['ts']}</b> - {lg['text']}</div>", unsafe_allow_html=True)
-
-    # ---- Maintenance ----
+        _gm_tab_campaign()
     with tabs[9]:
-        st.markdown("#### File Maintenance")
-        st.caption("The .db backup contains everything: players, NPCs, folders, XP, Vox, portraits. "
-                   "On free hosting the disk may reset; download backups regularly.")
-        if os.path.exists(DB_PATH):
-            size = os.path.getsize(DB_PATH) / (1024 * 1024)
-            st.write(f"Database size: {size:.2f} MB (SQLite storage grows automatically).")
-            # Reading the whole DB file into memory here unconditionally used to run
-            # on every single interaction anywhere in the Magister view (st.tabs()
-            # computes every tab's body on every rerun, not just the visible one),
-            # not just when this tab is open. Gate the actual read behind a click.
-            if st.button("Prepare Backup for Download", key="maint_prepare_backup"):
-                st.session_state["maint_backup_ready"] = True
-            if st.session_state.get("maint_backup_ready"):
-                with open(DB_PATH, "rb") as f:
-                    st.download_button("Download backup (cogitador.db)", f.read(),
-                                       file_name="cogitador.db", mime="application/octet-stream")
-        up = st.file_uploader("Restore backup", type=["db"])
-        if up is not None and st.button("Overwrite everything"):
-            with open(DB_PATH, "wb") as f:
-                f.write(up.getbuffer())
-            st.rerun()
+        _gm_tab_maintenance()
 
 
 def player_view():

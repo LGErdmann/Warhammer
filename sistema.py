@@ -1121,14 +1121,44 @@ def _npc_attrs_skills_gear(species, creation_mode, archetype):
     return attrs, skills, starting_gear, starting_talents
 
 
-def _auto_spend_xp(attrs, skills, budget, spent_already):
-    """Greedily spends whatever is left of `budget` (after `spent_already`) on
-    the cheapest next Attribute/Skill upgrade available, one point at a time,
-    until nothing affordable remains. Used to quickly build combat-ready
-    Generic NPCs that have "all their XP spent" without a specific manual build."""
+def _auto_spend_xp(attrs, skills, budget, spent_already, npc_ctx=None, max_talents_powers=2):
+    """Greedily spends whatever is left of `budget` (after `spent_already`).
+
+    If `npc_ctx` is given, first rolls up to `max_talents_powers` random
+    Talents and/or Powers whose Keyword/Rank/Tier/Attribute requirements the
+    mob already meets — the exact same eligibility rules a Player purchasing
+    them would face (craft_keyword_match + _requirements_satisfied) — then
+    spends whatever XP remains on the cheapest next Attribute/Skill upgrade
+    available, one point at a time, until nothing affordable remains. Used
+    to quickly build combat-ready Generic NPCs that have "all their XP
+    spent" without a specific manual build."""
     remaining = int(budget) - int(spent_already)
+    bought_talents, bought_powers = [], []
     if remaining <= 0:
-        return attrs, skills
+        return attrs, skills, bought_talents, bought_powers
+
+    if npc_ctx is not None and max_talents_powers > 0:
+        pool = list(list_craft_items("talent")) + list(list_craft_items("power"))
+        random.shuffle(pool)
+        for row in pool:
+            if len(bought_talents) + len(bought_powers) >= max_talents_powers:
+                break
+            cost = int(row.get("cost", 0) or 0)
+            if cost <= 0 or cost > remaining:
+                continue
+            probe = {**npc_ctx, "attributes": attrs, "skills": skills,
+                     "talents": bought_talents, "powers": bought_powers}
+            if not craft_keyword_match(probe, row):
+                continue
+            ok, _reason = _requirements_satisfied(probe, row)
+            if not ok:
+                continue
+            kind = str(row.get("kind", "talent")).lower()
+            kind = kind if kind in ("talent", "power") else "talent"
+            entry = _build_craft_entry(dict(row), kind)
+            (bought_powers if kind == "power" else bought_talents).append(entry)
+            remaining -= cost
+
     attr_cap = max(ATTR_COST.keys())
     skill_cap = max(SKILL_COST.keys())
     while remaining > 0:
@@ -1155,7 +1185,7 @@ def _auto_spend_xp(attrs, skills, budget, spent_already):
         else:
             skills[key] = int(skills.get(key, 0)) + 1
         remaining -= step_cost
-    return attrs, skills
+    return attrs, skills, bought_talents, bought_powers
 
 
 def create_npc(name, species, tier, creation_mode="archetype", rank=1, archetype=""):
@@ -1222,17 +1252,23 @@ def create_generic_npcs(archetype, tier, quantity, spend_xp=True):
     ids = []
     for i in range(quantity):
         attrs, skills, starting_gear, starting_talents = _npc_attrs_skills_gear(species, "archetype", archetype)
+        bought_powers = []
         if spend_xp:
             base_ch = {"species": species, "attributes": attrs, "skills": skills,
                        "creation_mode": "archetype", "archetype": archetype, "talents": [], "other_xp": 0}
-            attrs, skills = _auto_spend_xp(attrs, skills, budget, xp_spent(base_ch))
+            npc_ctx = {"species": species, "archetype": archetype, "faction": faction, "chapter": "",
+                       "creation_mode": "archetype", "tier": tier, "rank": 1, "keywords": []}
+            attrs, skills, bought_talents, bought_powers = _auto_spend_xp(
+                attrs, skills, budget, xp_spent(base_ch), npc_ctx=npc_ctx, max_talents_powers=2)
+            starting_talents = starting_talents + bought_talents
         name = f"{prefix}{next_idx + i}"
         cur = conn.execute("""INSERT INTO characters(user_id,kind,name,chapter,species,archetype,faction,keywords,archetype_choices,creation_mode,tier,starting_tier,rank,earned_xp,other_xp,
                         attributes,skills,talents,powers,wargear,armour,cur_wounds,cur_shock,cur_wrath,cur_corruption,cur_wealth,notes,
                         comms_on,comms_changed_at,temp_instance)
                         VALUES(NULL,'npc',?,?,?,?,?,?,?,'archetype',?,?,1,0,0,?,?,?,?,?,0,0,0,0,0,?,?,1,?,1)""",
                             (name, "", species, archetype, faction, json.dumps([], ensure_ascii=False), json.dumps({}, ensure_ascii=False),
-                             tier, tier, json.dumps(attrs), json.dumps(skills), json.dumps(starting_talents, ensure_ascii=False), json.dumps([]),
+                             tier, tier, json.dumps(attrs), json.dumps(skills), json.dumps(starting_talents, ensure_ascii=False),
+                             json.dumps(bought_powers, ensure_ascii=False),
                              json.dumps(starting_gear, ensure_ascii=False), tier, "", now_iso()))
         ids.append(int(cur.lastrowid))
     conn.commit(); conn.close()
@@ -5506,7 +5542,7 @@ def _gm_tab_combat():
         mob_tier = gc[1].number_input("Tier", 1, MAX_TIER, int(ARCHETYPES[mob_arch]["tier"]), key="mob_tier")
         mob_qty = gc[2].number_input("Quantity", 1, 20, 3, key="mob_qty")
         mob_spend = gc[3].checkbox("Spend all XP", value=True, key="mob_spend_xp",
-                                    help="Auto-buys Attribute/Skill upgrades with whatever XP the Tier budget leaves after the Archetype package, so the mob isn't stuck at bare minimums. Ignored for (Bestiary) entries — their printed stat block is used as-is.",
+                                    help="Rolls up to 2 random Talents/Powers whose Keyword/Rank/Tier/Attribute requirements the mob already meets, then spends whatever XP is left on Attribute/Skill upgrades, so the mob isn't stuck at bare minimums. Ignored for (Bestiary) entries — their printed stat block is used as-is.",
                                     disabled=(mob_arch in BESTIARY_ARCHETYPE_NAMES))
         if mob_arch in BESTIARY_ARCHETYPE_NAMES:
             st.caption("(Bestiary) entries use the Core Rulebook's printed Attributes/Skills/Wargear directly — "

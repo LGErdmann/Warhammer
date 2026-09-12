@@ -949,6 +949,10 @@ def init_db():
     c.execute("""CREATE TABLE IF NOT EXISTS combat_log(
         id INTEGER PRIMARY KEY AUTOINCREMENT, session_no INTEGER, started_at TEXT, ended_at TEXT,
         rounds INTEGER DEFAULT 1, participants TEXT DEFAULT '[]')""")
+    c.execute("""CREATE TABLE IF NOT EXISTS wargear_requisition(
+        id INTEGER PRIMARY KEY AUTOINCREMENT, character_id INTEGER NOT NULL, source_craft_id INTEGER,
+        name TEXT NOT NULL, effect TEXT DEFAULT '', details TEXT DEFAULT '{}', status TEXT DEFAULT 'pending',
+        requested_at TEXT, resolved_at TEXT, resolved_by TEXT DEFAULT '')""")
     conn.commit()
     # migration: ensure columns exist in databases created by older versions
     _ensure_columns(conn, "campaign", {"name": "TEXT", "tier": "INTEGER DEFAULT 2",
@@ -2041,6 +2045,108 @@ def assign_craft_to_character(cid, craft_id, kind, actor_name="", actor_user_id=
         conn.close()
 
 
+def create_wargear_requisition(cid, name="", effect="", details=None, source_craft_id=None):
+    """A Player asks for a piece of Wargear, either a brand-new item they
+    describe themselves or one already in the catalog. It sits as 'pending'
+    (visible on the Player's sheet in red, granting nothing) until the
+    Magister resolves it on the Requisitions tab."""
+    if source_craft_id:
+        row = conn = None
+        conn = get_conn()
+        row = conn.execute("SELECT * FROM craft_items WHERE id=? AND kind='wargear' AND active=1", (int(source_craft_id),)).fetchone()
+        conn.close()
+        if not row:
+            return False, "That catalog item no longer exists."
+        name = row["name"]; effect = row["effect"] or ""; details = craft_details(row)
+    else:
+        if not str(name or "").strip():
+            return False, "Name is required."
+    conn = get_conn()
+    conn.execute("""INSERT INTO wargear_requisition(character_id,source_craft_id,name,effect,details,status,requested_at)
+                    VALUES(?,?,?,?,?, 'pending', ?)""",
+                 (int(cid), int(source_craft_id) if source_craft_id else None, str(name).strip(),
+                  str(effect or ""), json.dumps(details or {}, ensure_ascii=False), now_iso()))
+    conn.commit(); conn.close()
+    return True, "Requisition submitted for the Magister's review."
+
+
+def list_requisitions(character_id=None, status=None):
+    conn = get_conn()
+    q = "SELECT * FROM wargear_requisition WHERE 1=1"
+    args = []
+    if character_id is not None:
+        q += " AND character_id=?"; args.append(int(character_id))
+    if status is not None:
+        q += " AND status=?"; args.append(str(status))
+    q += " ORDER BY id DESC"
+    rows = conn.execute(q, args).fetchall()
+    conn.close()
+    out = []
+    for r in rows:
+        d = dict(r)
+        try: d["details"] = json.loads(d.get("details") or "{}")
+        except Exception: d["details"] = {}
+        out.append(d)
+    return out
+
+
+def update_requisition_item(rid, name, effect, details):
+    """The Magister may tidy up a Player's custom item before approving it."""
+    conn = get_conn()
+    conn.execute("UPDATE wargear_requisition SET name=?, effect=?, details=? WHERE id=? AND status='pending'",
+                 (str(name).strip(), str(effect or ""), json.dumps(details or {}, ensure_ascii=False), int(rid)))
+    conn.commit(); conn.close()
+
+
+def delete_requisition(rid):
+    conn = get_conn()
+    conn.execute("DELETE FROM wargear_requisition WHERE id=?", (int(rid),))
+    conn.commit(); conn.close()
+
+
+def resolve_requisition(rid, approve, actor_name=""):
+    """Approve or deny a pending Requisition.
+
+    Approving a request for an existing catalog item just assigns it.
+    Approving a brand-new item first registers it in the Wargear catalog
+    (so it becomes available to everyone from then on, per the Magister's
+    request), then assigns that new catalog entry to the requesting character.
+    """
+    conn = get_conn()
+    row = conn.execute("SELECT * FROM wargear_requisition WHERE id=?", (int(rid),)).fetchone()
+    conn.close()
+    if not row:
+        return False, "Requisition not found."
+    if row["status"] != "pending":
+        return False, "This Requisition was already resolved."
+    cid = int(row["character_id"])
+    if not approve:
+        conn = get_conn()
+        conn.execute("UPDATE wargear_requisition SET status='denied', resolved_at=?, resolved_by=? WHERE id=?",
+                     (now_iso(), actor_name, int(rid)))
+        conn.commit(); conn.close()
+        return True, "Requisition denied."
+
+    try:
+        details = json.loads(row["details"] or "{}")
+    except Exception:
+        details = {}
+    craft_id = row["source_craft_id"]
+    if not craft_id:
+        craft_id = save_craft_item({
+            "kind": "wargear", "name": row["name"], "effect": row["effect"] or "",
+            "source": "Player Requisition", "details": {**details, "custom": True, "official": False},
+        })
+    ok, msg = assign_craft_to_character(cid, craft_id, "wargear", source="Requisition Approved")
+    if not ok:
+        return False, msg
+    conn = get_conn()
+    conn.execute("UPDATE wargear_requisition SET status='approved', source_craft_id=?, resolved_at=?, resolved_by=? WHERE id=?",
+                 (int(craft_id), now_iso(), actor_name, int(rid)))
+    conn.commit(); conn.close()
+    return True, "Requisition approved and added to the character's Wargear."
+
+
 def adjust_wargear_quantity(cid, craft_id, delta, actor_name="", actor_user_id=None, source="Wargear Quantity Change", actor_role="gm"):
     """Atomically add/remove one stackable Wargear unit (Ammo/Grenade/Missile)."""
     conn = get_conn()
@@ -2142,6 +2248,7 @@ def save_craft_item(item, item_id=None):
     now = now_iso()
     conn = get_conn()
     payload = json.dumps(item.get("details", {}), ensure_ascii=False)
+    new_id = int(item_id) if item_id else None
     if item_id:
         existing = conn.execute("SELECT active FROM craft_items WHERE id=?", (int(item_id),)).fetchone()
         active = int(item.get("active", existing[0] if existing else 1))
@@ -2160,12 +2267,15 @@ def save_craft_item(item, item_id=None):
             conn.execute("""UPDATE craft_items SET name=?,effect=?,cost=?,source=?,details=?,updated_at=? WHERE id=?""",
                          (item["name"], item.get("effect", ""), int(item.get("cost", 0) or 0),
                           item.get("source", ""), payload, now, int(existing[0])))
+            new_id = int(existing[0])
         else:
-            conn.execute("""INSERT INTO craft_items(kind,name,effect,cost,source,source_url,details,active,created_at,updated_at) VALUES(?,?,?,?,?,?,?,1,?,?)""",
+            cur = conn.execute("""INSERT INTO craft_items(kind,name,effect,cost,source,source_url,details,active,created_at,updated_at) VALUES(?,?,?,?,?,?,?,1,?,?)""",
                          (item["kind"], item["name"], item.get("effect", ""), int(item.get("cost", 0) or 0),
                           item.get("source", ""), source_url, payload, now, now))
+            new_id = int(cur.lastrowid)
     conn.commit(); conn.close()
     invalidate_craft_cache()
+    return new_id
 
 
 def delete_craft_item(item_id):
@@ -3134,6 +3244,10 @@ def inject_theme():
     .skrow .n{ letter-spacing:.02em; } .skrow .c{ text-align:center; opacity:.7; }
     .skrow .t{ text-align:center; font-family:'Cinzel',serif; color:var(--gold2); font-weight:700; }
     .tal,.wg{ background:var(--panel2); border:1px solid #3a2e18; border-radius:4px; padding:7px 10px; margin-bottom:6px; }
+    .wg-pending{ border-color:var(--red); border-left:3px solid var(--red); }
+    .wg-pending b{ color:var(--red); }
+    .wg-pending-tag{ float:right; font-family:'Cinzel',serif; color:var(--red); font-size:.68rem;
+        letter-spacing:.08em; text-transform:uppercase; opacity:.9; }
     .resource-card{ background:linear-gradient(90deg,rgba(36,27,14,.96),rgba(24,18,10,.96)); border:1px solid #4a3719; border-left:3px solid var(--gold); border-radius:3px; padding:8px 11px; margin:4px 0 8px; }
     .resource-head{ display:flex; justify-content:space-between; align-items:center; font-family:'Cinzel',serif; color:var(--gold2); letter-spacing:.06em; font-size:.8rem; }
     .resource-note{ margin-top:3px; color:#b8af9d; font-size:.72rem; line-height:1.35; }
@@ -3938,6 +4052,31 @@ TRANSLATE_PT = {
         "Capítulo se aplica a personagens Adeptus Astartes.",
     "Session": "Sessão", "No character sheet linked. Contact the Magister.":
         "Nenhuma ficha vinculada. Contate o Mestre.",
+    "Requisition": "Requisição", "Requisition Log": "Registro de Requisições",
+    "Ask the Magister for a piece of Wargear. It shows as Under Review, granting nothing, "
+    "until approved, describe a new item, or request one already known to the campaign.":
+        "Peça um item de Equipamento ao Mestre. Ele fica marcado como Em Análise, sem conceder nada, "
+        "até ser aprovado, descreva um item novo ou peça um que a campanha já conhece.",
+    "Request a New Item": "Requisitar Item Novo", "Description": "Descrição",
+    "Submit Requisition": "Enviar Requisição", "Request a Catalog Item": "Requisitar Item do Catálogo",
+    "Request This Item": "Requisitar Este Item", "The Wargear catalog is empty.": "O catálogo de Equipamento está vazio.",
+    "Your Requisitions": "Suas Requisições", "No Requisitions filed yet.": "Nenhuma requisição enviada ainda.",
+    "Dismiss": "Descartar",
+    "Requisition submitted for the Magister's review.": "Requisição enviada para análise do Mestre.",
+    "Name is required.": "O nome é obrigatório.",
+    "That catalog item no longer exists.": "Esse item do catálogo não existe mais.",
+    "Description / Effect": "Descrição / Efeito",
+    "Name and Description / Effect are required.": "Nome e Descrição / Efeito são obrigatórios.",
+    "Same fields as the Magister's own Craft catalog. Nothing here applies to your sheet "
+    "until the Magister approves it.":
+        "Os mesmos campos do catálogo de Craft do Mestre. Nada aqui se aplica à sua ficha "
+        "até o Mestre aprovar.",
+    "Ask the Magister for a piece of Wargear. It shows as Under Review, granting nothing, "
+    "until approved, whether it's a brand-new item you define here (same editor the Magister "
+    "uses for the Craft catalog) or one already known to the campaign.":
+        "Peça um item de Equipamento ao Mestre. Ele fica marcado como Em Análise, sem conceder nada, "
+        "até ser aprovado, seja um item novo que você define aqui (o mesmo editor que o Mestre usa "
+        "no catálogo de Craft) ou um que a campanha já conhece.",
 }
 
 
@@ -4126,6 +4265,16 @@ def battle_view(cid):
                 st.markdown(f"<div class='wg'><b>{name}</b>{stats_html}{effect_html}</div>", unsafe_allow_html=True)
         else:
             st.markdown(f"<div class='wg' style='opacity:.6'>{T('No wargear.')}</div>", unsafe_allow_html=True)
+
+        pending_req = [r for r in list_requisitions(character_id=cid) if r["status"] == "pending"]
+        for r in pending_req:
+            label = "Em Análise" if st.session_state.get("ui_lang") == "pt" else "Under Review"
+            st.markdown(
+                f"<div class='wg wg-pending'><b>{html.escape(r['name'])}</b>"
+                f"<span class='wg-pending-tag'>{label}</span>"
+                f"<div class='wgdesc'>{html.escape(r.get('effect','') or '')}</div></div>",
+                unsafe_allow_html=True,
+            )
 
         st.markdown(f"<div class='sectionttl'>{T('Vox Network')}</div>", unsafe_allow_html=True)
         vox_live(cid)
@@ -5942,6 +6091,80 @@ def _gm_tab_campaign():
 
 
 @st.fragment
+def _gm_tab_requisitions():
+    pending = list_requisitions(status="pending")
+    with _section(f"Pending Requisitions · {len(pending)}",
+                  "Wargear Players have asked for, waiting on your approval. Wealth/Influence are shown "
+                  "only as context for your decision — nothing here is enforced automatically.",
+                  expanded=bool(pending)):
+        if not pending:
+            st.caption("No open Requisitions.")
+        chars_by_id = {c["id"]: c for c in list_characters()}
+        for r in pending:
+            ch = chars_by_id.get(r["character_id"])
+            if not ch:
+                continue
+            gear = equipped_wargear_modifiers(ch)
+            d = derived_traits(ch, gear)
+            with st.container(border=True):
+                head = st.columns([3, 1, 1, 1])
+                head[0].markdown(f"**{html.escape(ch.get('name') or 'Unnamed')}** requests:")
+                head[1].metric("Wealth", int(ch.get("cur_wealth", 0) or 0))
+                head[2].metric("Influence", int(d.get("Influence", 0) or 0))
+                is_custom = not r.get("source_craft_id")
+                if head[3].button("Edit" if is_custom else "View", key=f"req_edit_{r['id']}", use_container_width=True, disabled=not is_custom):
+                    st.session_state["req_editing"] = r["id"] if st.session_state.get("req_editing") != r["id"] else None
+
+                editing = is_custom and st.session_state.get("req_editing") == r["id"]
+                if editing:
+                    details = r.get("details", {}) or {}
+                    ename = st.text_input("Name", r["name"], key=f"req_name_{r['id']}")
+                    eeffect = st.text_area("Description / Effect", r.get("effect", ""), height=80, key=f"req_effect_{r['id']}")
+                    newdetails = dict(details)
+                    newdetails.update(_render_wargear_data(f"req_gear_{r['id']}", details))
+                    _wargear_trait_bonus_preview(newdetails)
+                    newdetails["modifiers"] = _render_craft_modifiers(f"req_mods_{r['id']}", newdetails, "wargear")
+                    if st.button("Save Edits", key=f"req_save_{r['id']}"):
+                        update_requisition_item(r["id"], ename, eeffect, newdetails)
+                        st.rerun()
+                else:
+                    st.markdown(f"<div class='wg'><b>{html.escape(r['name'])}</b>"
+                                f"<div class='wgdesc'>{html.escape(r.get('effect','') or '')}</div></div>", unsafe_allow_html=True)
+                    if not is_custom:
+                        st.caption("Requested from the existing Wargear catalog, nothing to edit.")
+
+                bc = st.columns(2)
+                if bc[0].button("Approve", key=f"req_approve_{r['id']}", type="primary", use_container_width=True):
+                    ok, msg = resolve_requisition(r["id"], True, actor_name=(st.session_state.get("user") or {}).get("username", "Magister"))
+                    (st.success if ok else st.error)(msg)
+                    if ok:
+                        st.session_state.pop("req_editing", None)
+                        add_log("Magister", f"Approved {ch.get('name')}'s Requisition for {r['name']}.")
+                        st.rerun()
+                if bc[1].button("Deny", key=f"req_deny_{r['id']}", use_container_width=True):
+                    ok, msg = resolve_requisition(r["id"], False, actor_name=(st.session_state.get("user") or {}).get("username", "Magister"))
+                    (st.success if ok else st.error)(msg)
+                    if ok:
+                        add_log("Magister", f"Denied {ch.get('name')}'s Requisition for {r['name']}.")
+                        st.rerun()
+
+    resolved = [r for r in list_requisitions() if r["status"] != "pending"][:30]
+    with _section(f"Requisition History · {len(resolved)}",
+                  "Recently approved or denied Requisitions, for reference.", key="requisition_history_section"):
+        if not resolved:
+            st.caption("Nothing resolved yet.")
+        chars_by_id = {c["id"]: c for c in list_characters()}
+        for r in resolved:
+            ch = chars_by_id.get(r["character_id"])
+            color = "#3fae5a" if r["status"] == "approved" else "#d13a3a"
+            st.markdown(
+                f"<div class='row'><b>{html.escape((ch or {}).get('name', 'Unknown'))}</b> · {html.escape(r['name'])} "
+                f"· <span style='color:{color}'>{r['status'].upper()}</span></div>",
+                unsafe_allow_html=True,
+            )
+
+
+@st.fragment
 def _gm_tab_maintenance():
     with _section("File Maintenance", "Download or restore the campaign's entire SQLite database file, "
                   "players, NPCs, folders, XP, Vox, portraits, everything. Restoring overwrites all current data."):
@@ -5993,7 +6216,7 @@ def gm_view():
     # Restore by uncommenting the original tabs line below (and the
     # `players_audit_view()` call further down) and removing the replacement.
     # tabs = st.tabs(["Characters", "Players", "Craft", "Archetypes", "Vox", "Progression", "Session", "Combat", "Campaign", "Maintenance"])
-    tabs = st.tabs(["Characters", "Craft", "Archetypes", "Vox", "Progression", "Session", "Combat", "Campaign", "Maintenance"])
+    tabs = st.tabs(["Characters", "Craft", "Archetypes", "Vox", "Progression", "Session", "Combat", "Requisitions", "Campaign", "Maintenance"])
 
     with tabs[0]:
         _gm_tab_characters()
@@ -6012,8 +6235,10 @@ def gm_view():
     with tabs[6]:
         _gm_tab_combat()
     with tabs[7]:
-        _gm_tab_campaign()
+        _gm_tab_requisitions()
     with tabs[8]:
+        _gm_tab_campaign()
+    with tabs[9]:
         _gm_tab_maintenance()
 
 
@@ -6078,6 +6303,64 @@ def spectator_view():
         st.session_state.user = None; st.rerun()
 
 
+def _player_tab_requisition(cid):
+    st.markdown(f"<div class='sectionttl'>{T('Requisition Log')}</div>", unsafe_allow_html=True)
+    st.caption(T("Ask the Magister for a piece of Wargear. It shows as Under Review, granting nothing, "
+                 "until approved, whether it's a brand-new item you define here (same editor the Magister "
+                 "uses for the Craft catalog) or one already known to the campaign."))
+
+    with st.expander(T("Request a New Item"), expanded=False):
+        st.caption(T("Same fields as the Magister's own Craft catalog. Nothing here applies to your sheet "
+                     "until the Magister approves it."))
+        rname = st.text_input(T("Name"), key=f"reqnew_name_{cid}")
+        rdesc = st.text_area(T("Description / Effect"), key=f"reqnew_effect_{cid}", height=100)
+        details = {}
+        details.update(_render_wargear_data(f"reqnew_gear_{cid}", details))
+        _wargear_trait_bonus_preview(details)
+        details["modifiers"] = _render_craft_modifiers(f"reqnew_mods_{cid}", details, "wargear")
+        if st.button(T("Submit Requisition"), type="primary", use_container_width=True, key=f"reqnew_submit_{cid}"):
+            if not rname.strip() or not rdesc.strip():
+                st.error(T("Name and Description / Effect are required."))
+            else:
+                ok, msg = create_wargear_requisition(
+                    cid, name=rname.strip(), effect=rdesc.strip(),
+                    details={**details, "structured_rules": True, "custom": True, "official": False},
+                )
+                (st.success if ok else st.error)(T(msg) if ok else msg)
+                if ok: st.rerun()
+
+    with st.expander(T("Request a Catalog Item"), expanded=False):
+        catalog = list_craft_items("wargear")
+        if catalog:
+            names = [r["name"] for r in catalog]
+            picked = st.selectbox(T("Wargear"), names, key=f"req_catalog_pick_{cid}")
+            row = next(r for r in catalog if r["name"] == picked)
+            if row.get("effect"):
+                st.caption(row["effect"])
+            if st.button(T("Request This Item"), key=f"req_catalog_btn_{cid}"):
+                ok, msg = create_wargear_requisition(cid, source_craft_id=int(row["id"]))
+                (st.success if ok else st.error)(T(msg) if ok else msg)
+                if ok: st.rerun()
+        else:
+            st.caption(T("The Wargear catalog is empty."))
+
+    mine = list_requisitions(character_id=cid)
+    st.markdown(f"<div class='sectionttl'>{T('Your Requisitions')}</div>", unsafe_allow_html=True)
+    if not mine:
+        st.caption(T("No Requisitions filed yet."))
+    for r in mine:
+        badge = {"pending": ("Em Análise" if st.session_state.get("ui_lang") == "pt" else "Under Review", "#c9922e"),
+                 "approved": ("Aprovado" if st.session_state.get("ui_lang") == "pt" else "Approved", "#3fae5a"),
+                 "denied": ("Negado" if st.session_state.get("ui_lang") == "pt" else "Denied", "#d13a3a")}.get(r["status"], (r["status"], "#999"))
+        cols = st.columns([5, 1.4, 1])
+        cols[0].markdown(f"<div class='tal'><span class='tn'>{html.escape(r['name'])}</span>"
+                          f"<div class='taleffect'>{html.escape(r.get('effect','') or '')}</div></div>", unsafe_allow_html=True)
+        cols[1].markdown(f"<span style='color:{badge[1]};font-family:Cinzel;letter-spacing:.05em;font-size:.8rem'>{badge[0].upper()}</span>", unsafe_allow_html=True)
+        if r["status"] != "pending":
+            if cols[2].button(T("Dismiss"), key=f"req_dismiss_{r['id']}", use_container_width=True):
+                delete_requisition(r["id"]); st.rerun()
+
+
 def player_view():
     _language_flag_toggle()
     camp = get_campaign()
@@ -6087,11 +6370,13 @@ def player_view():
     if not cid:
         st.error(T("No character sheet linked. Contact the Magister."))
         return
-    t = st.tabs([T("Battle View"), T("Character Sheet")])
+    t = st.tabs([T("Battle View"), T("Character Sheet"), T("Requisition")])
     with t[0]:
         battle_view(cid)
     with t[1]:
         edit_view(cid, gm_mode=False)
+    with t[2]:
+        _player_tab_requisition(cid)
 
 
 # ============================================================

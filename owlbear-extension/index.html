@@ -1,0 +1,137 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>W&amp;G Roll Bridge</title>
+<style>
+  body { margin:0; font-family: system-ui, sans-serif; background:#1c1a17; color:#e9e2d0; }
+  #wrap { padding: 10px 12px; }
+  h1 { font-size: 14px; margin: 0 0 4px; letter-spacing: .04em; color:#c9a84a; }
+  #status { font-size: 11px; opacity:.7; margin-bottom: 8px; }
+  .roll { border: 1px solid #3a352c; border-radius: 6px; padding: 6px 8px; margin-bottom: 6px; font-size: 12px; }
+  .roll .who { font-weight: 600; color:#e2c878; }
+  .roll .dice { opacity:.85; margin-top:4px; display:flex; align-items:center; flex-wrap:wrap; gap:3px; }
+  .crit { color:#4caf50; font-weight:600; }
+  .comp { color:#e05252; font-weight:600; }
+  #feed { max-height: 340px; overflow-y: auto; }
+  /* Wrath Die is always a different colour from the rest of the pool
+     (p.158) - gold/red here mirrors that at the table. */
+  .diebox {
+    display:inline-flex; align-items:center; justify-content:center;
+    width:20px; height:20px; border-radius:4px; font-weight:700; font-size:11px;
+    background:#e9e2d0; color:#1c1a17; flex:none;
+  }
+  .diebox.wrath { background:#c9392b; color:#fff; box-shadow:0 0 5px rgba(201,57,43,.8); }
+  .arrow { opacity:.7; margin: 0 2px; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <h1>&#9876;&#65039; W&amp;G Roll Bridge</h1>
+  <div id="status">Connectingâ€¦</div>
+  <div id="feed"></div>
+</div>
+
+<!-- Supabase JS (UMD) exposes window.supabase.createClient -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script type="module">
+  import OBR from "https://esm.sh/@owlbear-rodeo/sdk@2";
+
+  // --- Fill these in from your Supabase project (Project Settings -> API) ---
+  const SUPABASE_URL = "https://yopawhuaffomjzklpruu.supabase.co";
+  const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlvcGF3aHVhZmZvbWp6a2xwcnV1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkyNjg0NDYsImV4cCI6MjEwNDg0NDQ0Nn0.QeYL5iuhTehPdRfQcsV66NmpQ12HNT50RGjG2n-6AYU";
+  // ---------------------------------------------------------------------
+
+  const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  const BROADCAST_CHANNEL = "com.gilead-crusade.wg-roll-bridge/result";
+  const statusEl = document.getElementById("status");
+  const feedEl = document.getElementById("feed");
+  const seen = new Set();
+
+  function rollD6(n) {
+    const dice = [];
+    for (let i = 0; i < n; i++) dice.push(1 + Math.floor(Math.random() * 6));
+    return dice;
+  }
+
+  function iconTotal(dice) {
+    return dice.reduce((sum, d) => sum + (d === 6 ? 2 : (d === 4 || d === 5) ? 1 : 0), 0);
+  }
+
+  function diceHtml(dice, kindLabel) {
+    // The Wrath Die is whichever die replaced one in the pool (p.158) - this
+    // app always treats it as the last one rolled - and is never part of a
+    // Damage/ED roll (p.184), so only 'test' rolls get the coloured die.
+    return dice.map((d, i) => {
+      const isWrath = kindLabel === "test" && i === dice.length - 1;
+      return `<span class="diebox${isWrath ? " wrath" : ""}" title="${isWrath ? "Wrath Die" : "d6"}">${d}</span>`;
+    }).join("");
+  }
+
+  function renderResult(r) {
+    if (seen.has(r.requestId)) return;
+    seen.add(r.requestId);
+    const icons = iconTotal(r.dice);
+    let flag = "";
+    if (r.kindLabel === "test" && r.dice.length) {
+      const wrath = r.dice[r.dice.length - 1];
+      if (wrath === 6) flag = ' <span class="crit">&#9760; Wrath Critical!</span>';
+      else if (wrath === 1) flag = ' <span class="comp">&#9888; Complication</span>';
+    }
+    const div = document.createElement("div");
+    div.className = "roll";
+    div.innerHTML = `<div class="who">${r.characterName} &middot; ${r.label}</div>
+      <div class="dice">${diceHtml(r.dice, r.kindLabel)}<span class="arrow">&rarr;</span>${icons} ${r.kindLabel === "damage" ? "bonus" : "icons"}${flag}</div>`;
+    feedEl.prepend(div);
+    while (feedEl.children.length > 30) feedEl.removeChild(feedEl.lastChild);
+  }
+
+  async function claimAndRoll(row) {
+    // Atomic claim: only proceeds if this client is the one that flips
+    // status pending -> processing. If another player's copy of this same
+    // extension already claimed it, the update matches zero rows and we
+    // skip - this prevents the same request being rolled twice.
+    const { data, error } = await sb
+      .from("owlbear_roll_request")
+      .update({ status: "processing" })
+      .eq("id", row.id)
+      .eq("status", "pending")
+      .select();
+    if (error || !data || data.length === 0) return;
+
+    const dice = rollD6(row.dice_count);
+    await sb.from("owlbear_roll_request")
+      .update({ status: "resolved", resolved_at: new Date().toISOString() })
+      .eq("id", row.id);
+
+    const payload = {
+      requestId: row.id, characterName: row.character_name, label: row.label,
+      kindLabel: row.kind, dice,
+    };
+    OBR.broadcast.sendMessage(BROADCAST_CHANNEL, payload, { destination: "ALL" });
+    renderResult(payload);
+  }
+
+  async function poll() {
+    const { data, error } = await sb
+      .from("owlbear_roll_request")
+      .select("*")
+      .eq("status", "pending")
+      .order("id", { ascending: true })
+      .limit(10);
+    if (error) {
+      statusEl.textContent = "Connection error: " + error.message;
+      return;
+    }
+    statusEl.textContent = "Connected. Watching for roll requests…";
+    for (const row of data) await claimAndRoll(row);
+  }
+
+  OBR.onReady(() => {
+    OBR.broadcast.onMessage(BROADCAST_CHANNEL, (event) => renderResult(event.data));
+    poll();
+    setInterval(poll, 4000);
+  });
+</script>
+</body>
+</html>

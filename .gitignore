@@ -1,0 +1,9 @@
+.streamlit/secrets.toml
+cogitador.db
+cogitador.db-wal
+cogitador.db-shm
+cogitador.db-journal
+__pycache__/
+*.pyc
+.venv/
+venv/

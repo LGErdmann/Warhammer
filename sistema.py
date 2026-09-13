@@ -49,13 +49,16 @@ CONDITION_COLOR = {
     "Bleeding": "#c62828", "On Fire": "#e65100", "Poisoned": "#558b2f",
     "Exhausted": "#616161", "Terror": "#4a148c", "Fear": "#4a148c",
 }
+POSITIVE_STATUSES = ["Cover", "Stealth"]
+POSITIVE_STATUS_COLOR = {"Cover": "#2e7d32", "Stealth": "#1565c0", "Cameleoline": "#6a1b9a"}
+
 _COND_CUSTOM = "__custom__"
 PLAYER_SPECIES = ["Human", "Adeptus Astartes", "Primaris Astartes", "Aeldari", "Ork"]
 SPECIES_LABELS = {
     "Astra Militarum (Humano)": "Astra Militarum (Human)",
     "Adepta Sororitas": "Adepta Sororitas",
     "Aeldari (Asuryani)": "Aeldari (Asuryani)",
-    "InquisiÃ§Ã£o": "Inquisition",
+    "Inquisição": "Inquisition",
     "Drukhari": "Drukhari",
     "Ork": "Ork",
     "T'au": "T'au",
@@ -80,7 +83,7 @@ def species_label(sp):
     return SPECIES_LABELS.get(sp, sp)
 
 NPC_SPECIES = ["Adeptus Astartes", "Primaris Astartes", "Chaos Space Marine",
-               "Astra Militarum (Humano)", "Adepta Sororitas", "InquisiÃ§Ã£o", "Rogue Trader",
+               "Astra Militarum (Humano)", "Adepta Sororitas", "Inquisição", "Rogue Trader",
                "Aeldari (Asuryani)", "Drukhari", "Ork", "T'au", "Necron", "Tyranid",
                "Genestealer", "Daemon de Khorne", "Daemon de Nurgle", "Daemon de Tzeentch",
                "Daemon de Slaanesh", "Cultista do Caos", "Fera", "Servitor", "Outro"]
@@ -139,7 +142,7 @@ POWER_DISCIPLINES = {
     "Enfeeble": "Biomancy", "Life Leech": "Biomancy", "Warp Speed": "Biomancy",
     "Phantom Form": "Biomancy", "Regeneration": "Biomancy", "Shape Flesh": "Biomancy",
     "Forewarning": "Divination", "Prescience": "Divination", "Misfortune": "Divination",
-    "Psychometry": "Divination", "Scrierâ€™s Gaze": "Divination",
+    "Psychometry": "Divination", "Scrier’s Gaze": "Divination",
     "Fiery Form": "Pyromancy", "Flame Breath": "Pyromancy", "Mindfire": "Pyromancy",
     "Molten Beam": "Pyromancy", "Spontaneous Combustion": "Pyromancy", "Wall Of Flame": "Pyromancy",
     "Assail": "Telekinesis", "Crush": "Telekinesis", "Levitation": "Telekinesis",
@@ -190,7 +193,7 @@ ARCHETYPE_PACKAGES = {
 
 
 
-ARCHETYPE_ABILITIES = {'Sister Hospitaller': 'Loyal Compassion', 'Ministorum Priest': 'Fiery Invective', 'Imperial Guard': 'Look Out, Sir!', 'Inquisitorial Acolyte': 'Inquisitorial Decree', 'Inquisitorial Sage': 'Administratum Records', 'Ganger': 'Scrounger', 'Corsair': 'Dancing on the Bladeâ€™s Edge', 'Boy': 'Get Stuck In', 'Sister of Battle': 'Purity of Faith', 'Sanctioned Psyker': 'Psyker', 'Skitarius': 'Heavily Augmented', 'Death Cult Assassin': 'Glancing Blow', 'Tempestus Scion': 'Elite Soldier', 'Rogue Trader': 'Warrant of Trade', 'Scavvy': 'Mutant', 'Space Marine Scout': 'Use the Terrain', 'Ranger': 'From the Shadows', 'Kommando': 'Kunninâ€˜ Plan', 'Tech-Priest': 'Rite of Repair', 'Crusader': 'Armour of Faith', 'Imperial Commissar': 'Fearsome Respect', 'Desperado': 'Valuable Prey', 'Tactical Space Marine': 'Tactical Versatility', 'Warlock': 'Runes of Battle', 'Nob': 'The Green Tide', 'Inquisitor': 'Unchecked Authority', 'Primaris Intercessor': 'Intercessor Focus'}
+ARCHETYPE_ABILITIES = {'Sister Hospitaller': 'Loyal Compassion', 'Ministorum Priest': 'Fiery Invective', 'Imperial Guard': 'Look Out, Sir!', 'Inquisitorial Acolyte': 'Inquisitorial Decree', 'Inquisitorial Sage': 'Administratum Records', 'Ganger': 'Scrounger', 'Corsair': 'Dancing on the Blade’s Edge', 'Boy': 'Get Stuck In', 'Sister of Battle': 'Purity of Faith', 'Sanctioned Psyker': 'Psyker', 'Skitarius': 'Heavily Augmented', 'Death Cult Assassin': 'Glancing Blow', 'Tempestus Scion': 'Elite Soldier', 'Rogue Trader': 'Warrant of Trade', 'Scavvy': 'Mutant', 'Space Marine Scout': 'Use the Terrain', 'Ranger': 'From the Shadows', 'Kommando': 'Kunnin‘ Plan', 'Tech-Priest': 'Rite of Repair', 'Crusader': 'Armour of Faith', 'Imperial Commissar': 'Fearsome Respect', 'Desperado': 'Valuable Prey', 'Tactical Space Marine': 'Tactical Versatility', 'Warlock': 'Runes of Battle', 'Nob': 'The Green Tide', 'Inquisitor': 'Unchecked Authority', 'Primaris Intercessor': 'Intercessor Focus'}
 
 # Core Rulebook 2e starting Wargear by Archetype.
 ARCHETYPE_STARTING_WARGEAR = {'Sister Hospitaller': ['Sororitas Power Armour', "Chirurgeon's Tools", 'Chain Bayonet (wrist mounted)', 'Laspistol', 'Sororitas Vestments', 'Copy of the Rule of the Sororitas'], 'Ministorum Priest': ['Chainsword', 'Laspistol', 'Rosarius', 'Knife', 'Ministorum Robes', 'Missionary Kit'], 'Imperial Guard': ['Flak Armour', 'Lasgun', 'Knife', 'Munitorum Issue Mess Kit', 'Grooming Kit', "Imperial Infantryman's Uplifting Primer", '3 Ration Packs'], 'Inquisitorial Acolyte': ['Flak Armour', 'Symbol of Authority', 'IMPERIUM Weapon (Value 5 or less, Uncommon or lower)', 'Second IMPERIUM Weapon (Value 5 or less, Uncommon or lower)'], 'Inquisitorial Sage': ['Administratum Robes', 'Laspistol', 'Knife', 'Auto Quill', 'Data-Slate', '3 Scrolls of Ancient Records'], 'Ganger': ['Knife', 'Bedroll', 'Canteen', 'Gang Colours', 'Laspistol'], 'Corsair': ['Corsair Armour', 'Shuriken Pistol', 'Lasblaster', 'Spirit Stone', '3 Plasma Grenades', 'Void Suit'], 'Boy': ['Shoota', 'Slugga', 'Choppa', 'Ripped Clothes'], 'Sister of Battle': ['Sororitas Power Armour', 'Chaplet Ecclesiasticus', 'Sororitas Vestments', 'Writing Kit', 'Copy of the Rule of the Sororitas', 'Boltgun'], 'Sanctioned Psyker': ['Laspistol', 'Force Stave', 'Psykana Mercy Blade', 'Munitorum Issue Mess Kit', 'Blanket', 'Grooming Kit', '2 Ration Packs'], 'Skitarius': ['Combi-Tool', 'Galvanic Rifle', 'Skitarii Auto-Cuirass'], 'Death Cult Assassin': ['Two Death Cult Power Blades', 'Bodyglove', 'Knife', 'Laspistol', '3 doses of Stimm'], 'Tempestus Scion': ['Tempestus Carapace', 'Hot-Shot Lasgun', 'Grav-Chute', 'Knife', 'Munitorum Issue Mess Kit', "Imperial Infantryman's Uplifting Primer", 'Slate Monitron', 'Monoscope', '3 Ration Packs'], 'Rogue Trader': ['Imperial Frigate', 'Flak Coat', 'Wargear Choice (Value up to Tier+4, Rare or lower)', 'Second Wargear Choice (Value up to Tier+4, Rare or lower)'], 'Scavvy': ['Laspistol', 'Knife', 'Bedroll', 'Canteen', 'Tattered Clothes'], 'Space Marine Scout': ['Scout Armour', 'Astartes Combat Knife', '3 Frag Grenades', 'Vox Bead', 'Boltgun'], 'Ranger': ['Cameleoline Cloak', 'Aeldari Mesh Armour', 'Ranger Long Rifle', 'Shuriken Pistol', 'Knife', 'Spirit Stone', 'Bedroll', 'Blanket', 'Magnocular Scope'], 'Kommando': ['Shoota', 'Slugga', 'Choppa', '3 Stikkbombs', 'Survival Kit'], 'Tech-Priest': ['Omnissian Axe', 'Laspistol', 'One Mechadendrite', '2 Augmetics', 'Combi-Tool', 'Light Power Armour', 'Omnissian Sigil'], 'Crusader': ['Power Sword', 'Storm Shield', 'Carapace Armour', 'Ministorum Robes'], 'Imperial Commissar': ['Bolt Pistol', 'Chainsword', 'Flak Coat', 'Munitorum Issue Mess Kit', 'Blanket', 'Grooming Kit', 'Uplifting Primer', '3 Ration Packs'], 'Desperado': ['Flak Coat', 'Preysense Goggles', 'Maps of the Heartworlds', 'Combi-Tool', 'Projectile Weapon', 'Uncommon Melee Weapon'], 'Tactical Space Marine': ['Aquila Mk VII Power Armour', 'Boltgun', 'Bolt Pistol', 'Astartes Combat Knife', '3 Frag Grenades', '3 Krak Grenades'], 'Warlock': ['Rune Armour', 'Witchblade', 'Shuriken Pistol', 'Set of Wraithbone Runes', 'Spirit Stone'], 'Nob': ["'Eavy Armour", 'Kustom Slugga', 'Kustom Choppa'], 'Inquisitor': ['Inquisitorial Rosette', 'Boltgun', 'Bolt Pistol', 'Flak Coat'], 'Primaris Intercessor': ['Mark X Tacticus Power Armour', 'Bolt Rifle', 'Heavy Bolt Pistol', 'Astartes Combat Knife', '3 Frag Grenades', '3 Krak Grenades', 'Ballistic Appeasement Autoreliquary']}
@@ -1339,7 +1342,7 @@ def _npc_attrs_skills_gear(species, creation_mode, archetype):
     species_alias = {
         "Astra Militarum (Humano)": "Human",
         "Adepta Sororitas": "Human",
-        "InquisiÃ§Ã£o": "Human",
+        "Inquisição": "Human",
         "Rogue Trader": "Human",
         "Aeldari (Asuryani)": "Aeldari",
     }
@@ -2130,6 +2133,42 @@ def craft_modifiers(row):
                 mods["armour"] = int(numeric.group(0))
         except Exception:
             pass
+
+    # Conditional Wargear effects are never folded into this passive set.
+    # They are evaluated separately from the character's current positive
+    # statuses, so an item cannot grant a situational bonus all the time.
+    return mods
+
+
+def _has_positive_status(ch, name):
+    conds = ch.get("conditions", {}) or {}
+    wanted = str(name).strip().casefold()
+    return any(str(k).strip().casefold() == wanted and int(v or 0) > 0 for k, v in conds.items())
+
+
+def _has_cameleoline(ch):
+    for w in normalize_wargear(ch.get("wargear", [])):
+        if not w.get("equipped", True):
+            continue
+        if str(w.get("name", "")).strip().casefold() == "cameleoline cloak":
+            return True
+    return False
+
+
+def active_positive_statuses(ch):
+    active = []
+    for status in POSITIVE_STATUSES:
+        if _has_positive_status(ch, status):
+            active.append(status)
+    if _has_cameleoline(ch) and any(x in active for x in ("Cover", "Stealth")):
+        active.append("Cameleoline")
+    return active
+
+
+def conditional_wargear_modifiers(ch):
+    mods = {}
+    if _has_cameleoline(ch) and any(_has_positive_status(ch, x) for x in ("Cover", "Stealth")):
+        mods["defence"] = 1
     return mods
 
 
@@ -2198,6 +2237,10 @@ def equipped_wargear_modifiers(ch):
         for k, v in _owned_item_modifiers(p, power_by_id).items():
             key = str(k).strip().lower()
             mods[key] = mods.get(key, 0) + int(v)
+
+    for k, v in conditional_wargear_modifiers(ch).items():
+        key = str(k).strip().lower()
+        mods[key] = mods.get(key, 0) + int(v)
 
     return mods
 
@@ -2565,7 +2608,7 @@ def _wargear_stat_html(details, extra_style="", strength=None):
     if details.get("ap") not in (None, ""):
         try: ap_val = int(details.get("ap") or 0)
         except (TypeError, ValueError): ap_val = 0
-        parts.append(f"<b>AP</b> {ap_val if ap_val else 'â€“'}")
+        parts.append(f"<b>AP</b> {ap_val if ap_val else '–'}")
     if details.get("range") not in (None, ""):
         parts.append(f"<b>{T('Range')}</b> {html.escape(str(details['range']))}")
     if details.get("salvo") not in (None, ""):
@@ -2637,7 +2680,7 @@ def craft_keyword_filter(rows, selected):
 
 def craft_item_label(row):
     source = str(row.get("source", "") or "").strip()
-    return f"{row['name']}" + (f" Â· {source}" if source else "")
+    return f"{row['name']}" + (f" · {source}" if source else "")
 
 
 def _build_craft_entry(row, kind):
@@ -3050,7 +3093,7 @@ def ascend_archetype(cid, new_archetype):
         history.append({"archetype": ch["archetype"], "tier": int(ch["tier"]), "retained": True})
     # Core Rulebook 2e p.155: "add all of the Archetype benefits (Archetype
     # Abilities, Wargear, Influence, etc.)... and retain all of the benefits
-    # from your previous Archetype" â€” so the new Archetype's starting Wargear
+    # from your previous Archetype" — so the new Archetype's starting Wargear
     # is merged into (not swapped for) whatever the character already has.
     current_gear = normalize_wargear(ch.get("wargear", []))
     package_gear = archetype_starting_wargear(new_archetype)
@@ -3602,7 +3645,7 @@ def inject_theme():
         border:1px solid var(--gold); border-radius:2px; font-family:'Cinzel',serif; letter-spacing:.04em;
         text-transform:uppercase; font-weight:700; padding:2px 10px; font-size:.78rem; transition:.15s; }
     .stButton>button:hover{ background:linear-gradient(var(--blood),var(--blood2)); color:#fff; border-color:var(--gold2); }
-    /* caixas de atributo/perÃ­cia compactas */
+    /* caixas de atributo/perícia compactas */
     .stNumberInput input{ padding:2px 6px !important; font-size:.9rem !important; }
     .stNumberInput{ max-width:150px; }
     input,textarea{ background:#120d08 !important; color:var(--bone) !important; border-color:#4a3a20 !important; }
@@ -3634,7 +3677,7 @@ def inject_theme():
     .st-key-lang_flags button:hover{ background:linear-gradient(var(--blood),var(--blood2)) !important; color:#fff !important; }
     .combat-pos{ font-family:'Cinzel',serif; font-weight:900; color:var(--gold2); font-size:1.3rem; text-align:center; line-height:2.2; }
     .combat-pos-active{ color:#171209; background:var(--gold2); border-radius:50%; width:1.9em; height:1.9em; margin:0 auto; line-height:1.9em; box-shadow:0 0 8px var(--gold2); }
-    /* VisÃ£o de Batalha */
+    /* Visão de Batalha */
     .hero{ background:linear-gradient(135deg,#20180d,#100b06); border:1px solid var(--gold);
         border-radius:4px; padding:14px 18px; margin-bottom:10px; }
     .hero .nm{ font-family:'Cinzel',serif; font-size:1.6rem; font-weight:900; color:var(--gold2); letter-spacing:.06em; }
@@ -3685,8 +3728,8 @@ def inject_theme():
     .craft-details{ margin:0 0 3px; border-bottom:1px solid #342817; }
     .craft-details summary{ cursor:pointer; list-style:none; padding:2px 0; font-family:'Cinzel',serif; font-size:.76rem; letter-spacing:.025em; }
     .craft-details summary::-webkit-details-marker{ display:none; }
-    .craft-details summary:before{ content:'â–¸'; color:var(--gold); margin-right:6px; font-size:.65rem; }
-    .craft-details[open] summary:before{ content:'â–¾'; }
+    .craft-details summary:before{ content:'▸'; color:var(--gold); margin-right:6px; font-size:.65rem; }
+    .craft-details[open] summary:before{ content:'▾'; }
     .craft-description-text{ padding:4px 8px 5px 18px; color:var(--bone); font-size:.78rem; line-height:1.25; }
     .craft-description-meta{ padding:1px 8px 4px 18px; color:rgba(232,224,207,.62); font-size:.68rem; }
     .sheet-banner{ background:linear-gradient(110deg,#21170c,#120c07); border:1px solid #5a4421; border-left:4px solid var(--gold); padding:7px 10px; margin:8px 0 9px; font-family:'Cinzel',serif; color:var(--gold2); letter-spacing:.08em; text-transform:uppercase; }
@@ -3694,7 +3737,7 @@ def inject_theme():
         font-size:.75rem; margin-top:20px; }
 
     /* ============================================================
-       SPECTATOR VOX-FEED â€” deliberately the most theatrical page in the
+       SPECTATOR VOX-FEED — deliberately the most theatrical page in the
        app: it shows almost nothing (only current Shock, gated by the
        Magister), so the presentation is what carries it.
        ============================================================ */
@@ -3779,7 +3822,7 @@ def inject_theme():
         .stMarkdown p, .stCaption, [data-testid="stCaptionContainer"]{ font-size:.82rem !important; }
         /* Compact metric + stacked -/+ widgets (Wounds/Shock/Wrath/Ammo/Ruin)
            are already a single self-contained "block" (a bordered stMetric
-           plus two small buttons) â€” the blanket column-stacking rule above
+           plus two small buttons) — the blanket column-stacking rule above
            was blowing each one up into three separate full-width rows
            instead of keeping it as one tight card, so it's exempted here
            and kept as a compact horizontal block like the desktop layout. */
@@ -3817,7 +3860,7 @@ def default_archetype_for_species(species, tier=None):
     species_alias = {
         "Astra Militarum (Humano)": "Human",
         "Adepta Sororitas": "Human",
-        "InquisiÃ§Ã£o": "Human",
+        "Inquisição": "Human",
         "Rogue Trader": "Human",
         "Aeldari (Asuryani)": "Aeldari",
     }
@@ -3959,9 +4002,9 @@ def _gear_mod_caption(mod):
 def _vital_stat_block(col, label, value, maximum=None, cid=None, field=None, editable=False,
                        actor_role="gm", actor_user_id=None, actor_name="", key_prefix="", max_mod=0,
                        adjust_fn=None):
-    """Render one Wounds/Shock/Wrath-style stat using the Battle Sheet's compact metric + âˆ’/+ pattern.
+    """Render one Wounds/Shock/Wrath-style stat using the Battle Sheet's compact metric + −/+ pattern.
 
-    The âˆ’ and + controls stack vertically right beside the value, instead of
+    The − and + controls stack vertically right beside the value, instead of
     spreading across separate columns, so this is the single source of the
     vitals widget style and every page (the Player/GM Battle Sheet, the
     Combat panel, the Ruin counter, etc.) stays compact and identical.
@@ -3989,7 +4032,7 @@ def _vital_stat_block(col, label, value, maximum=None, cid=None, field=None, edi
                 row[0].metric(label, display)
                 with row[1]:
                     st.button("+", key=f"{key_prefix}plus", on_click=fn, args=plus_args, use_container_width=True)
-                    st.button("âˆ’", key=f"{key_prefix}minus", on_click=fn, args=minus_args, use_container_width=True)
+                    st.button("−", key=f"{key_prefix}minus", on_click=fn, args=minus_args, use_container_width=True)
         else:
             st.metric(label, display)
         _gear_mod_caption(max_mod)
@@ -3997,7 +4040,7 @@ def _vital_stat_block(col, label, value, maximum=None, cid=None, field=None, edi
 
 def _ammo_stat_block(col, cid, ch, editable=False, actor_role="gm", actor_user_id=None,
                       actor_name="", key_prefix="", source_prefix="Ammo", cap_mod=None, gear_mods=None):
-    """Render the Ammo Pool using the same compact metric + stacked âˆ’/+ pattern."""
+    """Render the Ammo Pool using the same compact metric + stacked −/+ pattern."""
     ammo_total = current_ammo(ch, gear_mods)
     ammo_max = ammo_capacity(ch, gear_mods)
     with col:
@@ -4013,7 +4056,7 @@ def _ammo_stat_block(col, cid, ch, editable=False, actor_role="gm", actor_user_i
                                                   actor_name=actor_name, source=f"{source_prefix} +1")
                         if result[0]: st.rerun()
                         else: st.error(result[1])
-                    if st.button("âˆ’", key=f"{key_prefix}minus", disabled=ammo_total <= 0, use_container_width=True):
+                    if st.button("−", key=f"{key_prefix}minus", disabled=ammo_total <= 0, use_container_width=True):
                         result = adjust_ammo_pool(cid, -1, actor_role=actor_role, actor_user_id=actor_user_id,
                                                   actor_name=actor_name, source=f"{source_prefix} -1")
                         if result[0]: st.rerun()
@@ -4060,7 +4103,7 @@ def live_vitals(cid, ch=None, gear_mods=None):
 
     # Core Rulebook 2e, p.38/p.285: Corruption Points and Wealth are tracked
     # resource pools like Wounds/Shock/Wrath/Ammo above, not fixed-formula
-    # Traits, so they get the same adjustable metric + âˆ’/+ treatment.
+    # Traits, so they get the same adjustable metric + −/+ treatment.
     corr_cols = st.columns(2)
     corr_info = corruption_level_info(ch.get("cur_corruption", 0))
     corr_max = corr_info["next_threshold"] if corr_info["next_threshold"] is not None else corr_info["points"]
@@ -4142,7 +4185,7 @@ def vox_live(listener_cid=None):
     html = ""
     for name, kind, on in shown:
         ncls = "npc" if kind == "npc" else ""
-        state = "<span class='vlive'>âœ  ACTIVE</span>" if on else "<span class='vdead'>âœ  CUT</span>"
+        state = "<span class='vlive'>✠ ACTIVE</span>" if on else "<span class='vdead'>✠ CUT</span>"
         html += f"<div class='wg'><span class='{ncls}'>{name}</span> <span style='float:right'>{state}</span></div>"
     st.markdown(html, unsafe_allow_html=True)
 
@@ -4364,7 +4407,7 @@ def render_ammo_section(cid, ch, compact=False, gm_mode=False):
             meta = ", ".join(str(x) for x in keywords) if keywords else "Matching weapon type"
             st.markdown(
                 f"<div class='resource-row'><span class='resource-name'>{html.escape(label)}</span>"
-                f"<span class='resource-meta'>{html.escape(meta)} Â· Ã—{qty}</span></div>",
+                f"<span class='resource-meta'>{html.escape(meta)} · ×{qty}</span></div>",
                 unsafe_allow_html=True,
             )
 
@@ -4379,7 +4422,7 @@ def render_ammo_section(cid, ch, compact=False, gm_mode=False):
             cols = st.columns([4.8, 1, 1])
             cols[0].markdown(
                 f"<div class='resource-row consumable'><span class='resource-name'>{html.escape(label)}</span>"
-                f"<span class='resource-meta'>{html.escape(category)} Â· Ã—{qty}</span></div>",
+                f"<span class='resource-meta'>{html.escape(category)} · ×{qty}</span></div>",
                 unsafe_allow_html=True,
             )
             if cols[1].button("USE 1", key=f"battle_expl_use_{cid}_{idx}", disabled=craft_id < 1 or qty <= 0):
@@ -4411,101 +4454,102 @@ def render_ammo_section(cid, ch, compact=False, gm_mode=False):
 # out of scope for a "visual only" toggle.
 TRANSLATE_PT = {
     "Attributes": "Atributos",
+    "Positive Statuses": "Status Positivos", "Cover": "Cobertura", "Stealth": "Furtividade",
     "Your registration is awaiting the Magister's approval. You can freely edit your "
     "character sheet in the meantime, but if the Magister rejects it, your account and "
     "sheet are deleted immediately.":
-        "Seu registro estÃ¡ aguardando aprovaÃ§Ã£o do Mestre. VocÃª pode editar sua ficha livremente "
-        "enquanto isso, mas se o Mestre recusar, sua conta e ficha serÃ£o deletadas imediatamente.",
-    "Conditions": "CondiÃ§Ãµes", "No active Conditions.": "Nenhuma condiÃ§Ã£o ativa.",
-    "Roll": "Rolar", "Attack": "Ataque", "Damage": "Dano", "Dice": "Dados", "Icons": "Ãcones",
-    "Total": "Total", "Wrath Critical": "CrÃ­tico de FÃºria", "Complication": "ComplicaÃ§Ã£o",
-    "Tests": "Testes", "Special Tests": "Testes Especiais", "Corruption Test": "Teste de CorrupÃ§Ã£o",
+        "Seu registro está aguardando aprovação do Mestre. Você pode editar sua ficha livremente "
+        "enquanto isso, mas se o Mestre recusar, sua conta e ficha serão deletadas imediatamente.",
+    "Conditions": "Condições", "No active Conditions.": "Nenhuma condição ativa.",
+    "Roll": "Rolar", "Attack": "Ataque", "Damage": "Dano", "Dice": "Dados", "Icons": "Ícones",
+    "Total": "Total", "Wrath Critical": "Crítico de Fúria", "Complication": "Complicação",
+    "Tests": "Testes", "Special Tests": "Testes Especiais", "Corruption Test": "Teste de Corrupção",
     "Fear/Terror Test": "Teste de Medo/Terror", "Send this roll to Owlbear": "Enviar essa rolagem pro Owlbear",
     "Mod": "Mod",
-    "Add Condition": "Adicionar CondiÃ§Ã£o", "Condition": "CondiÃ§Ã£o", "Stacks": "AcÃºmulo",
-    "Apply": "Aplicar", "Customâ€¦": "Personalizadaâ€¦", "Custom name": "Nome personalizado",
+    "Add Condition": "Adicionar Condição", "Condition": "Condição", "Stacks": "Acúmulo",
+    "Apply": "Aplicar", "Custom…": "Personalizada…", "Custom name": "Nome personalizado",
     "Bleeding": "Sangramento", "Blinded": "Cego", "Exhausted": "Exausto", "Fear": "Medo",
     "Frenzied": "Enfurecido", "Hindered": "Impedido", "On Fire": "Em Chamas", "Pinned": "Fixado",
     "Poisoned": "Envenenado", "Prone": "Prostrado", "Restrained": "Contido", "Staggered": "Atordoado",
-    "Terror": "Terror", "Vulnerable": "VulnerÃ¡vel",
+    "Terror": "Terror", "Vulnerable": "Vulnerável",
     # Attributes
-    "Strength": "ForÃ§a", "Toughness": "ResistÃªncia", "Agility": "Agilidade", "Initiative": "Iniciativa",
-    "Willpower": "ForÃ§a de Vontade", "Intellect": "Intelecto", "Fellowship": "Carisma",
+    "Strength": "Força", "Toughness": "Resistência", "Agility": "Agilidade", "Initiative": "Iniciativa",
+    "Willpower": "Força de Vontade", "Intellect": "Intelecto", "Fellowship": "Carisma",
     # Skills
-    "Athletics": "Atletismo", "Awareness": "PercepÃ§Ã£o", "Ballistic Skill": "PerÃ­cia de Tiro",
-    "Cunning": "AstÃºcia", "Deception": "EnganaÃ§Ã£o", "Insight": "PerspicÃ¡cia", "Intimidation": "IntimidaÃ§Ã£o",
-    "Investigation": "InvestigaÃ§Ã£o", "Leadership": "LideranÃ§a", "Medicae": "Medicina", "Persuasion": "PersuasÃ£o",
-    "Pilot": "Pilotagem", "Psychic Mastery": "DomÃ­nio PsÃ­quico", "Scholar": "ErudiÃ§Ã£o", "Stealth": "Furtividade",
-    "Survival": "SobrevivÃªncia", "Tech": "Tecnologia", "Weapon Skill": "PerÃ­cia de Combate",
+    "Athletics": "Atletismo", "Awareness": "Percepção", "Ballistic Skill": "Perícia de Tiro",
+    "Cunning": "Astúcia", "Deception": "Enganação", "Insight": "Perspicácia", "Intimidation": "Intimidação",
+    "Investigation": "Investigação", "Leadership": "Liderança", "Medicae": "Medicina", "Persuasion": "Persuasão",
+    "Pilot": "Pilotagem", "Psychic Mastery": "Domínio Psíquico", "Scholar": "Erudição", "Stealth": "Furtividade",
+    "Survival": "Sobrevivência", "Tech": "Tecnologia", "Weapon Skill": "Perícia de Combate",
     # Derived Traits
-    "Defence": "Defesa", "Resilience": "ResiliÃªncia", "Soak": "AbsorÃ§Ã£o", "Determination": "DeterminaÃ§Ã£o",
-    "Resolve": "ResoluÃ§Ã£o", "Conviction": "ConvicÃ§Ã£o", "Passive Awareness": "PercepÃ§Ã£o Passiva",
-    "Influence": "InfluÃªncia", "Speed": "Velocidade",
+    "Defence": "Defesa", "Resilience": "Resiliência", "Soak": "Absorção", "Determination": "Determinação",
+    "Resolve": "Resolução", "Conviction": "Convicção", "Passive Awareness": "Percepção Passiva",
+    "Influence": "Influência", "Speed": "Velocidade",
     # Section headers / general chrome
-    "Vitals": "Vitalidade", "Derived Traits": "TraÃ§os Derivados", "Corruption": "CorrupÃ§Ã£o", "Wealth": "Riqueza",
-    "Faith": "FÃ©", "Skills": "PerÃ­cias", "Total = Skill + Attribute": "Total = PerÃ­cia + Atributo",
-    "Skill": "PerÃ­cia", "Rank": "Grau", "Attr": "Atr", "Total": "Total", "Archetype": "ArquÃ©tipo",
-    "Archetype Ability": "Habilidade do ArquÃ©tipo", "Species & Chapter Abilities": "Habilidades de EspÃ©cie e CapÃ­tulo",
-    "Talents": "Talentos", "No talents.": "Nenhum talento.", "Psychic Powers": "Poderes PsÃ­quicos",
-    "No Psychic Powers.": "Nenhum Poder PsÃ­quico.", "Wargear": "Equipamento", "No wargear.": "Nenhum equipamento.",
-    "Range": "Alcance", "Damage": "Dano", "AP": "PA", "Salvo": "Rajada", "Traits": "TraÃ§os", "Rarity": "Raridade",
+    "Vitals": "Vitalidade", "Derived Traits": "Traços Derivados", "Corruption": "Corrupção", "Wealth": "Riqueza",
+    "Faith": "Fé", "Skills": "Perícias", "Total = Skill + Attribute": "Total = Perícia + Atributo",
+    "Skill": "Perícia", "Rank": "Grau", "Attr": "Atr", "Total": "Total", "Archetype": "Arquétipo",
+    "Archetype Ability": "Habilidade do Arquétipo", "Species & Chapter Abilities": "Habilidades de Espécie e Capítulo",
+    "Talents": "Talentos", "No talents.": "Nenhum talento.", "Psychic Powers": "Poderes Psíquicos",
+    "No Psychic Powers.": "Nenhum Poder Psíquico.", "Wargear": "Equipamento", "No wargear.": "Nenhum equipamento.",
+    "Range": "Alcance", "Damage": "Dano", "AP": "PA", "Salvo": "Rajada", "Traits": "Traços", "Rarity": "Raridade",
     "Value": "Valor", "Vox Network": "Rede Vox", "Character": "Personagem",
-    "Core Profile Â· Attributes": "Perfil Central Â· Atributos", "Core Profile Â· Skills": "Perfil Central Â· PerÃ­cias",
-    "Species & Chapter": "EspÃ©cie e CapÃ­tulo", "Arsenal Â· Wargear": "Arsenal Â· Equipamento",
-    "Advancements Â· Talents": "AvanÃ§os Â· Talentos", "Available Talents": "Talentos DisponÃ­veis",
-    "Available Psychic Powers": "Poderes PsÃ­quicos DisponÃ­veis", "Purchase": "Comprar",
-    "Name": "Nome", "Chapter": "CapÃ­tulo", "Species": "EspÃ©cie", "Tier": "NÃ­vel", "Armour": "Armadura",
+    "Core Profile · Attributes": "Perfil Central · Atributos", "Core Profile · Skills": "Perfil Central · Perícias",
+    "Species & Chapter": "Espécie e Capítulo", "Arsenal · Wargear": "Arsenal · Equipamento",
+    "Advancements · Talents": "Avanços · Talentos", "Available Talents": "Talentos Disponíveis",
+    "Available Psychic Powers": "Poderes Psíquicos Disponíveis", "Purchase": "Comprar",
+    "Name": "Nome", "Chapter": "Capítulo", "Species": "Espécie", "Tier": "Nível", "Armour": "Armadura",
     "Other XP": "Outro XP", "Starting XP": "XP Inicial", "Earned XP": "XP Ganho", "XP Spent": "XP Gasto",
-    "XP Available": "XP DisponÃ­vel", "Notes": "AnotaÃ§Ãµes", "Portrait": "Retrato", "Upload": "Enviar",
-    "Save Portrait": "Salvar Retrato", "Battle View": "VisÃ£o de Batalha", "Character Sheet": "Ficha de Personagem",
+    "XP Available": "XP Disponível", "Notes": "Anotações", "Portrait": "Retrato", "Upload": "Enviar",
+    "Save Portrait": "Salvar Retrato", "Battle View": "Visão de Batalha", "Character Sheet": "Ficha de Personagem",
     "Change Password": "Alterar Senha", "Sign Out": "Sair", "New Password": "Nova Senha", "Confirm": "Confirmar",
-    "Change": "Alterar", "Package": "Pacote", "Size": "Tamanho", "Average": "MÃ©dio",
+    "Change": "Alterar", "Package": "Pacote", "Size": "Tamanho", "Average": "Médio",
     "Provided by equipped Armour Wargear": "Fornecida pela Armadura equipada",
-    "Advancements Â· Psychic Powers": "AvanÃ§os Â· Poderes PsÃ­quicos",
-    "Over budget by": "Acima do orÃ§amento em",
+    "Advancements · Psychic Powers": "Avanços · Poderes Psíquicos",
+    "Over budget by": "Acima do orçamento em",
     "Purchase Talents by meeting their registered prerequisites and spending XP.":
-        "Compre Talentos cumprindo os prÃ©-requisitos registrados e gastando XP.",
+        "Compre Talentos cumprindo os pré-requisitos registrados e gastando XP.",
     "Keywords": "Palavras-chave", "Search Talents...": "Buscar Talentos...",
-    "No Talents match the search.": "Nenhum Talento corresponde Ã  busca.",
+    "No Talents match the search.": "Nenhum Talento corresponde à busca.",
     "No talents purchased.": "Nenhum talento comprado.",
-    "Search Psychic Powers...": "Buscar Poderes PsÃ­quicos...",
-    "No Psychic Powers match the search.": "Nenhum Poder PsÃ­quico corresponde Ã  busca.",
-    "No Psychic Powers purchased.": "Nenhum Poder PsÃ­quico comprado.",
-    "INVENTORY": "INVENTÃRIO", "EQUIPPED": "EQUIPADO", "STOWED": "GUARDADO", "USE 1": "USAR 1",
-    "REMOVE": "REMOVER", "No Wargear assigned.": "Nenhum equipamento atribuÃ­do.",
+    "Search Psychic Powers...": "Buscar Poderes Psíquicos...",
+    "No Psychic Powers match the search.": "Nenhum Poder Psíquico corresponde à busca.",
+    "No Psychic Powers purchased.": "Nenhum Poder Psíquico comprado.",
+    "INVENTORY": "INVENTÁRIO", "EQUIPPED": "EQUIPADO", "STOWED": "GUARDADO", "USE 1": "USAR 1",
+    "REMOVE": "REMOVER", "No Wargear assigned.": "Nenhum equipamento atribuído.",
     "Summary": "Resumo",
     "Base Attribute maximum for this Species. Bonuses may raise the final total above this limit.":
-        "MÃ¡ximo de Atributo base para esta EspÃ©cie. BÃ´nus podem elevar o total final acima deste limite.",
-    "Custom Chapter": "CapÃ­tulo Personalizado", "Chapter applies to Adeptus Astartes characters.":
-        "CapÃ­tulo se aplica a personagens Adeptus Astartes.",
-    "Session": "SessÃ£o", "No character sheet linked. Contact the Magister.":
+        "Máximo de Atributo base para esta Espécie. Bônus podem elevar o total final acima deste limite.",
+    "Custom Chapter": "Capítulo Personalizado", "Chapter applies to Adeptus Astartes characters.":
+        "Capítulo se aplica a personagens Adeptus Astartes.",
+    "Session": "Sessão", "No character sheet linked. Contact the Magister.":
         "Nenhuma ficha vinculada. Contate o Mestre.",
-    "Requisition": "RequisiÃ§Ã£o", "Requisition Log": "Registro de RequisiÃ§Ãµes",
+    "Requisition": "Requisição", "Requisition Log": "Registro de Requisições",
     "Ask the Magister for a piece of Wargear. It shows as Under Review, granting nothing, "
     "until approved, describe a new item, or request one already known to the campaign.":
-        "PeÃ§a um item de Equipamento ao Mestre. Ele fica marcado como Em AnÃ¡lise, sem conceder nada, "
-        "atÃ© ser aprovado, descreva um item novo ou peÃ§a um que a campanha jÃ¡ conhece.",
-    "Request a New Item": "Requisitar Item Novo", "Description": "DescriÃ§Ã£o",
-    "Submit Requisition": "Enviar RequisiÃ§Ã£o", "Request a Catalog Item": "Requisitar Item do CatÃ¡logo",
-    "Request This Item": "Requisitar Este Item", "The Wargear catalog is empty.": "O catÃ¡logo de Equipamento estÃ¡ vazio.",
-    "Your Requisitions": "Suas RequisiÃ§Ãµes", "No Requisitions filed yet.": "Nenhuma requisiÃ§Ã£o enviada ainda.",
+        "Peça um item de Equipamento ao Mestre. Ele fica marcado como Em Análise, sem conceder nada, "
+        "até ser aprovado, descreva um item novo ou peça um que a campanha já conhece.",
+    "Request a New Item": "Requisitar Item Novo", "Description": "Descrição",
+    "Submit Requisition": "Enviar Requisição", "Request a Catalog Item": "Requisitar Item do Catálogo",
+    "Request This Item": "Requisitar Este Item", "The Wargear catalog is empty.": "O catálogo de Equipamento está vazio.",
+    "Your Requisitions": "Suas Requisições", "No Requisitions filed yet.": "Nenhuma requisição enviada ainda.",
     "Dismiss": "Descartar",
-    "Requisition submitted for the Magister's review.": "RequisiÃ§Ã£o enviada para anÃ¡lise do Mestre.",
-    "Name is required.": "O nome Ã© obrigatÃ³rio.",
-    "That catalog item no longer exists.": "Esse item do catÃ¡logo nÃ£o existe mais.",
-    "Description / Effect": "DescriÃ§Ã£o / Efeito",
+    "Requisition submitted for the Magister's review.": "Requisição enviada para análise do Mestre.",
+    "Name is required.": "O nome é obrigatório.",
+    "That catalog item no longer exists.": "Esse item do catálogo não existe mais.",
+    "Description / Effect": "Descrição / Efeito",
     "Quantity": "Quantidade",
-    "Name and Description / Effect are required.": "Nome e DescriÃ§Ã£o / Efeito sÃ£o obrigatÃ³rios.",
+    "Name and Description / Effect are required.": "Nome e Descrição / Efeito são obrigatórios.",
     "Same fields as the Magister's own Craft catalog. Nothing here applies to your sheet "
     "until the Magister approves it.":
-        "Os mesmos campos do catÃ¡logo de Craft do Mestre. Nada aqui se aplica Ã  sua ficha "
-        "atÃ© o Mestre aprovar.",
+        "Os mesmos campos do catálogo de Craft do Mestre. Nada aqui se aplica à sua ficha "
+        "até o Mestre aprovar.",
     "Ask the Magister for a piece of Wargear. It shows as Under Review, granting nothing, "
     "until approved, whether it's a brand-new item you define here (same editor the Magister "
     "uses for the Craft catalog) or one already known to the campaign.":
-        "PeÃ§a um item de Equipamento ao Mestre. Ele fica marcado como Em AnÃ¡lise, sem conceder nada, "
-        "atÃ© ser aprovado, seja um item novo que vocÃª define aqui (o mesmo editor que o Mestre usa "
-        "no catÃ¡logo de Craft) ou um que a campanha jÃ¡ conhece.",
+        "Peça um item de Equipamento ao Mestre. Ele fica marcado como Em Análise, sem conceder nada, "
+        "até ser aprovado, seja um item novo que você define aqui (o mesmo editor que o Mestre usa "
+        "no catálogo de Craft) ou um que a campanha já conhece.",
 }
 
 
@@ -4528,7 +4572,7 @@ def _language_flag_toggle():
     character data."""
     lang = st.session_state.get("ui_lang", "en")
     with st.container(key="lang_flags"):
-        if st.button("BR" if lang == "pt" else "US", key="lang_toggle_btn", help="PortuguÃªs / English"):
+        if st.button("BR" if lang == "pt" else "US", key="lang_toggle_btn", help="Português / English"):
             st.session_state["ui_lang"] = "en" if lang == "pt" else "pt"
             st.rerun()
 
@@ -4551,11 +4595,11 @@ def _owlbear_tests_sidebar(cid):
         c[0].markdown(f"<div style='padding-top:6px;font-size:.82rem'>{T(label)} <span style='opacity:.6'>({pool})</span></div>",
                       unsafe_allow_html=True)
         mod = c[1].number_input(T("Mod"), -10, 10, 0, key=f"{key}_mod", label_visibility="collapsed")
-        if c[2].button("ðŸŽ²", key=key, use_container_width=True, help=T("Send this roll to Owlbear")):
+        if c[2].button("🎲", key=key, use_container_width=True, help=T("Send this roll to Owlbear")):
             ok, msg = create_owlbear_roll_request(cid, ch.get("name", ""), T(label), int(pool), bonus_dice=int(mod), kind="test")
             (st.toast if ok else st.error)(msg)
 
-    st.markdown(f"**ðŸ¦‰ {T('Tests')}**")
+    st.markdown(f"**🦉 {T('Tests')}**")
     with st.expander(T("Attributes"), expanded=False):
         for a in ATTRS:
             roll_row(a, int(attrs.get(a, 1)), f"sidebar_roll_attr_{cid}_{a}")
@@ -4567,6 +4611,22 @@ def _owlbear_tests_sidebar(cid):
         roll_row("Determination", int(d.get("Determination", 1)), f"sidebar_roll_det_{cid}")
         roll_row("Corruption Test", int(d.get("Conviction", 1)), f"sidebar_roll_corr_{cid}")
         roll_row("Fear/Terror Test", int(d.get("Resolve", 0)), f"sidebar_roll_fear_{cid}")
+
+
+def _render_positive_statuses(cid, ch):
+    active = active_positive_statuses(ch)
+    st.markdown(f"<div class='sectionttl'>{T('Positive Statuses')}</div>", unsafe_allow_html=True)
+    cols = st.columns([1.4, 1.4, 2.2])
+    for i, status in enumerate(POSITIVE_STATUSES):
+        is_on = status in active
+        label = f"{T(status)} {'ON' if is_on else 'OFF'}"
+        if cols[i].button(label, key=f"positive_status_{cid}_{status}", use_container_width=True):
+            set_condition(cid, status, 0 if is_on else 1)
+            st.rerun()
+    if "Cameleoline" in active:
+        cols[2].markdown("<span style='background:#6a1b9a;color:#fff;padding:4px 10px;border-radius:12px;font-size:.78rem;font-family:Cinzel;display:inline-block'>Cameleoline ACTIVE</span>", unsafe_allow_html=True)
+    elif _has_cameleoline(ch):
+        cols[2].caption("Cameleoline is inactive until Cover or Stealth is active.")
 
 
 @st.fragment(run_every=REFRESH_S)
@@ -4581,11 +4641,13 @@ def battle_view(cid):
     rank = int(ch.get("rank", 1) or 1)
     ncls = "npc" if ch["kind"] == "npc" else ""
     st.markdown(f"<div class='hero'><div class='nm {ncls}'>{ch['name'] or T('Character')}</div>"
-                f"<div class='meta'>{ch['chapter'] or ''} &nbsp;Â·&nbsp; {species_label(ch['species'])} &nbsp;Â·&nbsp; "
-                f"{T('Tier')} {ch['tier']} &nbsp;Â·&nbsp; {T('Rank')} {rank}</div></div>", unsafe_allow_html=True)
+                f"<div class='meta'>{ch['chapter'] or ''} &nbsp;·&nbsp; {species_label(ch['species'])} &nbsp;·&nbsp; "
+                f"{T('Tier')} {ch['tier']} &nbsp;·&nbsp; {T('Rank')} {rank}</div></div>", unsafe_allow_html=True)
 
     st.markdown(f"<div class='sectionttl'>{T('Vitals')}</div>", unsafe_allow_html=True)
     live_vitals(cid, ch, gear_mods)
+
+    _render_positive_statuses(cid, ch)
 
     st.markdown(f"<div class='sectionttl'>{T('Conditions')}</div>", unsafe_allow_html=True)
     conds = ch.get("conditions", {}) or {}
@@ -4599,7 +4661,7 @@ def battle_view(cid):
                 st.markdown(f"<span style='background:{color};color:#fff;padding:3px 10px;border-radius:12px;"
                             f"font-size:.78rem;font-family:Cinzel;letter-spacing:.03em;display:inline-block;margin-bottom:4px'>"
                             f"{html.escape(label)}</span>", unsafe_allow_html=True)
-                if st.button("âˆ’", key=f"cond_rm_{cid}_{cname}"):
+                if st.button("−", key=f"cond_rm_{cid}_{cname}"):
                     set_condition(cid, cname, stacks - 1)
                     st.rerun()
     else:
@@ -4607,7 +4669,7 @@ def battle_view(cid):
     with st.expander(T("Add Condition"), expanded=False):
         cadd = st.columns([2, 1, 1])
         preset = cadd[0].selectbox(T("Condition"), CONDITIONS + [_COND_CUSTOM],
-                                    format_func=lambda x: T("Customâ€¦") if x == _COND_CUSTOM else T(x),
+                                    format_func=lambda x: T("Custom…") if x == _COND_CUSTOM else T(x),
                                     key=f"cond_pick_{cid}")
         custom_name = ""
         if preset == _COND_CUSTOM:
@@ -4668,7 +4730,7 @@ def battle_view(cid):
         corr_info = corruption_level_info(ch.get("cur_corruption", 0))
         cards += (
             f"<div class='statcard'><div class='l'>{T('Corruption')}</div>"
-            f"<div class='v'>{corr_info['level']} Â· {html.escape(corr_info['name'])}</div></div>"
+            f"<div class='v'>{corr_info['level']} · {html.escape(corr_info['name'])}</div></div>"
             f"<div class='statcard'><div class='l'>{T('Wealth')}</div><div class='v'>{int(ch.get('cur_wealth', 0) or 0)}</div></div>"
         )
         # Faith (p.142) only applies to characters with at least one Faith Talent.
@@ -4783,20 +4845,20 @@ def battle_view(cid):
                     except (TypeError, ValueError): ed_n = 0
                     ocols = st.columns([2, 1, 2, 1])
                     atk_mod = ocols[1].number_input(T("Mod"), -10, 10, 0, key=f"owlbear_atk_mod_{cid}_{widx}", label_visibility="collapsed")
-                    if ocols[0].button(f"ðŸ¦‰ {T('Attack')} ({pool}d6)", key=f"owlbear_atk_{cid}_{widx}", use_container_width=True):
-                        ok, msg = create_owlbear_roll_request(cid, ch.get("name", ""), f"{raw_name} Â· {T(skill_name)}", pool, bonus_dice=int(atk_mod), kind="test")
+                    if ocols[0].button(f"🦉 {T('Attack')} ({pool}d6)", key=f"owlbear_atk_{cid}_{widx}", use_container_width=True):
+                        ok, msg = create_owlbear_roll_request(cid, ch.get("name", ""), f"{raw_name} · {T(skill_name)}", pool, bonus_dice=int(atk_mod), kind="test")
                         (st.toast if ok else st.error)(msg)
                     dmg_mod = ocols[3].number_input(T("Mod"), -10, 10, 0, key=f"owlbear_dmg_mod_{cid}_{widx}", label_visibility="collapsed")
-                    if ocols[2].button(f"ðŸ¦‰ {T('Damage')} ({ed_n}d6)", key=f"owlbear_dmg_{cid}_{widx}", use_container_width=True):
-                        ok, msg = create_owlbear_roll_request(cid, ch.get("name", ""), f"{raw_name} Â· {T('Damage')}", ed_n, bonus_dice=int(dmg_mod), kind="damage")
+                    if ocols[2].button(f"🦉 {T('Damage')} ({ed_n}d6)", key=f"owlbear_dmg_{cid}_{widx}", use_container_width=True):
+                        ok, msg = create_owlbear_roll_request(cid, ch.get("name", ""), f"{raw_name} · {T('Damage')}", ed_n, bonus_dice=int(dmg_mod), kind="damage")
                         (st.toast if ok else st.error)(msg)
         else:
             st.markdown(f"<div class='wg' style='opacity:.6'>{T('No wargear.')}</div>", unsafe_allow_html=True)
 
         pending_req = [r for r in list_requisitions(character_id=cid) if r["status"] == "pending"]
         for r in pending_req:
-            label = "Em AnÃ¡lise" if st.session_state.get("ui_lang") == "pt" else "Under Review"
-            qty_suffix = f" Ã—{int(r.get('quantity', 1) or 1)}" if int(r.get('quantity', 1) or 1) > 1 else ""
+            label = "Em Análise" if st.session_state.get("ui_lang") == "pt" else "Under Review"
+            qty_suffix = f" ×{int(r.get('quantity', 1) or 1)}" if int(r.get('quantity', 1) or 1) > 1 else ""
             st.markdown(
                 f"<div class='wg wg-pending'><b>{html.escape(r['name'])}{qty_suffix}</b>"
                 f"<span class='wg-pending-tag'>{label}</span>"
@@ -4911,13 +4973,13 @@ def edit_view(cid, gm_mode=False):
                 st.selectbox(
                     "Archetype", arch_options, key=ark,
                     on_change=cb_archetype_change, args=(cid,),
-                    format_func=lambda name: f"{name}  Â·  T{ARCHETYPES[name]['tier']}  Â·  {species_label(ARCHETYPES[name]['species'])}",
+                    format_func=lambda name: f"{name}  ·  T{ARCHETYPES[name]['tier']}  ·  {species_label(ARCHETYPES[name]['species'])}",
                 )
                 ad = ARCHETYPES[st.session_state[ark]]
                 # Species and Archetype are independent choices the Magister sets
                 # separately (see cb_archetype_change), this is only a hint of
                 # the Archetype's Core Rulebook default, never forced onto the sheet.
-                st.caption(f"Tier {ad['tier']} Â· Core Rulebook Species: {species_label(ad['species'])} Â· {ad['xp']} XP Â· {ad['faction']}")
+                st.caption(f"Tier {ad['tier']} · Core Rulebook Species: {species_label(ad['species'])} · {ad['xp']} XP · {ad['faction']}")
         else:
             st.info("Advanced Character Creation: the Player chooses Species. No Archetype is used.")
             st.session_state[ark] = ""
@@ -4934,7 +4996,7 @@ def edit_view(cid, gm_mode=False):
             ad = ARCHETYPES.get(selected_arch)
             st.text_input("Archetype", value=selected_arch or "None", disabled=True, key=f"player_arch_{cid}")
             if ad:
-                st.caption(f"Tier {ad['tier']} Â· {ad['faction']}")
+                st.caption(f"Tier {ad['tier']} · {ad['faction']}")
 
     if mode == "archetype" and ch.get("creation_mode") != "archetype":
         cb_archetype_change(cid)
@@ -5031,7 +5093,7 @@ def edit_view(cid, gm_mode=False):
         c[2].number_input(T("Other XP"), 0, 100000, key=_k(cid, "n", "other"))
         c[3].markdown(f"**{T('Rank')}:** {rank_label(ch.get('rank', 1))}<br><small></small>", unsafe_allow_html=True)
 
-    st.markdown(f"<div class='sheet-banner'>{T('Core Profile Â· Attributes')}</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='sheet-banner'>{T('Core Profile · Attributes')}</div>", unsafe_allow_html=True)
     acol = st.columns(4)
     attr_max = SPECIES_ATTRIBUTE_MAX.get(st.session_state.get(spk, ""), {a: 12 for a in ATTRS})
     sheet_gear_mods = equipped_wargear_modifiers({**ch, "wargear": normalize_wargear(ch.get("wargear", []))})
@@ -5064,7 +5126,7 @@ def edit_view(cid, gm_mode=False):
             for n in range(any_count):
                 available_options = [x for x in options if x not in selected[:n]]
                 current_choice = selected[n] if n < len(selected) and selected[n] in available_options else available_options[0]
-                choice = st.selectbox(f"Skill to raise to {any_to} Â· {n+1}", available_options, index=available_options.index(current_choice), key=f"{choices_key}_{n}")
+                choice = st.selectbox(f"Skill to raise to {any_to} · {n+1}", available_options, index=available_options.index(current_choice), key=f"{choices_key}_{n}")
                 if n < len(selected): selected[n] = choice
                 else: selected.append(choice)
             choices["skills"] = selected[:any_count]
@@ -5073,7 +5135,7 @@ def edit_view(cid, gm_mode=False):
                 st.session_state[_k(cid, "s", choice)] = max(int(st.session_state[_k(cid, "s", choice)]), any_to)
 
 
-    st.markdown(f"<div class='sheet-banner'>{T('Core Profile Â· Skills')}</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='sheet-banner'>{T('Core Profile · Skills')}</div>", unsafe_allow_html=True)
     scol = st.columns(3)
     for i, s in enumerate(SKILLS):
         with scol[i % 3]:
@@ -5097,8 +5159,8 @@ def edit_view(cid, gm_mode=False):
     package = species_package(st.session_state[spk])
     if package:
         st.markdown(f"#### {T('Species & Chapter')}")
-        st.caption(f"{T('Package')}: {package.get('xp', 0)} XP Â· "
-                   f"{T('Speed')} {package.get('speed', species_speed(st.session_state[spk]))} Â· "
+        st.caption(f"{T('Package')}: {package.get('xp', 0)} XP · "
+                   f"{T('Speed')} {package.get('speed', species_speed(st.session_state[spk]))} · "
                    f"{T('Size')} {T(package.get('size', 'Average'))}")
 
         abilities = list(package.get("abilities", []))
@@ -5113,7 +5175,7 @@ def edit_view(cid, gm_mode=False):
             for ability in abilities:
                 st.markdown(f"<div class='tal'><span class='tn'>{html.escape(str(ability))}</span></div>", unsafe_allow_html=True)
 
-    st.markdown(f"<div class='sheet-banner'>{T('Arsenal Â· Wargear')}</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='sheet-banner'>{T('Arsenal · Wargear')}</div>", unsafe_allow_html=True)
 
     # Talents are purchased by Players when their Keywords/prerequisites allow them.
     # Wargear is assigned and equipped by the Magister.
@@ -5137,7 +5199,7 @@ def edit_view(cid, gm_mode=False):
     available_xp = starting_xp(current_build["tier"], advanced=(mode == "advanced")) + int(ch.get("earned_xp", 0)) - xp_spent(current_build)
     keys = sorted(character_keywords(current_build))
 
-    st.markdown(f"<div class='sheet-banner'>{T('Advancements Â· Talents')}</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='sheet-banner'>{T('Advancements · Talents')}</div>", unsafe_allow_html=True)
     st.caption(T("Purchase Talents by meeting their registered prerequisites and spending XP."))
     if keys:
         st.caption(T("Keywords") + ": " + ", ".join(k.title() for k in keys))
@@ -5145,7 +5207,7 @@ def edit_view(cid, gm_mode=False):
     if not gm_mode:
         owned_ids = {int(t.get("craft_id", -1) or -1) for t in normalize_talents(ch.get("talents", []))}
         visible = [r for r in catalog_talents if int(r["id"]) not in owned_ids and craft_keyword_match(current_build, r)]
-        with st.expander(f"{T('Available Talents')}  Â·  {len(visible)}", expanded=False):
+        with st.expander(f"{T('Available Talents')}  ·  {len(visible)}", expanded=False):
             talent_query = st.text_input("", key=f"talent_search_{cid}", placeholder=T("Search Talents..."), label_visibility="collapsed")
             if talent_query.strip():
                 q = talent_query.strip().lower()
@@ -5167,7 +5229,7 @@ def edit_view(cid, gm_mode=False):
                 st.caption(T("No Talents match the search."))
     else:
         if catalog_talents:
-            with st.expander(f"Assign Talent  Â·  {len(catalog_talents)}", expanded=False):
+            with st.expander(f"Assign Talent  ·  {len(catalog_talents)}", expanded=False):
                 talent_query = st.text_input("", key=f"gm_talent_search_{cid}", placeholder="Search Talents...", label_visibility="collapsed")
                 filtered_talents = [r for r in catalog_talents if talent_query.strip().lower() in str(r.get("name", "")).lower()] if talent_query.strip() else catalog_talents
                 for r in filtered_talents:
@@ -5189,13 +5251,13 @@ def edit_view(cid, gm_mode=False):
     else:
         st.caption(T("No talents purchased."))
 
-    st.markdown(f"<div class='sheet-banner'>{T('Advancements Â· Psychic Powers')}</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='sheet-banner'>{T('Advancements · Psychic Powers')}</div>", unsafe_allow_html=True)
     owned_powers = normalize_powers(ch.get("powers", []))
     if not gm_mode:
         catalog_powers = list_craft_items("power")
         owned_power_ids = {int(x.get("craft_id", -1) or -1) for x in owned_powers}
         visible_powers = [r for r in catalog_powers if int(r["id"]) not in owned_power_ids and craft_keyword_match(current_build, r)]
-        with st.expander(f"{T('Available Psychic Powers')}  Â·  {len(visible_powers)}", expanded=False):
+        with st.expander(f"{T('Available Psychic Powers')}  ·  {len(visible_powers)}", expanded=False):
             power_query = st.text_input("", key=f"power_search_{cid}", placeholder=T("Search Psychic Powers..."), label_visibility="collapsed")
             if power_query.strip():
                 q = power_query.strip().lower()
@@ -5218,7 +5280,7 @@ def edit_view(cid, gm_mode=False):
     else:
         catalog_powers = list_craft_items("power")
         if catalog_powers:
-            with st.expander(f"Assign Psychic Power  Â·  {len(catalog_powers)}", expanded=False):
+            with st.expander(f"Assign Psychic Power  ·  {len(catalog_powers)}", expanded=False):
                 power_query = st.text_input("", key=f"gm_power_search_{cid}", placeholder="Search Psychic Powers...", label_visibility="collapsed")
                 filtered_powers = [r for r in catalog_powers if power_query.strip().lower() in str(r.get("name", "")).lower()] if power_query.strip() else catalog_powers
                 for r in filtered_powers:
@@ -5231,7 +5293,7 @@ def edit_view(cid, gm_mode=False):
                 if not filtered_powers: st.caption("No Psychic Powers match the search.")
 
     if gm_mode and catalog_wargear:
-        with st.expander(f"Assign Wargear  Â·  {len(catalog_wargear)}", expanded=False):
+        with st.expander(f"Assign Wargear  ·  {len(catalog_wargear)}", expanded=False):
             gear_query = st.text_input("", key=f"gm_gear_search_{cid}", placeholder="Search Wargear...", label_visibility="collapsed")
             gear_keywords = sorted({kw for row in catalog_wargear for kw in craft_keyword_values(row)}, key=str.lower)
             selected_gear_keywords = st.multiselect("Keywords", gear_keywords, key=f"gm_gear_keywords_{cid}", placeholder="Filter by Keyword...", label_visibility="collapsed")
@@ -5273,14 +5335,14 @@ def edit_view(cid, gm_mode=False):
             stat_html = _wargear_stat_html(details_w, strength=cur_attr.get("Strength", 1))
             wc2 = st.columns([3.2, 5.2, 1.15, 1.15])
             wc2[0].markdown(
-                f"<div class='inventory-name'>{display_name} <span class='inventory-qty'>{('Ã— ' + str(qty)) if stackable_w else ''}</span></div>"
+                f"<div class='inventory-name'>{display_name} <span class='inventory-qty'>{('× ' + str(qty)) if stackable_w else ''}</span></div>"
                 f"<div class='inventory-meta'>{category}</div>", unsafe_allow_html=True)
             wc2[1].markdown(f"{stat_html}<div class='inventory-effect'>{effect}</div>", unsafe_allow_html=True)
 
             if stackable_w:
                 if gm_mode:
                     qcols = wc2[2].columns(2)
-                    if qcols[0].button("âˆ’", key=f"sheet_qm_{cid}_{idx}"):
+                    if qcols[0].button("−", key=f"sheet_qm_{cid}_{idx}"):
                         result = adjust_wargear_quantity(cid, _wargear_craft_id(w), -1,
                                                          actor_name=(st.session_state.get("user") or {}).get("username", ""),
                                                          actor_user_id=(st.session_state.get("user") or {}).get("id"),
@@ -5335,7 +5397,7 @@ def edit_view(cid, gm_mode=False):
     wargear = normalize_wargear(wdf)
     wc = st.columns(2)
     wc[0].markdown(f"**{T('Summary')}**")
-    wc[0].caption(f"{len(wargear)} wargear item(s) Â· {len(talents)} talent(s)")
+    wc[0].caption(f"{len(wargear)} wargear item(s) · {len(talents)} talent(s)")
     wc[1].text_area(T("Notes"), key=_k(cid, "t", "notes"), height=110)
 
     save_result = save_build(
@@ -5417,8 +5479,8 @@ def _section(title, help_text, expanded=False, key=None):
 
 
 def login_page():
-    st.markdown("<div class='banner'>âœ  IMPERIAL COGITATOR âœ "
-                "<span class='sub'>Adeptus Administratum Â· Campaign Record</span></div>", unsafe_allow_html=True)
+    st.markdown("<div class='banner'>✠ IMPERIAL COGITATOR ✠"
+                "<span class='sub'>Adeptus Administratum · Campaign Record</span></div>", unsafe_allow_html=True)
     col = st.columns([1, 1.3, 1])[1]
     with col:
         st.markdown(" ")
@@ -5449,7 +5511,7 @@ def login_page():
                 rspecies = rc1[0].selectbox("Species", PLAYER_SPECIES, format_func=species_label, key="self_register_species")
                 rarch = rc1[1].selectbox(
                     "Archetype", archetype_options(),
-                    format_func=lambda name: f"{name}  Â·  T{ARCHETYPES[name]['tier']}  Â·  {ARCHETYPES[name]['faction']}",
+                    format_func=lambda name: f"{name}  ·  T{ARCHETYPES[name]['tier']}  ·  {ARCHETYPES[name]['faction']}",
                     key="self_register_arch"
                 )
                 reg_ok = st.form_submit_button("Register")
@@ -5469,7 +5531,7 @@ def login_page():
         # labelled "Spectator Login" control, per the Magister's request that
         # it not be obvious on the login screen. Anyone who knows to look can
         # still find it; nobody stumbles on it by accident.
-        with st.expander("â—ˆ", expanded=False):
+        with st.expander("◈", expanded=False):
             with st.form("spectator_login"):
                 spec_code = st.text_input("", placeholder="Vox-Cipher", label_visibility="collapsed")
                 spec_ok = st.form_submit_button("Tune In")
@@ -5508,14 +5570,14 @@ def char_row(ch, folders):
     with c[0]:
         label = f"{ch['name'] or 'Unnamed'}{'*' if ch.get('creation_mode') == 'advanced' else ''}"
         with st.popover(label, use_container_width=True):
-            st.markdown(f"**{species_label(ch.get('species',''))}** Â· T{ch.get('tier',1)} Â· {rank_label(rank)}")
+            st.markdown(f"**{species_label(ch.get('species',''))}** · T{ch.get('tier',1)} · {rank_label(rank)}")
             if ch.get("archetype"): st.caption(str(ch.get("archetype")))
             attrs = effective_attributes(ch, gear); skills = effective_skills(ch, gear)
-            st.markdown("**Attributes**  " + " Â· ".join(f"{a[:3].upper()} {attrs.get(a,1)}" for a in ATTRS))
-            st.markdown("**Skills**  " + " Â· ".join(f"{sk[:4]} {skills.get(sk,0)+attrs.get(at,1)}" for sk, at in SKILLS.items()))
+            st.markdown("**Attributes**  " + " · ".join(f"{a[:3].upper()} {attrs.get(a,1)}" for a in ATTRS))
+            st.markdown("**Skills**  " + " · ".join(f"{sk[:4]} {skills.get(sk,0)+attrs.get(at,1)}" for sk, at in SKILLS.items()))
             corr = corruption_level_info(ch.get("cur_corruption", 0))
-            st.caption(f"Wounds {int(ch.get('cur_wounds',0))}/{d['Max Wounds']} Â· Shock {int(ch.get('cur_shock',0))}/{d['Max Shock']} Â· Wrath {int(ch.get('cur_wrath',0))}/{d['Max Wrath']} Â· Corruption {corr['points']} ({corr['name']})")
-        c[0].caption(f"{ch['species']} Â· T{ch['tier']} Â· Rank {rank} {vs}", unsafe_allow_html=True)
+            st.caption(f"Wounds {int(ch.get('cur_wounds',0))}/{d['Max Wounds']} · Shock {int(ch.get('cur_shock',0))}/{d['Max Shock']} · Wrath {int(ch.get('cur_wrath',0))}/{d['Max Wrath']} · Corruption {corr['points']} ({corr['name']})")
+        c[0].caption(f"{ch['species']} · T{ch['tier']} · Rank {rank} {vs}", unsafe_allow_html=True)
         conds = ch.get("conditions", {}) or {}
         if conds:
             badges = " ".join(
@@ -5542,10 +5604,10 @@ def vox_toggle_list(chars):
         c = st.columns([3, 1.4, 1.2])
         c[0].markdown(f"<span class='{ncls}'>{ch['name'] or 'Unnamed'}</span>", unsafe_allow_html=True)
         if ch["comms_on"]:
-            c[1].markdown("<span class='vlive'>âœ  ACTIVE</span>", unsafe_allow_html=True)
+            c[1].markdown("<span class='vlive'>✠ ACTIVE</span>", unsafe_allow_html=True)
             c[2].button("Cut Vox", key=f"vt_{ch['id']}", on_click=set_comms, args=(ch["id"], 0))
         else:
-            c[1].markdown("<span class='vdead'>âœ  CUT</span>", unsafe_allow_html=True)
+            c[1].markdown("<span class='vdead'>✠ CUT</span>", unsafe_allow_html=True)
             c[2].button("Activate Vox", key=f"vt_{ch['id']}", on_click=set_comms, args=(ch["id"], 1))
 
 
@@ -5565,15 +5627,15 @@ def vox_toggle_list(chars):
 #         for c in players:
 #             count = count_player_audit(c["id"])
 #             cols = st.columns([3.5, 1, 1.5, 1.2])
-#             cols[0].markdown(f"**{c['name'] or 'Unnamed'}** Â· `{c.get('username') or 'unlinked'}`")
-#             cols[1].caption(f"T{c['tier']} Â· {rank_label(c['rank'])}")
+#             cols[0].markdown(f"**{c['name'] or 'Unnamed'}** · `{c.get('username') or 'unlinked'}`")
+#             cols[1].caption(f"T{c['tier']} · {rank_label(c['rank'])}")
 #             cols[2].metric("Changes", count)
 #             if cols[3].button("Audit", key=f"audit_open_{c['id']}", use_container_width=True):
 #                 st.session_state["audit_player_id"] = int(c["id"]); st.rerun()
 #         ids = [int(c["id"]) for c in players]
 #         selected = st.session_state.get("audit_player_id")
 #         if selected not in ids: selected = ids[0]; st.session_state["audit_player_id"] = selected
-#         labels = {int(c["id"]): f"{c['name'] or 'Unnamed'} Â· {c.get('username') or 'unlinked'}" for c in players}
+#         labels = {int(c["id"]): f"{c['name'] or 'Unnamed'} · {c.get('username') or 'unlinked'}" for c in players}
 #         selected = st.selectbox("Player", ids, index=ids.index(selected), format_func=lambda x: labels[x], key="audit_player_select")
 #         st.session_state["audit_player_id"] = selected
 #         rows = get_player_audit(selected, 500)
@@ -5581,7 +5643,7 @@ def vox_toggle_list(chars):
 #         if not rows: st.info("No Player changes have been recorded yet."); return
 #         for r in rows:
 #             stamp = str(r["changed_at"]).replace("T", " ")[:19]
-#             st.markdown(f"**{stamp}** Â· {r['actor']} Â· `{r['source']}` Â· **{r['field']}**")
+#             st.markdown(f"**{stamp}** · {r['actor']} · `{r['source']}` · **{r['field']}**")
 #             left, right = st.columns(2)
 #             with left: st.caption("Before"); st.code(str(r.get("old_value", "")), language="text")
 #             with right: st.caption("After"); st.code(str(r.get("new_value", "")), language="text")
@@ -5596,7 +5658,7 @@ CRAFT_TRAITS = [
     "Assault", "Blast", "Brutal", "Combi", "Dakka", "Felling", "Force", "Force Shield",
     "Flame", "Heavy", "Melta", "Parry", "Penetrating", "Pistol", "Powered", "Rapid Fire",
     "Reliable", "Rending", "Shield", "Sniper", "Steadfast", "Toxic", "Unwieldy", "Warp Weapon",
-    "Waaagh!", "â€™Ere We Go", "2-Handed", "Bulk"
+    "Waaagh!", "’Ere We Go", "2-Handed", "Bulk"
 ]
 CRAFT_TRAIT_PARAMETER = {
     "Blast": "Blast size", "Dakka": "Dakka rating", "Felling": "Felling rating", "Penetrating": "Penetrating rating",
@@ -5655,7 +5717,7 @@ def _render_craft_modifiers(prefix, details=None, kind="wargear"):
                    "Use this only for a Talent whose bonus is always on, not one that requires spending "
                    "a resource or taking an Action to trigger.")
     else:  # power
-        st.caption("âš ï¸ Most Psychic Powers are activated abilities lasting a scene/Round, not a "
+        st.caption("⚠️ Most Psychic Powers are activated abilities lasting a scene/Round, not a "
                    "permanent bonus, a modifier here applies forever, just from knowing the Power. "
                    "Only use this for a Power that is genuinely passive/innate.")
     # Initiative is not repeated here: it is already one of the seven
@@ -5690,7 +5752,7 @@ def _wargear_trait_bonus_preview(details):
 
 def _safe_int(val, default=0):
     """Parse a number that may come from free-form catalog JSON (e.g. a
-    placeholder like 'â€”' or 'N/A' for a field that doesn't apply to that
+    placeholder like '—' or 'N/A' for a field that doesn't apply to that
     item) without crashing the editor that displays it."""
     try:
         return int(val)
@@ -5766,13 +5828,13 @@ def craft_view():
         visible = rows if show_disabled else [r for r in rows if int(r.get("active", 1))]
         if search.strip():
             q = search.lower(); visible = [r for r in visible if q in str(r.get("name", "")).lower() or q in str(r.get("effect", "")).lower()]
-        with _section(f"Catalog Â· {len(visible)} entries",
+        with _section(f"Catalog · {len(visible)} entries",
                       "Every registered entry of this kind. Click one to see its full rules text, "
                       "requirements, and sheet modifiers, or to Disable/Edit/Delete it.",
                       key=f"craft_catalog_section_{kind}"):
             for r in visible:
                 details = craft_details(r); req = _requirement_data(r)
-                label = f"{r['name']} Â· {int(r.get('cost',0) or 0)} XP Â· #{r['id']}" if kind in ("talent", "power") else f"{r['name']} Â· #{r['id']}"
+                label = f"{r['name']} · {int(r.get('cost',0) or 0)} XP · #{r['id']}" if kind in ("talent", "power") else f"{r['name']} · #{r['id']}"
                 with st.expander(label, expanded=False):
                     if r.get("effect"): st.write(r["effect"])
                     if req.get("keywords_all"): st.caption("Required Keywords: " + ", ".join(req["keywords_all"]))
@@ -5781,13 +5843,13 @@ def craft_view():
                     # actually applies to a character sheet.
                     effective_mods = craft_modifiers(r)
                     if effective_mods: st.caption("Sheet modifiers: " + ", ".join(f"{k.title()} {int(v):+d}" for k,v in effective_mods.items() if v))
-                    if kind == "talent" and details.get("faith_talent"): st.caption("Faith Talent Â· grants +1 maximum Faith (p.142)")
+                    if kind == "talent" and details.get("faith_talent"): st.caption("Faith Talent · grants +1 maximum Faith (p.142)")
                     if kind == "wargear":
                         extra = [f"{lab}: {details.get(key)}" for key,lab in (("category","Category"),("damage","Damage"),("ed","ED"),("ap","AP"),("range","Range"),("salvo","Salvo"),("traits","Traits"),("keywords","Keywords")) if details.get(key) not in (None,"",[])]
-                        if extra: st.caption(" Â· ".join(extra))
+                        if extra: st.caption(" · ".join(extra))
                     if kind == "power":
                         extra = [f"{lab}: {details.get(key)}" for key,lab in (("dn","DN"),("activation","Activation"),("potency","Potency"),("discipline","Discipline")) if details.get(key) not in (None,"",0)]
-                        if extra: st.caption(" Â· ".join(extra))
+                        if extra: st.caption(" · ".join(extra))
                     b = st.columns(3)
                     if b[0].button("Disable" if int(r.get("active",1)) else "Enable", key=f"ct_{kind}_{r['id']}"):
                         conn=get_conn(); conn.execute("UPDATE craft_items SET active=?,updated_at=? WHERE id=?", (0 if int(r.get("active",1)) else 1, now_iso(), int(r["id"]))); conn.commit(); conn.close()
@@ -5949,7 +6011,7 @@ def archetypes_view():
         if buttons[1].button("Cancel", use_container_width=True, key="arch_editor_cancel"):
             st.session_state.pop("archetype_edit_id", None); st.rerun()
 
-    with _section(f"Custom Archetypes Â· {len(custom_rows)}", "Every homebrew Archetype created for this "
+    with _section(f"Custom Archetypes · {len(custom_rows)}", "Every homebrew Archetype created for this "
                   "campaign, with quick Edit/Delete actions.", key="archetype_list_section"):
         if not custom_rows:
             st.info("No custom Archetypes have been created yet.")
@@ -5957,7 +6019,7 @@ def archetypes_view():
         for row in custom_rows:
             with st.container(border=True):
                 h = st.columns([4, 1, 1, 1])
-                h[0].markdown(f"**{html.escape(str(row['name']))}** Â· T{int(row['tier'])} Â· {species_label(row['species'])}")
+                h[0].markdown(f"**{html.escape(str(row['name']))}** · T{int(row['tier'])} · {species_label(row['species'])}")
                 h[1].caption(f"{int(row['xp'])} XP")
                 h[2].caption(str(row['faction'] or "No Faction"))
                 if h[3].button("Edit", key=f"arch_edit_{row['id']}"):
@@ -5972,7 +6034,7 @@ def archetypes_view():
                     gear = json.loads(row["starting_wargear"] or "[]")
                     if gear: details.append("Wargear: " + ", ".join(gear))
                 except Exception: pass
-                if details: st.caption(" Â· ".join(details))
+                if details: st.caption(" · ".join(details))
                 dc = st.columns([1, 5])
                 if dc[0].button("Delete", key=f"arch_del_{row['id']}"):
                     ok, msg = delete_custom_archetype(int(row["id"]))
@@ -5986,17 +6048,17 @@ def render_combat_log_entry(log):
     an expander, unlike another expander."""
     participants = log.get("participants", []) or []
     ended = str(log.get("ended_at") or "").replace("T", " ")[:16]
-    summary = f"{ended} Â· {int(log.get('rounds', 1) or 1)} round(s) Â· {len(participants)} participant(s)"
+    summary = f"{ended} · {int(log.get('rounds', 1) or 1)} round(s) · {len(participants)} participant(s)"
     with st.popover(summary, use_container_width=True):
         for p in participants:
             ncls = "npc" if p.get("kind") == "npc" else ""
             st.markdown(
                 f"<div class='wg'><span class='{ncls}'><b>{html.escape(str(p.get('name', '')))}</b></span>"
-                f" Â· {species_label(p.get('species', ''))} Â· T{int(p.get('tier', 1) or 1)}"
+                f" · {species_label(p.get('species', ''))} · T{int(p.get('tier', 1) or 1)}"
                 f"<div style='opacity:.75;font-size:.82rem;margin-top:2px'>"
                 f"Wounds {p.get('cur_wounds', 0)}/{p.get('max_wounds', 0)}"
-                f" Â· Shock {p.get('cur_shock', 0)}/{p.get('max_shock', 0)}"
-                f" Â· Wrath {p.get('cur_wrath', 0)}/{p.get('max_wrath', 0)}</div></div>",
+                f" · Shock {p.get('cur_shock', 0)}/{p.get('max_shock', 0)}"
+                f" · Wrath {p.get('cur_wrath', 0)}/{p.get('max_wrath', 0)}</div></div>",
                 unsafe_allow_html=True,
             )
 
@@ -6031,7 +6093,7 @@ def _gm_tab_characters():
     folder_options = [None] + [f["id"] for f in folders]
 
     pending = list_pending_registrations()
-    with _section(f"Pending Registrations Â· {len(pending)}",
+    with _section(f"Pending Registrations · {len(pending)}",
                   "Players who registered themselves from the login screen, without going through you "
                   "directly. They are not in the game yet - not on the roster, not addable to Combat or Vox - "
                   "until you Approve. Rejecting deletes the account and character sheet immediately.",
@@ -6041,8 +6103,8 @@ def _gm_tab_characters():
         for ch in pending:
             with st.container(border=True):
                 head = st.columns([3, 1])
-                head[0].markdown(f"**{html.escape(ch.get('name') or 'Unnamed')}** Â· {species_label(ch.get('species',''))} "
-                                 f"Â· {html.escape(ch.get('archetype') or '')} Â· T{ch.get('tier',1)} Â· {rank_label(ch.get('rank',1))}")
+                head[0].markdown(f"**{html.escape(ch.get('name') or 'Unnamed')}** · {species_label(ch.get('species',''))} "
+                                 f"· {html.escape(ch.get('archetype') or '')} · T{ch.get('tier',1)} · {rank_label(ch.get('rank',1))}")
                 if head[1].button("Open Sheet", key=f"pending_open_{ch['id']}", use_container_width=True):
                     st.session_state["editing"] = ch["id"]; st.rerun()
                 bc = st.columns(2)
@@ -6099,7 +6161,7 @@ def _gm_tab_characters():
                     pspecies = pc1[0].selectbox("Species", PLAYER_SPECIES, format_func=species_label)
                     parch = pc1[1].selectbox(
                         "Archetype", archetype_options(),
-                        format_func=lambda name: f"{name}  Â·  T{ARCHETYPES[name]['tier']}  Â·  {ARCHETYPES[name]['faction']}"
+                        format_func=lambda name: f"{name}  ·  T{ARCHETYPES[name]['tier']}  ·  {ARCHETYPES[name]['faction']}"
                     )
                     st.caption("The Magister defines Species, Archetype, Tier and Rank. The Player cannot edit them.")
                 else:
@@ -6130,7 +6192,7 @@ def _gm_tab_characters():
                 if not nadvanced:
                     narc = nc2[1].selectbox(
                         "Archetype", archetype_options(),
-                        format_func=lambda name: f"{name}  Â·  T{ARCHETYPES[name]['tier']}  Â·  {ARCHETYPES[name]['faction']}"
+                        format_func=lambda name: f"{name}  ·  T{ARCHETYPES[name]['tier']}  ·  {ARCHETYPES[name]['faction']}"
                     )
                     st.caption("The Magister defines Species, Archetype, Tier and Rank for this NPC.")
                 else:
@@ -6152,8 +6214,8 @@ def _gm_tab_characters():
 
         for fid, items in groups.items():
             label = folder_map.get(fid, "No folder")
-            icon = "â—ˆ" if fid is not None else "â—‡"
-            with st.expander(f"{icon} {label}  Â·  {len(items)} character(s)", expanded=False):
+            icon = "◈" if fid is not None else "◇"
+            with st.expander(f"{icon} {label}  ·  {len(items)} character(s)", expanded=False):
                 if not items:
                     st.caption("No characters in this folder.")
                     continue
@@ -6167,7 +6229,7 @@ def _gm_tab_characters():
                                    format_func=lambda x: folder_map.get(x, "No folder") if x is not None else "No folder",
                                    label_visibility="collapsed",
                                    on_change=lambda cid=ch["id"]: set_folder(cid, st.session_state[f"mv_{cid}"]))
-                    a[2].markdown("âœ  **Vox**")
+                    a[2].markdown("✠ **Vox**")
                     if ch["comms_on"]:
                         if a[3].button("Cut Vox", key=f"gmvc_{ch['id']}"):
                             set_comms(ch["id"], 0); st.rerun()
@@ -6191,7 +6253,7 @@ def _gm_tab_characters():
                            format_func=lambda x: folder_map.get(x, "No folder") if x is not None else "No folder",
                            label_visibility="collapsed",
                            on_change=lambda cid=ch["id"]: set_folder(cid, st.session_state[f"mva_{cid}"]))
-            a[2].markdown("âœ " + (" ON" if ch["comms_on"] else " OFF"))
+            a[2].markdown("✠" + (" ON" if ch["comms_on"] else " OFF"))
 
 
 @st.fragment
@@ -6241,7 +6303,7 @@ def _gm_tab_vox():
         for fid, members in groups.items():
             label = "No folder" if fid is None else folder_map.get(fid, "Folder")
             on_count = sum(1 for ch in members if ch["comms_on"])
-            st.markdown(f"**{label}** Â· {len(members)} member(s) Â· {on_count} active")
+            st.markdown(f"**{label}** · {len(members)} member(s) · {on_count} active")
 
     with _section("Magister Monitor", "A live feed of every Vox signal being sent across all networks, "
                   "visible only to the Magister regardless of folder."):
@@ -6277,7 +6339,7 @@ def _gm_tab_progression():
                 next_tier_threshold = max(0, (next_tier - starting_tier) * 100)
                 tier_missing = max(0, next_tier_threshold - earned) if next_tier <= MAX_TIER else 0
                 with st.container(border=True):
-                    st.markdown(f"**{c['name'] or 'Unnamed'}** Â· Tier {tier} Â· {rank_label(rank)}")
+                    st.markdown(f"**{c['name'] or 'Unnamed'}** · Tier {tier} · {rank_label(rank)}")
                     pc = st.columns(4)
                     pc[0].metric("Earned XP", earned)
                     pc[1].metric("Next Rank", "Maximum" if next_rank > 3 else f"{rank_label(next_rank)}")
@@ -6317,7 +6379,7 @@ def _gm_tab_progression():
                            and (not current_arch.get("faction") or data.get("faction") == current_arch.get("faction"))]
                 if not choices:
                     continue
-                st.markdown(f"**{ac['name']}** Â· Tier {ac['tier']} Â· {rank_label(ac['rank'])}")
+                st.markdown(f"**{ac['name']}** · Tier {ac['tier']} · {rank_label(ac['rank'])}")
                 new_arch = st.selectbox("Next Archetype", choices, key=f"prog_arch_{ac['id']}")
                 if st.button("Approve Archetype Ascension", key=f"prog_arch_btn_{ac['id']}", use_container_width=True):
                     ok, msg = ascend_archetype(ac["id"], new_arch)
@@ -6332,7 +6394,7 @@ def _gm_tab_progression():
                   "undo an Ascension/other progression change. Normal advancement rules are not enforced here."):
         correction_chars = [c for c in list_characters() if not c.get("temp_instance")]
         if correction_chars:
-            correction_labels = {int(c["id"]): f"{c['name'] or 'Unnamed'} Â· {c['kind'].upper()} Â· Tier {c['tier']} Â· {rank_label(c['rank'])} Â· {c['earned_xp']} XP" for c in correction_chars}
+            correction_labels = {int(c["id"]): f"{c['name'] or 'Unnamed'} · {c['kind'].upper()} · Tier {c['tier']} · {rank_label(c['rank'])} · {c['earned_xp']} XP" for c in correction_chars}
             correction_id = st.selectbox("Character", list(correction_labels.keys()), format_func=lambda x: correction_labels[x], key="progression_correction_character")
             cc = load_character(correction_id)
             if cc:
@@ -6354,7 +6416,7 @@ def _gm_tab_progression():
                         for h in history_rows:
                             stamp = str(h["created_at"]).replace("T", " ")[:19]
                             hc = st.columns([4, 1.5])
-                            hc[0].caption(f"{stamp} Â· {h['action']}")
+                            hc[0].caption(f"{stamp} · {h['action']}")
                             if hc[1].button("Undo", key=f"undo_prog_{h['id']}", use_container_width=True):
                                 ok, msg = restore_progression_undo(h["id"])
                                 if ok:
@@ -6390,7 +6452,7 @@ def _gm_tab_session():
             if npcs:
                 ncols = st.columns(3)
                 for i, npc in enumerate(npcs):
-                    if ncols[i % 3].checkbox(f"{npc['name'] or 'Unnamed NPC'} Â· T{npc['tier']}", key=f"session_npc_{npc['id']}"):
+                    if ncols[i % 3].checkbox(f"{npc['name'] or 'Unnamed NPC'} · T{npc['tier']}", key=f"session_npc_{npc['id']}"):
                         npc_ids.append(npc["id"])
             else:
                 st.caption("No NPCs available.")
@@ -6406,7 +6468,7 @@ def _gm_tab_session():
                 for pl in players:
                     cols = st.columns([3.5, 1.4, 1.4, 1.4])
                     present = cols[1].checkbox("Present", value=True, key=f"session_present_{pl['id']}", label_visibility="collapsed")
-                    cols[0].markdown(f"**{pl['name'] or 'Unnamed'}** Â· T{pl['tier']} Â· {rank_label(pl['rank'])}")
+                    cols[0].markdown(f"**{pl['name'] or 'Unnamed'}** · T{pl['tier']} · {rank_label(pl['rank'])}")
                     cols[2].number_input("Base", min_value=0, max_value=10000, value=int(base_xp), step=5, key=f"session_base_{pl['id']}", label_visibility="collapsed", disabled=not present)
                     cols[3].number_input("Bonus", min_value=0, max_value=10000, value=0, step=5, key=f"session_bonus_{pl['id']}", label_visibility="collapsed", disabled=not present)
                     if present:
@@ -6430,7 +6492,7 @@ def _gm_tab_session():
             st.caption("No session records yet.")
         for sr in old_records:
             status = "Closed" if sr["closed_at"] else "Draft"
-            label = f"Session {sr['session_no']} Â· {sr['title'] or 'Untitled'} Â· {status}"
+            label = f"Session {sr['session_no']} · {sr['title'] or 'Untitled'} · {status}"
             # A nested st.expander/st.popover isn't allowed inside this section's
             # own expander, and render_session_combat_logs() below already opens
             # a popover per combat, so a plain toggle button substitutes here.
@@ -6449,7 +6511,7 @@ def _gm_tab_session():
                     awards = get_session_awards(sr["id"])
                     if awards:
                         for aw in awards:
-                            st.markdown(f"**{aw['name']}** Â· +{aw['total_xp']} XP (base {aw['base_xp']} + bonus {aw['bonus_xp']})")
+                            st.markdown(f"**{aw['name']}** · +{aw['total_xp']} XP (base {aw['base_xp']} + bonus {aw['bonus_xp']})")
                     st.markdown("**Combat Log**")
                     render_session_combat_logs(sr["session_no"])
 
@@ -6472,9 +6534,9 @@ def _gm_tab_combat():
     current = get_combatants()
     active = {c["id"] for c in current}
 
-    with _section(f"Active Combat Â· {len(current)} combatant(s)",
+    with _section(f"Active Combat · {len(current)} combatant(s)",
                   "The live attack order for the current encounter: Round/Turn tracking, each combatant's "
-                  "quick stats, and Wounds/Shock/Ammo/Wrath trackers. Reorder with â†‘/â†“, click Open for the full sheet.",
+                  "quick stats, and Wounds/Shock/Ammo/Wrath trackers. Reorder with ↑/↓, click Open for the full sheet.",
                   expanded=False, key="combat_active_section"):
         current_idx = -1
         if current:
@@ -6482,10 +6544,10 @@ def _gm_tab_combat():
             current_idx = min(state["current"], len(current) - 1)
             turn_cols = st.columns([1.1, 1.3, 1.3, 3], gap="small")
             turn_cols[0].metric("Round", state["round"])
-            if turn_cols[1].button("â—€ Previous Turn", use_container_width=True, key="combat_turn_prev"):
+            if turn_cols[1].button("◀ Previous Turn", use_container_width=True, key="combat_turn_prev"):
                 advance_combat_turn(-1)
                 st.rerun()
-            if turn_cols[2].button("Next Turn â–¶", use_container_width=True, key="combat_turn_next"):
+            if turn_cols[2].button("Next Turn ▶", use_container_width=True, key="combat_turn_next"):
                 advance_combat_turn(+1)
                 st.rerun()
             current_name = html.escape(current[current_idx].get("name") or "Unnamed")
@@ -6497,7 +6559,7 @@ def _gm_tab_combat():
         if not current:
             st.info("No characters are currently in combat. Add Players or NPCs below.")
         else:
-            st.caption("â†‘ / â†“ reorder the attack sequence Â· click a name for Attributes and Skills.")
+            st.caption("↑ / ↓ reorder the attack sequence · click a name for Attributes and Skills.")
             user = st.session_state.user or {}
             for idx, ch in enumerate(current):
                 gear = equipped_wargear_modifiers(ch)
@@ -6514,19 +6576,19 @@ def _gm_tab_combat():
                     pos_cls = "combat-pos combat-pos-active" if is_current_turn else "combat-pos"
                     head[0].markdown(f"<div class='{pos_cls}'>{idx + 1}</div>", unsafe_allow_html=True)
                     with head[1]:
-                        pop_label = ("â–¶ " + (ch.get("name") or "Unnamed")) if is_current_turn else (ch.get("name") or "Unnamed")
+                        pop_label = ("▶ " + (ch.get("name") or "Unnamed")) if is_current_turn else (ch.get("name") or "Unnamed")
                         with st.popover(pop_label, use_container_width=True, key=f"combat_pop_{ch['id']}"):
-                            st.markdown(f"**{species_label(ch.get('species', ''))}** Â· T{ch.get('tier', 1)} Â· {rank_label(rank)}")
+                            st.markdown(f"**{species_label(ch.get('species', ''))}** · T{ch.get('tier', 1)} · {rank_label(rank)}")
                             if ch.get("archetype"):
                                 st.caption(str(ch.get("archetype")))
                             attrs = effective_attributes(ch, gear); skills = effective_skills(ch, gear)
-                            st.markdown("**Attributes**  " + " Â· ".join(f"{a[:3].upper()} {attrs.get(a, 1)}" for a in ATTRS))
-                            st.markdown("**Skills**  " + " Â· ".join(f"{sk[:4]} {skills.get(sk, 0) + attrs.get(at, 1)}" for sk, at in SKILLS.items()))
-                        temp_tag = " Â· âš  TEMP (unsaved)" if ch.get("temp_instance") else ""
-                        st.caption(f"{role_label} Â· {species_label(ch.get('species'))} Â· T{ch.get('tier', 1)} Â· {rank_label(rank)} Â· {folder_name}{temp_tag}")
+                            st.markdown("**Attributes**  " + " · ".join(f"{a[:3].upper()} {attrs.get(a, 1)}" for a in ATTRS))
+                            st.markdown("**Skills**  " + " · ".join(f"{sk[:4]} {skills.get(sk, 0) + attrs.get(at, 1)}" for sk, at in SKILLS.items()))
+                        temp_tag = " · ⚠ TEMP (unsaved)" if ch.get("temp_instance") else ""
+                        st.caption(f"{role_label} · {species_label(ch.get('species'))} · T{ch.get('tier', 1)} · {rank_label(rank)} · {folder_name}{temp_tag}")
                         # Combat-critical Traits stay visible at a glance instead of hiding behind the popover.
-                        st.caption(f"Defence {int(d.get('Defence', 0) or 0)} Â· Resilience {int(d.get('Resilience', 0) or 0)} "
-                                   f"Â· Speed {int(d.get('Speed', 0) or 0)} Â· Resolve {int(d.get('Resolve', 0) or 0)}")
+                        st.caption(f"Defence {int(d.get('Defence', 0) or 0)} · Resilience {int(d.get('Resilience', 0) or 0)} "
+                                   f"· Speed {int(d.get('Speed', 0) or 0)} · Resolve {int(d.get('Resolve', 0) or 0)}")
                         conds = ch.get("conditions", {}) or {}
                         if conds:
                             badges = " ".join(
@@ -6538,17 +6600,17 @@ def _gm_tab_combat():
                     head[2].button("Open", key=f"combat_open_{ch['id']}", use_container_width=True,
                                    on_click=cb_open, args=(ch["id"],))
                     with head[3]:
-                        if st.button("â†‘", key=f"combat_up_{ch['id']}", disabled=(idx == 0), use_container_width=True):
+                        if st.button("↑", key=f"combat_up_{ch['id']}", disabled=(idx == 0), use_container_width=True):
                             move_combatant(ch["id"], -1)
                             st.rerun()
-                        if st.button("â†“", key=f"combat_down_{ch['id']}", disabled=(idx == len(current) - 1), use_container_width=True):
+                        if st.button("↓", key=f"combat_down_{ch['id']}", disabled=(idx == len(current) - 1), use_container_width=True):
                             move_combatant(ch["id"], 1)
                             st.rerun()
                     if head[4].button("Remove", key=f"combat_current_remove_{ch['id']}", use_container_width=True):
                         set_combatant(ch["id"], False)
                         st.rerun()
 
-                    # Wounds/Shock/Ammo/Wrath, in the same compact metric + stacked âˆ’/+ pattern as the Battle Sheet.
+                    # Wounds/Shock/Ammo/Wrath, in the same compact metric + stacked −/+ pattern as the Battle Sheet.
                     vcols = st.columns(4, gap="small")
                     _vital_stat_block(vcols[0], "Wounds", max(0, int(ch.get("cur_wounds", 0) or 0)), int(d.get("Max Wounds", 0) or 0),
                                       cid=ch["id"], field="cur_wounds", editable=is_npc, actor_role="gm",
@@ -6566,9 +6628,9 @@ def _gm_tab_combat():
                                       max_mod=int(gear.get("wrath", 0) or 0))
 
                 if idx < len(current) - 1:
-                    st.markdown("<div class='combat-arrow'>â–¼</div>", unsafe_allow_html=True)
+                    st.markdown("<div class='combat-arrow'>▼</div>", unsafe_allow_html=True)
 
-    with _section(f"Add Combatants Â· {len(current)} in combat",
+    with _section(f"Add Combatants · {len(current)} in combat",
                   "Add or remove Players/NPCs from the active combat encounter, filtered by folder or search.",
                   expanded=False, key="combat_add_section"):
         fc = st.columns([1.8, 2.5])
@@ -6611,8 +6673,8 @@ def _gm_tab_combat():
                 kind_label = "NPC" if ch["kind"] == "npc" else "PLAYER"
                 ncls = "npc" if ch["kind"] == "npc" else ""
                 cols[0].markdown(
-                    f"<span class='{ncls}'><b>{html.escape(ch.get('name') or 'Unnamed')}</b></span> Â· {kind_label} Â· "
-                    f"{species_label(ch.get('species'))} Â· T{ch.get('tier', 1)} Â· {rank_label(ch.get('rank', 1))}",
+                    f"<span class='{ncls}'><b>{html.escape(ch.get('name') or 'Unnamed')}</b></span> · {kind_label} · "
+                    f"{species_label(ch.get('species'))} · T{ch.get('tier', 1)} · {rank_label(ch.get('rank', 1))}",
                     unsafe_allow_html=True,
                 )
                 if cols[1].button("Remove" if in_combat else "Add", key=f"combat_toggle_{ch['id']}", use_container_width=True):
@@ -6620,7 +6682,7 @@ def _gm_tab_combat():
                     st.rerun()
                 cols[2].caption("IN COMBAT" if in_combat else "")
 
-    with _section("Generate Generic NPCs Â· quick mobs for combat",
+    with _section("Generate Generic NPCs · quick mobs for combat",
                   "Builds disposable NPC mobs from an Archetype (or a Bestiary Threat) and drops them "
                   "straight into combat. They vanish when combat ends unless saved from their sheet."):
         st.caption("Instances only, they have no permanent character sheet, all their XP for the Tier is "
@@ -6629,7 +6691,7 @@ def _gm_tab_combat():
         gc = st.columns([2.2, 1, 1, 1.4])
         mob_arch = gc[0].selectbox(
             "Archetype", generic_npc_options(),
-            format_func=lambda name: f"{name}  Â·  T{ARCHETYPES[name]['tier']}  Â·  {ARCHETYPES[name]['faction']}",
+            format_func=lambda name: f"{name}  ·  T{ARCHETYPES[name]['tier']}  ·  {ARCHETYPES[name]['faction']}",
             key="mob_archetype",
         )
         mob_tier = gc[1].number_input("Tier", 1, MAX_TIER, int(ARCHETYPES[mob_arch]["tier"]), key="mob_tier")
@@ -6649,7 +6711,7 @@ def _gm_tab_combat():
 
     session_no_now = int(camp.get("session_no", 1) or 1)
     session_logs = get_combat_logs(session_no=session_no_now)
-    with _section(f"Combat Log Â· Session {session_no_now} Â· {len(session_logs)} combat(s)",
+    with _section(f"Combat Log · Session {session_no_now} · {len(session_logs)} combat(s)",
                   "A permanent record of every combat ended this Session: participants and their "
                   "final Wounds/Shock/Wrath. Click a combat to see the details.",
                   key="combat_log_section"):
@@ -6673,18 +6735,18 @@ def _gm_tab_campaign():
             sess = cc[2].number_input("Session", 1, 999, int(camp["session_no"]))
             if st.form_submit_button("Save"):
                 save_campaign(cname, ctier, camp["ruin"], sess); st.rerun()
-        st.caption(f"Standard character XP: {starting_xp(camp['tier'])} (Tier {camp['tier']} Ã— 100). Advanced Character Creation adds Tier Ã—10 bonus XP.")
+        st.caption(f"Standard character XP: {starting_xp(camp['tier'])} (Tier {camp['tier']} × 100). Advanced Character Creation adds Tier ×10 bonus XP.")
     with _section("Ruin", "Ruin is the Magister's shared resource pool, spent to let Threats roll "
                   "Determination, use Ruin Actions, and trigger other GM-side effects during play."):
-        # Same compact metric + stacked âˆ’/+ pattern as the Battle Sheet vitals.
+        # Same compact metric + stacked −/+ pattern as the Battle Sheet vitals.
         with st.container(key="ruin_campaign_vsb"):
             rc = st.columns([5, 1], gap="small")
             rc[0].metric("Ruin", camp["ruin"])
             with rc[1]:
                 st.button("+", key="ruinplus", on_click=adjust_ruin, args=(+1,), use_container_width=True)
-                st.button("âˆ’", key="ruinminus", on_click=adjust_ruin, args=(-1,), use_container_width=True)
+                st.button("−", key="ruinminus", on_click=adjust_ruin, args=(-1,), use_container_width=True)
     with _section("Spectator Feed", "A public, read-only Vox-feed page for people watching the table (streamers, "
-                  "absent players, etc.) that only ever shows current Shock â€” nothing else. They join by typing "
+                  "absent players, etc.) that only ever shows current Shock — nothing else. They join by typing "
                   "the code below on the login screen (hidden there so it isn't stumbled on by accident)."):
         code = str(camp.get("spectator_code", "") or "")
         cc2 = st.columns([2, 1])
@@ -6726,9 +6788,9 @@ def _gm_tab_campaign():
 @st.fragment(run_every=REFRESH_S)
 def _gm_tab_requisitions():
     pending = list_requisitions(status="pending")
-    with _section(f"Pending Requisitions Â· {len(pending)}",
+    with _section(f"Pending Requisitions · {len(pending)}",
                   "Wargear Players have asked for, waiting on your approval. Wealth/Influence are shown "
-                  "only as context for your decision â€” nothing here is enforced automatically.",
+                  "only as context for your decision — nothing here is enforced automatically.",
                   expanded=bool(pending)):
         if not pending:
             st.caption("No open Requisitions.")
@@ -6741,7 +6803,7 @@ def _gm_tab_requisitions():
             d = derived_traits(ch, gear)
             with st.container(border=True):
                 head = st.columns([3, 1, 1, 1])
-                qty_suffix = f" Ã—{int(r.get('quantity', 1) or 1)}" if int(r.get('quantity', 1) or 1) > 1 else ""
+                qty_suffix = f" ×{int(r.get('quantity', 1) or 1)}" if int(r.get('quantity', 1) or 1) > 1 else ""
                 head[0].markdown(f"**{html.escape(ch.get('name') or 'Unnamed')}** requests{qty_suffix}:")
                 head[1].metric("Wealth", int(ch.get("cur_wealth", 0) or 0))
                 head[2].metric("Influence", int(d.get("Influence", 0) or 0))
@@ -6786,7 +6848,7 @@ def _gm_tab_requisitions():
                         st.rerun()
 
     resolved = [r for r in list_requisitions() if r["status"] != "pending"][:30]
-    with _section(f"Requisition History Â· {len(resolved)}",
+    with _section(f"Requisition History · {len(resolved)}",
                   "Recently approved or denied Requisitions, for reference.", key="requisition_history_section"):
         if not resolved:
             st.caption("Nothing resolved yet.")
@@ -6795,8 +6857,8 @@ def _gm_tab_requisitions():
             ch = chars_by_id.get(r["character_id"])
             color = "#3fae5a" if r["status"] == "approved" else "#d13a3a"
             st.markdown(
-                f"<div class='row'><b>{html.escape((ch or {}).get('name', 'Unknown'))}</b> Â· {html.escape(r['name'])} "
-                f"Â· <span style='color:{color}'>{r['status'].upper()}</span></div>",
+                f"<div class='row'><b>{html.escape((ch or {}).get('name', 'Unknown'))}</b> · {html.escape(r['name'])} "
+                f"· <span style='color:{color}'>{r['status'].upper()}</span></div>",
                 unsafe_allow_html=True,
             )
 
@@ -6952,7 +7014,7 @@ def _gm_tab_maintenance():
 
 
 def gm_view():
-    st.markdown("<div class='banner'>âœ  MAGISTER SANCTUM âœ <span class='sub'>Campaign Command</span></div>",
+    st.markdown("<div class='banner'>✠ MAGISTER SANCTUM ✠<span class='sub'>Campaign Command</span></div>",
                 unsafe_allow_html=True)
 
     if st.session_state.get("editing"):
@@ -6964,7 +7026,7 @@ def gm_view():
             if bc[1].button("Save Character", key="save_temp_instance_btn", use_container_width=True):
                 save_temp_instance(cid)
                 st.rerun()
-            bc[2].caption("âš  This is a disposable Generic NPC instance, it will be deleted when combat ends "
+            bc[2].caption("⚠ This is a disposable Generic NPC instance, it will be deleted when combat ends "
                           "unless you save it now to keep it as a permanent character sheet.")
         t = st.tabs(["Battle View", "Edit"])
         with t[0]:
@@ -7006,17 +7068,17 @@ def gm_view():
 @st.fragment(run_every=REFRESH_S)
 def spectator_view():
     """A public, read-only Vox-feed for spectators (streamers, absent Players,
-    etc.) who joined via a Spectator Code, entered through the hidden 'â—ˆ'
+    etc.) who joined via a Spectator Code, entered through the hidden '◈'
     control on the login screen. By design this is the ONLY thing a Spectator
     can ever see: each side's current Shock, and only for whichever side the
     Magister has toggled visible in Campaign > Spectator Feed. No names beyond
     what's needed to tell combatants apart, no Wounds, no Wrath, no Tier, no
-    Notes, nothing else â€” deliberately superficial."""
+    Notes, nothing else — deliberately superficial."""
     camp = get_campaign()
     st.markdown(
-        "<div class='spectator-banner'>âœ  VOX-AUSPEX FEED âœ "
-        f"<span class='sub'>{html.escape(camp.get('name', ''))} &nbsp;Â·&nbsp; Session {camp.get('session_no', 1)}</span>"
-        "<span class='spectator-static'>á› âŸŸ á› âŸŸ á›</span></div>",
+        "<div class='spectator-banner'>✠ VOX-AUSPEX FEED ✠"
+        f"<span class='sub'>{html.escape(camp.get('name', ''))} &nbsp;·&nbsp; Session {camp.get('session_no', 1)}</span>"
+        "<span class='spectator-static'>◆ ◇ ◆ ◇ ◆</span></div>",
         unsafe_allow_html=True,
     )
     st.markdown(
@@ -7028,7 +7090,7 @@ def spectator_view():
     def shock_panel(title, chars, visible):
         st.markdown(f"<div class='spectator-panel-ttl'>{title}</div>", unsafe_allow_html=True)
         if not visible:
-            st.markdown("<div class='spectator-locked'>âœ  VOX-LINK SEVERED BY THE MAGISTER âœ </div>", unsafe_allow_html=True)
+            st.markdown("<div class='spectator-locked'>✠ VOX-LINK SEVERED BY THE MAGISTER ✠</div>", unsafe_allow_html=True)
             return
         if not chars:
             st.markdown("<div class='spectator-locked'>NO SIGNAL DETECTED</div>", unsafe_allow_html=True)
@@ -7059,7 +7121,7 @@ def spectator_view():
             npcs = [c for c in list_characters("npc") if not c.get("temp_instance")]
             shock_panel("HOSTILE CONTACTS", npcs, bool(camp.get("spectator_show_monsters")))
 
-    st.markdown("<div class='foot'>âœ  THE EMPEROR PROTECTS âœ </div>", unsafe_allow_html=True)
+    st.markdown("<div class='foot'>✠ THE EMPEROR PROTECTS ✠</div>", unsafe_allow_html=True)
     if st.button("Disconnect", key="spectator_disconnect"):
         st.session_state.user = None; st.rerun()
 
@@ -7118,10 +7180,10 @@ def _player_tab_requisition(cid):
     if not mine:
         st.caption(T("No Requisitions filed yet."))
     for r in mine:
-        badge = {"pending": ("Em AnÃ¡lise" if st.session_state.get("ui_lang") == "pt" else "Under Review", "#c9922e"),
+        badge = {"pending": ("Em Análise" if st.session_state.get("ui_lang") == "pt" else "Under Review", "#c9922e"),
                  "approved": ("Aprovado" if st.session_state.get("ui_lang") == "pt" else "Approved", "#3fae5a"),
                  "denied": ("Negado" if st.session_state.get("ui_lang") == "pt" else "Denied", "#d13a3a")}.get(r["status"], (r["status"], "#999"))
-        qty_suffix = f" Ã—{int(r.get('quantity', 1) or 1)}" if int(r.get('quantity', 1) or 1) > 1 else ""
+        qty_suffix = f" ×{int(r.get('quantity', 1) or 1)}" if int(r.get('quantity', 1) or 1) > 1 else ""
         cols = st.columns([5, 1.4, 1])
         cols[0].markdown(f"<div class='tal'><span class='tn'>{html.escape(r['name'])}{qty_suffix}</span>"
                           f"<div class='taleffect'>{html.escape(r.get('effect','') or '')}</div></div>", unsafe_allow_html=True)
@@ -7134,8 +7196,8 @@ def _player_tab_requisition(cid):
 def player_view():
     _language_flag_toggle()
     camp = get_campaign()
-    st.markdown(f"<div class='banner'>âœ  SERVICE RECORD âœ "
-                f"<span class='sub'>{camp['name']} Â· {T('Session')} {camp['session_no']}</span></div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='banner'>✠ SERVICE RECORD ✠"
+                f"<span class='sub'>{camp['name']} · {T('Session')} {camp['session_no']}</span></div>", unsafe_allow_html=True)
     cid = char_id_for_user(st.session_state.user["id"])
     if not cid:
         st.error(T("No character sheet linked. Contact the Magister."))
@@ -7158,7 +7220,7 @@ def player_view():
 #  MAIN
 # ============================================================
 def main():
-    st.set_page_config(page_title="Cogitador Imperial", page_icon="âœ ", layout="wide")
+    st.set_page_config(page_title="Cogitador Imperial", page_icon="✠", layout="wide")
     inject_theme(); init_db()
     st.session_state.setdefault("user", None)
     st.session_state.setdefault("editing", None)
@@ -7171,18 +7233,18 @@ def main():
 
     with st.sidebar:
         camp = get_campaign(); role = st.session_state.user["role"]
-        st.markdown(f"### âœ  {camp['name']}")
+        st.markdown(f"### ✠ {camp['name']}")
         st.write(f"User: {st.session_state.user['username']}")
         st.write("Role: " + ("Magister" if role == "gm" else "Battle-Brother"))
         if role == "gm":
-            # Same compact metric + stacked âˆ’/+ pattern as the Battle Sheet
+            # Same compact metric + stacked −/+ pattern as the Battle Sheet
             # vitals and the Campaign tab's Ruin counter.
             with st.container(key="ruin_sidebar_vsb"):
                 ruin_cols = st.columns([5, 1], gap="small")
                 ruin_cols[0].metric("Ruin", camp["ruin"])
                 with ruin_cols[1]:
                     st.button("+", key="sidebar_ruin_plus", on_click=adjust_ruin, args=(+1,), use_container_width=True)
-                    st.button("âˆ’", key="sidebar_ruin_minus", on_click=adjust_ruin, args=(-1,), use_container_width=True)
+                    st.button("−", key="sidebar_ruin_minus", on_click=adjust_ruin, args=(-1,), use_container_width=True)
         st.divider()
         if st.button("Sign Out"):
             st.session_state.user = None; st.session_state.editing = None; st.rerun()
@@ -7206,7 +7268,7 @@ def main():
         gm_view()
     else:
         player_view()
-    st.markdown("<div class='foot'>âœ  THE EMPEROR PROTECTS âœ </div>", unsafe_allow_html=True)
+    st.markdown("<div class='foot'>✠ THE EMPEROR PROTECTS ✠</div>", unsafe_allow_html=True)
 
 
 if __name__ == "__main__":

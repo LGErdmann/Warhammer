@@ -5503,10 +5503,15 @@ def _login_hologram_globe():
     </style>
     """, unsafe_allow_html=True)
 
+    # The latitude rings live INSIDE the rotator (not as static siblings) so
+    # they spin together with the points, like the surface of one solid
+    # turning planet rather than dots drifting over a fixed cage.
+    rings_html = ("<div class='holo-ring holo-ring-1'></div><div class='holo-ring holo-ring-2'></div>"
+                  "<div class='holo-ring holo-ring-3'></div>")
+
     if not chars:
-        st.markdown("<div class='holo-wrap'><div class='holo-sphere'></div>"
-                     "<div class='holo-ring holo-ring-1'></div><div class='holo-ring holo-ring-2'></div>"
-                     "<div class='holo-ring holo-ring-3'></div></div>"
+        st.markdown(f"<div class='holo-wrap'><div class='holo-sphere'></div>"
+                     f"<div class='holo-rotator'>{rings_html}</div></div>"
                      "<div class='holo-empty'>No signal</div>", unsafe_allow_html=True)
         return
 
@@ -5527,6 +5532,7 @@ def _login_hologram_globe():
         home_theta = (360.0 / n_groups) * gi
         for mi, ch in enumerate(members):
             name = str(ch.get("name") or "Unnamed")
+            first_name = name.strip().split()[0] if name.strip() else "Unnamed"
             if is_folder:
                 theta = home_theta + jitter(f"{name}-t", 22) + (mi - (len(members) - 1) / 2) * 8
                 phi = jitter(f"{name}-p", 46)
@@ -5534,17 +5540,15 @@ def _login_hologram_globe():
                 # Isolated: scattered on its own, never pulled toward a cluster.
                 theta = jitter(f"{name}-iso-t", 360)
                 phi = jitter(f"{name}-iso-p", 150)
-            safe_name = html.escape(name)
+            safe_name = html.escape(first_name)
             points.append(
                 f"<div class='holo-point' style='transform:rotateY({theta:.1f}deg) rotateX({phi:.1f}deg) translateZ(100px)'>"
                 f"<span class='holo-dot'></span><span class='holo-label'>{safe_name}</span></div>"
             )
 
     st.markdown(
-        "<div class='holo-wrap'><div class='holo-sphere'></div>"
-        "<div class='holo-ring holo-ring-1'></div><div class='holo-ring holo-ring-2'></div>"
-        "<div class='holo-ring holo-ring-3'></div>"
-        f"<div class='holo-rotator'>{''.join(points)}</div></div>",
+        f"<div class='holo-wrap'><div class='holo-sphere'></div>"
+        f"<div class='holo-rotator'>{rings_html}{''.join(points)}</div></div>",
         unsafe_allow_html=True,
     )
 

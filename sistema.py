@@ -4610,6 +4610,56 @@ def _owlbear_tests_sidebar(cid):
 
 
 @st.fragment(run_every=REFRESH_S)
+def _render_status_section(cid, ch, key_prefix=""):
+    """Buffs (Cover, Stealth, ...) and debuffs (Bleeding, Poisoned, ...) in one
+    shared badge list - only the colour tells them apart (green/blue for a
+    positive status, red/amber for a Condition). Shared between Battle View
+    and the Character Sheet tab so a Player/GM sees the same Status no
+    matter which tab they're on. `key_prefix` keeps widget keys unique since
+    Streamlit renders every tab's body on every rerun, not just the visible
+    one - both callers are alive at once for the same character."""
+    st.markdown(f"<div class='sectionttl'>{T('Status')}</div>", unsafe_allow_html=True)
+    conds = ch.get("conditions", {}) or {}
+    if conds:
+        badge_cols = st.columns(min(len(conds), 6))
+        for i, cname in enumerate(sorted(conds.keys())):
+            stacks = int(conds[cname])
+            color = POSITIVE_STATUS_COLOR.get(cname) or CONDITION_COLOR.get(cname, "#b8860b")
+            label = f"{T(cname)} ({stacks})" if stacks > 1 else T(cname)
+            with badge_cols[i % len(badge_cols)]:
+                st.markdown(f"<span style='background:{color};color:#fff;padding:3px 10px;border-radius:12px;"
+                            f"font-size:.78rem;font-family:Cinzel;letter-spacing:.03em;display:inline-block;margin-bottom:4px'>"
+                            f"{html.escape(label)}</span>", unsafe_allow_html=True)
+                if st.button("−", key=f"{key_prefix}cond_rm_{cid}_{cname}"):
+                    set_condition(cid, cname, stacks - 1)
+                    st.rerun()
+    else:
+        st.caption(T("No active Conditions."))
+    if _has_cameleoline(ch):
+        if "Cameleoline" in active_positive_statuses(ch):
+            st.caption(f"🦎 {T('Cameleoline is active: +1 bonus die to Stealth, +1 Defence.')}")
+        else:
+            st.caption(f"🦎 {T('Cameleoline is inactive until Cover or Stealth is active.')}")
+    with st.expander(T("Add Status"), expanded=False):
+        cadd = st.columns([2, 1, 1])
+        options = POSITIVE_STATUSES + CONDITIONS + [_COND_CUSTOM]
+        preset = cadd[0].selectbox(T("Status"), options,
+                                    format_func=lambda x: T("Custom…") if x == _COND_CUSTOM else T(x),
+                                    key=f"{key_prefix}cond_pick_{cid}")
+        custom_name = ""
+        if preset == _COND_CUSTOM:
+            custom_name = st.text_input(T("Custom name"), key=f"{key_prefix}cond_custom_{cid}",
+                                         placeholder="e.g. Cameleoline Active")
+        cstacks = cadd[1].number_input(T("Stacks"), 1, 20, 1, key=f"{key_prefix}cond_stacks_{cid}")
+        cadd[2].markdown("<div style='padding-top:28px'></div>", unsafe_allow_html=True)
+        if cadd[2].button(T("Apply"), key=f"{key_prefix}cond_apply_{cid}", use_container_width=True):
+            name = custom_name.strip() if preset == _COND_CUSTOM else preset
+            if name:
+                ok, msg = set_condition(cid, name, int(conds.get(name, 0)) + int(cstacks))
+                if ok: st.rerun()
+                else: st.error(msg)
+
+
 def battle_view(cid):
     ch = load_character(cid)
     if not ch:
@@ -4627,50 +4677,7 @@ def battle_view(cid):
     st.markdown(f"<div class='sectionttl'>{T('Vitals')}</div>", unsafe_allow_html=True)
     live_vitals(cid, ch, gear_mods)
 
-    st.markdown(f"<div class='sectionttl'>{T('Status')}</div>", unsafe_allow_html=True)
-    conds = ch.get("conditions", {}) or {}
-    if conds:
-        badge_cols = st.columns(min(len(conds), 6))
-        for i, cname in enumerate(sorted(conds.keys())):
-            stacks = int(conds[cname])
-            # Buffs (Cover, Stealth, ...) and debuffs (Bleeding, Poisoned, ...)
-            # are the exact same underlying marker - one shared dict, one
-            # shared badge/−-button widget - only the colour tells them apart
-            # (green/blue for a positive status, red/amber for a Condition).
-            color = POSITIVE_STATUS_COLOR.get(cname) or CONDITION_COLOR.get(cname, "#b8860b")
-            label = f"{T(cname)} ({stacks})" if stacks > 1 else T(cname)
-            with badge_cols[i % len(badge_cols)]:
-                st.markdown(f"<span style='background:{color};color:#fff;padding:3px 10px;border-radius:12px;"
-                            f"font-size:.78rem;font-family:Cinzel;letter-spacing:.03em;display:inline-block;margin-bottom:4px'>"
-                            f"{html.escape(label)}</span>", unsafe_allow_html=True)
-                if st.button("−", key=f"cond_rm_{cid}_{cname}"):
-                    set_condition(cid, cname, stacks - 1)
-                    st.rerun()
-    else:
-        st.caption(T("No active Conditions."))
-    if _has_cameleoline(ch):
-        if "Cameleoline" in active_positive_statuses(ch):
-            st.caption(f"🦎 {T('Cameleoline is active: +1 bonus die to Stealth, +1 Defence.')}")
-        else:
-            st.caption(f"🦎 {T('Cameleoline is inactive until Cover or Stealth is active.')}")
-    with st.expander(T("Add Status"), expanded=False):
-        cadd = st.columns([2, 1, 1])
-        options = POSITIVE_STATUSES + CONDITIONS + [_COND_CUSTOM]
-        preset = cadd[0].selectbox(T("Status"), options,
-                                    format_func=lambda x: T("Custom…") if x == _COND_CUSTOM else T(x),
-                                    key=f"cond_pick_{cid}")
-        custom_name = ""
-        if preset == _COND_CUSTOM:
-            custom_name = st.text_input(T("Custom name"), key=f"cond_custom_{cid}",
-                                         placeholder="e.g. Cameleoline Active")
-        cstacks = cadd[1].number_input(T("Stacks"), 1, 20, 1, key=f"cond_stacks_{cid}")
-        cadd[2].markdown("<div style='padding-top:28px'></div>", unsafe_allow_html=True)
-        if cadd[2].button(T("Apply"), key=f"cond_apply_{cid}", use_container_width=True):
-            name = custom_name.strip() if preset == _COND_CUSTOM else preset
-            if name:
-                ok, msg = set_condition(cid, name, int(conds.get(name, 0)) + int(cstacks))
-                if ok: st.rerun()
-                else: st.error(msg)
+    _render_status_section(cid, ch, key_prefix="bv_")
 
     left, right = st.columns([1.5, 1])
     with left:
@@ -4895,6 +4902,7 @@ def edit_view(cid, gm_mode=False):
     if not ch:
         st.error("Character sheet not found.")
         return
+    _render_status_section(cid, ch, key_prefix="sheet_")
     camp = get_campaign()
     species_list = NPC_SPECIES if ch["kind"] == "npc" else PLAYER_SPECIES
 

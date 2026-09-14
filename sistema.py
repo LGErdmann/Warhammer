@@ -5485,11 +5485,20 @@ def _login_hologram_globe():
     .holo-sphere{ position:absolute; inset:0; border-radius:50%;
         background:radial-gradient(circle at 32% 28%, rgba(201,162,39,.20), rgba(201,162,39,.02) 55%, transparent 72%);
         box-shadow: inset 0 0 40px rgba(201,162,39,.15), 0 0 22px rgba(201,162,39,.12); }
-    .holo-ring{ position:absolute; left:50%; top:50%; border:1px solid rgba(201,162,39,.22);
-        border-radius:50%; transform:translate(-50%,-50%); pointer-events:none; }
-    .holo-ring-1{ width:230px; height:80px; }
-    .holo-ring-2{ width:230px; height:160px; }
-    .holo-ring-3{ width:170px; height:230px; }
+    .holo-ring{ position:absolute; left:50%; top:50%; width:230px; height:230px;
+        margin:-115px 0 0 -115px; border:1px solid rgba(201,162,39,.22);
+        border-radius:50%; transform-style:preserve-3d; pointer-events:none; }
+    /* Four meridians (great circles through the poles), evenly spaced in
+       longitude, plus two latitude bands crossing them at different tilts -
+       every ring shares one axis (the rotator's spin) but each sits on a
+       different plane, so together they read as one wireframe sphere
+       instead of ellipses sliding along a single flat axis. */
+    .holo-ring-m1{ transform:rotateY(0deg); }
+    .holo-ring-m2{ transform:rotateY(45deg); }
+    .holo-ring-m3{ transform:rotateY(90deg); }
+    .holo-ring-m4{ transform:rotateY(135deg); }
+    .holo-ring-lat1{ transform:rotateX(78deg); }
+    .holo-ring-lat2{ transform:rotateX(-55deg) rotateZ(20deg); }
     .holo-rotator{ position:absolute; inset:0; transform-style:preserve-3d; animation: holo-spin 24s linear infinite; }
     @keyframes holo-spin{ from{ transform:rotateY(0deg); } to{ transform:rotateY(360deg); } }
     .holo-point{ position:absolute; left:50%; top:50%; width:0; height:0; transform-style:preserve-3d; }
@@ -5503,11 +5512,13 @@ def _login_hologram_globe():
     </style>
     """, unsafe_allow_html=True)
 
-    # The latitude rings live INSIDE the rotator (not as static siblings) so
+    # The wireframe rings live INSIDE the rotator (not as static siblings) so
     # they spin together with the points, like the surface of one solid
     # turning planet rather than dots drifting over a fixed cage.
-    rings_html = ("<div class='holo-ring holo-ring-1'></div><div class='holo-ring holo-ring-2'></div>"
-                  "<div class='holo-ring holo-ring-3'></div>")
+    rings_html = "".join(
+        f"<div class='holo-ring holo-ring-{cls}'></div>"
+        for cls in ("m1", "m2", "m3", "m4", "lat1", "lat2")
+    )
 
     if not chars:
         st.markdown(f"<div class='holo-wrap'><div class='holo-sphere'></div>"

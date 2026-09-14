@@ -3,7 +3,6 @@
 """
 
 import streamlit as st
-import sqlite3
 import psycopg2
 import psycopg2.extras
 import psycopg2.pool
@@ -19,7 +18,6 @@ from contextlib import contextmanager
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 
-DB_PATH = os.environ.get("WG_DB_PATH", "cogitador.db")
 REFRESH_S = 3.0
 COMMS_FADE_S = 60
 
@@ -939,30 +937,29 @@ def _pg_pool():
 
 
 def get_conn():
-    if using_postgres():
-        pool = _pg_pool()
-        raw = pool.getconn()
-        # Autocommit matches how SQLite already behaves for this codebase: a
-        # plain SELECT never opens an implicit transaction. Without this,
-        # psycopg2's default non-autocommit mode leaves every connection
-        # "in transaction" after even a read-only query, forcing close() to
-        # pay a second network round-trip (ROLLBACK) just to release it back
-        # to the pool - doubling latency on the overwhelming majority of
-        # calls, which are reads. Each write statement still commits
-        # immediately and atomically on its own; the handful of call sites
-        # doing several related writes before one conn.commit() (now a
-        # harmless no-op) only lose all-or-nothing atomicity across THOSE
-        # statements, not correctness of any single statement.
-        raw.autocommit = True
-        return _PgConn(raw, pool)
-    # WAL + busy timeout allow the Magister and multiple Players to use the
-    # same SQLite database concurrently without requiring page refreshes.
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=10.0)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA busy_timeout=10000")
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA synchronous=NORMAL")
-    return conn
+    if not using_postgres():
+        raise RuntimeError(
+            "SUPABASE_DB_URL is not configured. This campaign lives in Postgres "
+            "(Supabase) only - there is no local-file fallback, so a missing "
+            "connection string fails loudly here instead of silently starting "
+            "a throwaway local database that loses everything on the next "
+            "redeploy. Set SUPABASE_DB_URL in .streamlit/secrets.toml (local) "
+            "or the app's Secrets panel (Streamlit Cloud)."
+        )
+    pool = _pg_pool()
+    raw = pool.getconn()
+    # Autocommit matches how a lightweight local store would behave: a plain
+    # SELECT never opens an implicit transaction. Without this, psycopg2's
+    # default non-autocommit mode leaves every connection "in transaction"
+    # after even a read-only query, forcing close() to pay a second network
+    # round-trip (ROLLBACK) just to release it back to the pool - doubling
+    # latency on the overwhelming majority of calls, which are reads. Each
+    # write statement still commits immediately and atomically on its own;
+    # the handful of call sites doing several related writes before one
+    # conn.commit() (now a harmless no-op) only lose all-or-nothing atomicity
+    # across THOSE statements, not correctness of any single statement.
+    raw.autocommit = True
+    return _PgConn(raw, pool)
 
 
 def hash_pw(pw, salt):
@@ -970,12 +967,9 @@ def hash_pw(pw, salt):
 
 
 def _ensure_columns(conn, table, cols):
-    if using_postgres():
-        have = {r[0] for r in conn.execute(
-            "SELECT column_name FROM information_schema.columns WHERE table_name=?", (table,)
-        ).fetchall()}
-    else:
-        have = {r[1] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+    have = {r[0] for r in conn.execute(
+        "SELECT column_name FROM information_schema.columns WHERE table_name=?", (table,)
+    ).fetchall()}
     for name, ddl in cols.items():
         if name not in have:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}")
@@ -1064,7 +1058,7 @@ def save_custom_archetype(data, archetype_id=None):
         conn.commit()
         _load_custom_archetypes(conn)
         return True, "Archetype saved."
-    except (sqlite3.IntegrityError, psycopg2.IntegrityError):
+    except psycopg2.IntegrityError:
         conn.rollback()
         return False, "An Archetype with that name already exists."
     except Exception as exc:
@@ -1174,12 +1168,9 @@ def init_db():
                                        "owlbear_enabled": "INTEGER DEFAULT 0"})
     _ensure_columns(conn, "wargear_requisition", {"quantity": "INTEGER DEFAULT 1"})
     _ensure_columns(conn, "owlbear_roll_request", {"kind": "TEXT DEFAULT 'test'"})
-    if using_postgres():
-        had_wealth_column = "cur_wealth" in {r[0] for r in conn.execute(
-            "SELECT column_name FROM information_schema.columns WHERE table_name=?", ("characters",)
-        ).fetchall()}
-    else:
-        had_wealth_column = "cur_wealth" in {r[1] for r in conn.execute("PRAGMA table_info(characters)").fetchall()}
+    had_wealth_column = "cur_wealth" in {r[0] for r in conn.execute(
+        "SELECT column_name FROM information_schema.columns WHERE table_name=?", ("characters",)
+    ).fetchall()}
     _ensure_columns(conn, "characters", {
         "user_id": "INTEGER", "kind": "TEXT DEFAULT 'player'", "name": "TEXT", "chapter": "TEXT",
         "species": "TEXT", "archetype": "TEXT", "creation_mode": "TEXT DEFAULT 'archetype'", "archetype_history": "TEXT DEFAULT '[]'", "tier": "INTEGER DEFAULT 2", "starting_tier": "INTEGER DEFAULT 2", "rank": "INTEGER DEFAULT 1", "earned_xp": "INTEGER DEFAULT 0",
@@ -1328,7 +1319,7 @@ def create_player(username, pw, creation_mode="archetype", tier=2, rank=1, speci
         conn.commit()
         return True, ("Registration submitted. The Magister must approve it before you can play."
                        if pending else "Player recruited.")
-    except (sqlite3.IntegrityError, psycopg2.IntegrityError):
+    except psycopg2.IntegrityError:
         return False, "That designation already exists."
     finally:
         conn.close()
@@ -4455,6 +4446,11 @@ def render_ammo_section(cid, ch, compact=False, gm_mode=False):
 TRANSLATE_PT = {
     "Attributes": "Atributos",
     "Positive Statuses": "Status Positivos", "Cover": "Cobertura", "Stealth": "Furtividade",
+    "Status": "Status", "Add Status": "Adicionar Status",
+    "Cameleoline is active: +1 bonus die to Stealth, +1 Defence.":
+        "Cameleoline ativo: +1 dado bônus em Furtividade, +1 Defesa.",
+    "Cameleoline is inactive until Cover or Stealth is active.":
+        "Cameleoline inativo até Cobertura ou Furtividade ficar ativa.",
     "Your registration is awaiting the Magister's approval. You can freely edit your "
     "character sheet in the meantime, but if the Magister rejects it, your account and "
     "sheet are deleted immediately.":
@@ -4613,22 +4609,6 @@ def _owlbear_tests_sidebar(cid):
         roll_row("Fear/Terror Test", int(d.get("Resolve", 0)), f"sidebar_roll_fear_{cid}")
 
 
-def _render_positive_statuses(cid, ch):
-    active = active_positive_statuses(ch)
-    st.markdown(f"<div class='sectionttl'>{T('Positive Statuses')}</div>", unsafe_allow_html=True)
-    cols = st.columns([1.4, 1.4, 2.2])
-    for i, status in enumerate(POSITIVE_STATUSES):
-        is_on = status in active
-        label = f"{T(status)} {'ON' if is_on else 'OFF'}"
-        if cols[i].button(label, key=f"positive_status_{cid}_{status}", use_container_width=True):
-            set_condition(cid, status, 0 if is_on else 1)
-            st.rerun()
-    if "Cameleoline" in active:
-        cols[2].markdown("<span style='background:#6a1b9a;color:#fff;padding:4px 10px;border-radius:12px;font-size:.78rem;font-family:Cinzel;display:inline-block'>Cameleoline ACTIVE</span>", unsafe_allow_html=True)
-    elif _has_cameleoline(ch):
-        cols[2].caption("Cameleoline is inactive until Cover or Stealth is active.")
-
-
 @st.fragment(run_every=REFRESH_S)
 def battle_view(cid):
     ch = load_character(cid)
@@ -4647,15 +4627,17 @@ def battle_view(cid):
     st.markdown(f"<div class='sectionttl'>{T('Vitals')}</div>", unsafe_allow_html=True)
     live_vitals(cid, ch, gear_mods)
 
-    _render_positive_statuses(cid, ch)
-
-    st.markdown(f"<div class='sectionttl'>{T('Conditions')}</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='sectionttl'>{T('Status')}</div>", unsafe_allow_html=True)
     conds = ch.get("conditions", {}) or {}
     if conds:
         badge_cols = st.columns(min(len(conds), 6))
         for i, cname in enumerate(sorted(conds.keys())):
             stacks = int(conds[cname])
-            color = CONDITION_COLOR.get(cname, "#b8860b")
+            # Buffs (Cover, Stealth, ...) and debuffs (Bleeding, Poisoned, ...)
+            # are the exact same underlying marker - one shared dict, one
+            # shared badge/−-button widget - only the colour tells them apart
+            # (green/blue for a positive status, red/amber for a Condition).
+            color = POSITIVE_STATUS_COLOR.get(cname) or CONDITION_COLOR.get(cname, "#b8860b")
             label = f"{T(cname)} ({stacks})" if stacks > 1 else T(cname)
             with badge_cols[i % len(badge_cols)]:
                 st.markdown(f"<span style='background:{color};color:#fff;padding:3px 10px;border-radius:12px;"
@@ -4666,9 +4648,15 @@ def battle_view(cid):
                     st.rerun()
     else:
         st.caption(T("No active Conditions."))
-    with st.expander(T("Add Condition"), expanded=False):
+    if _has_cameleoline(ch):
+        if "Cameleoline" in active_positive_statuses(ch):
+            st.caption(f"🦎 {T('Cameleoline is active: +1 bonus die to Stealth, +1 Defence.')}")
+        else:
+            st.caption(f"🦎 {T('Cameleoline is inactive until Cover or Stealth is active.')}")
+    with st.expander(T("Add Status"), expanded=False):
         cadd = st.columns([2, 1, 1])
-        preset = cadd[0].selectbox(T("Condition"), CONDITIONS + [_COND_CUSTOM],
+        options = POSITIVE_STATUSES + CONDITIONS + [_COND_CUSTOM]
+        preset = cadd[0].selectbox(T("Status"), options,
                                     format_func=lambda x: T("Custom…") if x == _COND_CUSTOM else T(x),
                                     key=f"cond_pick_{cid}")
         custom_name = ""
@@ -5478,9 +5466,93 @@ def _section(title, help_text, expanded=False, key=None):
         yield
 
 
+def _login_hologram_globe():
+    """Purely decorative: a CSS-only rotating hologram globe above the login
+    form, one small glowing point per Player whose Vox is currently Active
+    (the closest existing signal to 'logged in' - this app has no separate
+    session-presence tracker). Folder-mates cluster together on the globe's
+    surface; a Player with no folder sits alone as an isolated point. No JS -
+    the spin and every point's placement are plain CSS 3D transforms, so
+    positions are stable between reruns (seeded by name, not randomised)."""
+    try:
+        chars = [c for c in list_characters() if c.get("kind") == "player" and c.get("comms_on")]
+    except Exception:
+        chars = []
+
+    st.markdown("""
+    <style>
+    .holo-wrap{ position:relative; width:230px; height:230px; margin:4px auto 14px; perspective:820px; }
+    .holo-sphere{ position:absolute; inset:0; border-radius:50%;
+        background:radial-gradient(circle at 32% 28%, rgba(201,162,39,.20), rgba(201,162,39,.02) 55%, transparent 72%);
+        box-shadow: inset 0 0 40px rgba(201,162,39,.15), 0 0 22px rgba(201,162,39,.12); }
+    .holo-ring{ position:absolute; left:50%; top:50%; border:1px solid rgba(201,162,39,.22);
+        border-radius:50%; transform:translate(-50%,-50%); pointer-events:none; }
+    .holo-ring-1{ width:230px; height:80px; }
+    .holo-ring-2{ width:230px; height:160px; }
+    .holo-ring-3{ width:170px; height:230px; }
+    .holo-rotator{ position:absolute; inset:0; transform-style:preserve-3d; animation: holo-spin 24s linear infinite; }
+    @keyframes holo-spin{ from{ transform:rotateY(0deg); } to{ transform:rotateY(360deg); } }
+    .holo-point{ position:absolute; left:50%; top:50%; width:0; height:0; transform-style:preserve-3d; }
+    .holo-dot{ position:absolute; left:-3px; top:-3px; width:6px; height:6px; border-radius:50%;
+        background:#e8c96a; box-shadow:0 0 6px 2px rgba(201,162,39,.9); }
+    .holo-label{ position:absolute; left:6px; top:-7px; font-size:6.5px; white-space:nowrap;
+        color:#e8e0cf; font-family:'Cinzel',serif; letter-spacing:.02em;
+        text-shadow:0 0 3px #000, 0 0 6px rgba(201,162,39,.5); opacity:.9; }
+    .holo-empty{ text-align:center; font-size:.7rem; opacity:.55; letter-spacing:.15em;
+        text-transform:uppercase; margin-top:-6px; margin-bottom:10px; }
+    </style>
+    """, unsafe_allow_html=True)
+
+    if not chars:
+        st.markdown("<div class='holo-wrap'><div class='holo-sphere'></div>"
+                     "<div class='holo-ring holo-ring-1'></div><div class='holo-ring holo-ring-2'></div>"
+                     "<div class='holo-ring holo-ring-3'></div></div>"
+                     "<div class='holo-empty'>No signal</div>", unsafe_allow_html=True)
+        return
+
+    def jitter(seed, spread):
+        h = int(hashlib.md5(seed.encode()).hexdigest(), 16)
+        return (h % 10000) / 10000.0 * spread - spread / 2
+
+    groups = {}
+    for c in chars:
+        groups.setdefault(c.get("folder_id"), []).append(c)
+    group_keys = list(groups.keys())
+    n_groups = max(1, len(group_keys))
+
+    points = []
+    for gi, key in enumerate(group_keys):
+        members = groups[key]
+        is_folder = key is not None
+        home_theta = (360.0 / n_groups) * gi
+        for mi, ch in enumerate(members):
+            name = str(ch.get("name") or "Unnamed")
+            if is_folder:
+                theta = home_theta + jitter(f"{name}-t", 22) + (mi - (len(members) - 1) / 2) * 8
+                phi = jitter(f"{name}-p", 46)
+            else:
+                # Isolated: scattered on its own, never pulled toward a cluster.
+                theta = jitter(f"{name}-iso-t", 360)
+                phi = jitter(f"{name}-iso-p", 150)
+            safe_name = html.escape(name)
+            points.append(
+                f"<div class='holo-point' style='transform:rotateY({theta:.1f}deg) rotateX({phi:.1f}deg) translateZ(100px)'>"
+                f"<span class='holo-dot'></span><span class='holo-label'>{safe_name}</span></div>"
+            )
+
+    st.markdown(
+        "<div class='holo-wrap'><div class='holo-sphere'></div>"
+        "<div class='holo-ring holo-ring-1'></div><div class='holo-ring holo-ring-2'></div>"
+        "<div class='holo-ring holo-ring-3'></div>"
+        f"<div class='holo-rotator'>{''.join(points)}</div></div>",
+        unsafe_allow_html=True,
+    )
+
+
 def login_page():
     st.markdown("<div class='banner'>✠ IMPERIAL COGITATOR ✠"
                 "<span class='sub'>Adeptus Administratum · Campaign Record</span></div>", unsafe_allow_html=True)
+    _login_hologram_globe()
     col = st.columns([1, 1.3, 1])[1]
     with col:
         st.markdown(" ")
@@ -5573,7 +5645,13 @@ def char_row(ch, folders):
             st.markdown(f"**{species_label(ch.get('species',''))}** · T{ch.get('tier',1)} · {rank_label(rank)}")
             if ch.get("archetype"): st.caption(str(ch.get("archetype")))
             attrs = effective_attributes(ch, gear); skills = effective_skills(ch, gear)
-            st.markdown("**Attributes**  " + " · ".join(f"{a[:3].upper()} {attrs.get(a,1)}" for a in ATTRS))
+            base_attrs = {str(k): int(v) for k, v in (ch.get("attributes", {}) or {}).items()}
+            # Base Attribute alongside the gear-modified one, so the Magister
+            # doesn't have to open the full sheet just to see what's raw vs
+            # what a Trait/Talent is adding on top.
+            st.markdown("**Attributes**  " + " · ".join(
+                f"{a[:3].upper()} {attrs.get(a,1)}" + (f" ({base_attrs.get(a,1)})" if attrs.get(a,1) != base_attrs.get(a,1) else "")
+                for a in ATTRS))
             st.markdown("**Skills**  " + " · ".join(f"{sk[:4]} {skills.get(sk,0)+attrs.get(at,1)}" for sk, at in SKILLS.items()))
             corr = corruption_level_info(ch.get("cur_corruption", 0))
             st.caption(f"Wounds {int(ch.get('cur_wounds',0))}/{d['Max Wounds']} · Shock {int(ch.get('cur_shock',0))}/{d['Max Shock']} · Wrath {int(ch.get('cur_wrath',0))}/{d['Max Wrath']} · Corruption {corr['points']} ({corr['name']})")
@@ -6582,7 +6660,10 @@ def _gm_tab_combat():
                             if ch.get("archetype"):
                                 st.caption(str(ch.get("archetype")))
                             attrs = effective_attributes(ch, gear); skills = effective_skills(ch, gear)
-                            st.markdown("**Attributes**  " + " · ".join(f"{a[:3].upper()} {attrs.get(a, 1)}" for a in ATTRS))
+                            base_attrs = {str(k): int(v) for k, v in (ch.get("attributes", {}) or {}).items()}
+                            st.markdown("**Attributes**  " + " · ".join(
+                                f"{a[:3].upper()} {attrs.get(a, 1)}" + (f" ({base_attrs.get(a,1)})" if attrs.get(a,1) != base_attrs.get(a,1) else "")
+                                for a in ATTRS))
                             st.markdown("**Skills**  " + " · ".join(f"{sk[:4]} {skills.get(sk, 0) + attrs.get(at, 1)}" for sk, at in SKILLS.items()))
                         temp_tag = " · ⚠ TEMP (unsaved)" if ch.get("temp_instance") else ""
                         st.caption(f"{role_label} · {species_label(ch.get('species'))} · T{ch.get('tier', 1)} · {rank_label(rank)} · {folder_name}{temp_tag}")
@@ -6923,94 +7004,26 @@ def _import_all_tables_json(text):
 
 @st.fragment
 def _gm_tab_maintenance():
-    if using_postgres():
-        with _section("Database Maintenance", "Export or restore the campaign's data as a JSON snapshot: "
-                      "players, NPCs, folders, XP, Vox, portraits, everything. Restoring overwrites all current data. "
-                      "The database itself runs on Supabase, which keeps its own automatic backups independently of this."):
-            st.caption("Running on Postgres (Supabase) - the campaign survives redeploys on its own. "
-                       "This export/restore is for your own extra copies or moving data between campaigns.")
-            if st.button("Prepare Backup for Download", key="maint_prepare_backup_pg"):
-                st.session_state["maint_backup_json"] = _export_all_tables_json()
-            if st.session_state.get("maint_backup_json"):
-                st.download_button("Download backup (cogitador_backup.json)", st.session_state["maint_backup_json"],
-                                   file_name="cogitador_backup.json", mime="application/json")
-            up = st.file_uploader("Restore backup", type=["json"], key="maint_restore_upload_pg")
-            if up is not None and st.button("Overwrite everything", key="maint_restore_btn_pg"):
-                ok, msg = _import_all_tables_json(up.getvalue().decode("utf-8"))
-                if ok:
-                    st.session_state.pop("maint_backup_json", None)
-                    st.success(msg)
-                    st.rerun()
-                else:
-                    st.error(msg)
-        return
-    with _section("File Maintenance", "Download or restore the campaign's entire SQLite database file, "
-                  "players, NPCs, folders, XP, Vox, portraits, everything. Restoring overwrites all current data."):
-        st.caption("The .db backup contains everything: players, NPCs, folders, XP, Vox, portraits. "
-                   "On free hosting the disk may reset; download backups regularly.")
-        if os.path.exists(DB_PATH):
-            size = os.path.getsize(DB_PATH) / (1024 * 1024)
-            st.write(f"Database size: {size:.2f} MB (SQLite storage grows automatically).")
-            # Reading the whole DB file into memory here unconditionally used to run
-            # on every single interaction anywhere in the Magister view (st.tabs()
-            # computes every tab's body on every rerun, not just the visible one),
-            # not just when this tab is open. Gate the actual read behind a click.
-            if st.button("Prepare Backup for Download", key="maint_prepare_backup"):
-                st.session_state["maint_backup_ready"] = True
-            if st.session_state.get("maint_backup_ready"):
-                # The live database runs in WAL mode (see get_conn()), so recent
-                # writes can still be sitting in the separate cogitador.db-wal
-                # file rather than in cogitador.db itself. Folding the WAL back
-                # into the main file first means the downloaded snapshot is
-                # always complete and self-contained (no need to also grab the
-                # -wal/-shm sidecar files for the backup to be valid).
-                checkpoint_conn = get_conn()
-                checkpoint_conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-                checkpoint_conn.close()
-                with open(DB_PATH, "rb") as f:
-                    st.download_button("Download backup (cogitador.db)", f.read(),
-                                       file_name="cogitador.db", mime="application/octet-stream")
-        up = st.file_uploader("Restore backup", type=["db"])
-        if up is not None and st.button("Overwrite everything"):
-            data = up.getbuffer()
-            # A restore that silently corrupts the live database (this is
-            # exactly what used to happen) is one of the worst possible
-            # failure modes here, so validate the upload BEFORE touching
-            # anything on disk.
-            if bytes(data[:16]) != b"SQLite format 3\x00":
-                st.error("That file is not a valid SQLite database (wrong file header). Nothing was overwritten.")
+    with _section("Database Maintenance", "Export or restore the campaign's data as a JSON snapshot: "
+                  "players, NPCs, folders, XP, Vox, portraits, everything. Restoring overwrites all current data. "
+                  "The database itself runs on Supabase, which keeps its own automatic backups independently of this."):
+        st.caption("Everything saves straight to Supabase the instant it changes - there is no separate "
+                   "save step and no local file to manage. This export/restore is only for your own extra "
+                   "copies or moving data between campaigns.")
+        if st.button("Prepare Backup for Download", key="maint_prepare_backup_pg"):
+            st.session_state["maint_backup_json"] = _export_all_tables_json()
+        if st.session_state.get("maint_backup_json"):
+            st.download_button("Download backup (cogitador_backup.json)", st.session_state["maint_backup_json"],
+                               file_name="cogitador_backup.json", mime="application/json")
+        up = st.file_uploader("Restore backup", type=["json"], key="maint_restore_upload_pg")
+        if up is not None and st.button("Overwrite everything", key="maint_restore_btn_pg"):
+            ok, msg = _import_all_tables_json(up.getvalue().decode("utf-8"))
+            if ok:
+                st.session_state.pop("maint_backup_json", None)
+                st.success(msg)
+                st.rerun()
             else:
-                tmp_path = DB_PATH + ".upload_tmp"
-                try:
-                    with open(tmp_path, "wb") as f:
-                        f.write(data)
-                    check_conn = sqlite3.connect(tmp_path)
-                    check_conn.execute("SELECT name FROM sqlite_master LIMIT 1")
-                    check_conn.execute("PRAGMA integrity_check(1)").fetchone()
-                    check_conn.close()
-                except sqlite3.DatabaseError as exc:
-                    st.error(f"That file failed SQLite's integrity check and was not used: {exc}")
-                else:
-                    # Stale -wal/-shm/-journal sidecar files from the PREVIOUS
-                    # database are the root cause of the corruption bug this
-                    # replaces: SQLite tries to replay them against the newly
-                    # restored file's completely different page layout, which
-                    # surfaces as an opaque sqlite3.DatabaseError on the very
-                    # next connection. Both are cleared before AND after the
-                    # swap so nothing stale is left pointing at the old data.
-                    for suffix in ("-wal", "-shm", "-journal"):
-                        try: os.remove(DB_PATH + suffix)
-                        except FileNotFoundError: pass
-                    os.replace(tmp_path, DB_PATH)
-                    for suffix in ("-wal", "-shm", "-journal"):
-                        try: os.remove(DB_PATH + suffix)
-                        except FileNotFoundError: pass
-                    st.session_state.pop("maint_backup_ready", None)
-                    st.rerun()
-                finally:
-                    if os.path.exists(tmp_path):
-                        try: os.remove(tmp_path)
-                        except OSError: pass
+                st.error(msg)
 
 
 def gm_view():

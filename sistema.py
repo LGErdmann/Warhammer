@@ -53,8 +53,71 @@ POSITIVE_STATUS_COLOR = {"Cover": "#2e7d32", "Stealth": "#1565c0", "Cameleoline"
 
 INC_TALENT_ADAPTERS = {
     "blood must die": {"kind": "trigger", "rule": "After an attack roll, choose rolled 6s to convert into Bleeding on the target.", "trigger": "attack_sixes_to_bleeding"},
-    "touched by fate": {"kind": "resource", "rule": "+Rank maximum Wrath in the Incursion.", "trigger": "wrath_cap"},
+    "touched by fate": {"kind": "resource", "rule": "+Rank starting Wrath in the Incursion.", "trigger": "wrath_start"},
+    "crimson reprisal": {"kind": "trigger", "rule": "Each Critical Hit caused recovers 1 Shock.", "trigger": "crit_recover_shock"},
+    "sundering blow": {"kind": "trigger", "rule": "Each Critical Hit caused removes 1 durability from the enemy's armour.", "trigger": "crit_damage_enemy_armour"},
+    "iron fury": {"kind": "trigger", "rule": "Each Critical Hit caused grants +3 Toughness until the current combat ends.", "trigger": "crit_toughness_combat"},
+    "blood ledger": {"kind": "trigger", "rule": "For every 2 Icons on a successful attack, inflict 1 Bleeding.", "trigger": "icons_to_bleeding"},
+    "wrathforged": {"kind": "resource", "rule": "Every Wrath spent grants +1 permanent Strength for this Incursion.", "trigger": "wrath_to_strength"},
+    "execution doctrine": {"kind": "trigger", "rule": "Critical Hits against enemies at or below half Wounds inflict +2 Wounds.", "trigger": "crit_execute"},
+    "predatory focus": {"kind": "trigger", "rule": "A successful attack with 3+ Icons gains +1 ED.", "trigger": "three_icons_ed"},
+    "iron resolve": {"kind": "trigger", "rule": "When an attack would reduce you to 0 Shock, gain 1 Wrath after the attack.", "trigger": "shock_zero_wrath"},
+    "last stand": {"kind": "trigger", "rule": "While at 25% or less Wounds, gain +2 attack dice.", "trigger": "low_wounds_attack"},
+    "hunter of weakness": {"kind": "trigger", "rule": "Against Bleeding enemies, attacks gain +1 ED.", "trigger": "bleeding_target_ed"},
+    "merciless": {"kind": "trigger", "rule": "If an attack defeats an enemy, recover 1 Shock.", "trigger": "kill_recover_shock"},
+    "unyielding flesh": {"kind": "passive", "rule": "The first Wound taken each combat is reduced by 1.", "trigger": "first_wound_reduction"},
+    "adrenaline surge": {"kind": "trigger", "rule": "After suffering Wounds, gain +1 attack die on your next attack.", "trigger": "damage_to_attack_die"},
+    "combat veteran": {"kind": "trigger", "rule": "The first successful attack each combat gains +1 ED.", "trigger": "first_hit_ed"},
+    "armour breaker": {"kind": "trigger", "rule": "Critical Hits remove 2 enemy armour durability instead of 1.", "trigger": "crit_damage_enemy_armour_2"},
+    "skull hunter": {"kind": "trigger", "rule": "Critical Hits against Tier 3+ enemies inflict +1 Wound.", "trigger": "high_tier_crit"},
+    "battle trance": {"kind": "trigger", "rule": "Every 4 Icons rolled on an attack recover 1 Shock.", "trigger": "four_icons_shock"},
+    "ruthless momentum": {"kind": "trigger", "rule": "Every enemy defeated grants +1 permanent Strength for this Incursion.", "trigger": "kill_to_strength"},
+    "iron discipline": {"kind": "trigger", "rule": "Every 3 Wrath spent permanently grants +1 Toughness for this Incursion.", "trigger": "wrath_to_toughness"},
+    "blood price": {"kind": "trigger", "rule": "Whenever your Wrath Die is 1, inflict 1 Bleeding on the target if the attack hits.", "trigger": "wrath_one_bleed"},
+    "relentless assault": {"kind": "trigger", "rule": "After a successful attack, your next attack gains +1 die.", "trigger": "hit_to_next_die"},
+    "critical mass": {"kind": "trigger", "rule": "Each Critical Hit grants +1 temporary Strength until combat ends.", "trigger": "crit_strength_combat"},
+    "predator's mark": {"kind": "trigger", "rule": "The first hit against a fresh enemy gains +2 ED.", "trigger": "fresh_target_ed"},
+    "bloodsmith": {"kind": "trigger", "rule": "Each Critical Hit repairs 2 durability on the weapon used.", "trigger": "crit_repair_weapon"},
+    "predator's harvest": {"kind": "trigger", "rule": "Every 3 enemies defeated grants +1 permanent Agility for this Incursion.", "trigger": "three_kills_agility"},
 }
+
+INC_NEW_TALENTS = [
+    ("Crimson Reprisal", "Each Critical Hit caused recovers 1 Shock."),
+    ("Sundering Blow", "Each Critical Hit caused removes 1 durability from the enemy's armour."),
+    ("Iron Fury", "Each Critical Hit caused grants +3 Toughness until the current combat ends."),
+    ("Blood Ledger", "For every 2 Icons on a successful attack, inflict 1 Bleeding."),
+    ("Wrathforged", "Every Wrath spent grants +1 permanent Strength for this Incursion."),
+    ("Execution Doctrine", "Critical Hits against enemies at or below half Wounds inflict +2 Wounds."),
+    ("Predatory Focus", "A successful attack with 3+ Icons gains +1 ED."),
+    ("Iron Resolve", "When an attack would reduce you to 0 Shock, gain 1 Wrath after the attack."),
+    ("Last Stand", "While at 25% or less Wounds, gain +2 attack dice."),
+    ("Hunter of Weakness", "Against Bleeding enemies, attacks gain +1 ED."),
+    ("Merciless", "If an attack defeats an enemy, recover 1 Shock."),
+    ("Unyielding Flesh", "The first Wound taken each combat is reduced by 1."),
+    ("Adrenaline Surge", "After suffering Wounds, gain +1 attack die on your next attack."),
+    ("Combat Veteran", "The first successful attack each combat gains +1 ED."),
+    ("Armour Breaker", "Critical Hits remove 2 enemy armour durability instead of 1."),
+    ("Skull Hunter", "Critical Hits against Tier 3+ enemies inflict +1 Wound."),
+    ("Battle Trance", "Every 4 Icons rolled on an attack recover 1 Shock."),
+    ("Ruthless Momentum", "Every enemy defeated grants +1 permanent Strength for this Incursion."),
+    ("Iron Discipline", "Every 3 Wrath spent permanently grants +1 Toughness for this Incursion."),
+    ("Blood Price", "Whenever your Wrath Die is 1, inflict 1 Bleeding on the target if the attack hits."),
+    ("Relentless Assault", "After a successful attack, your next attack gains +1 die."),
+    ("Critical Mass", "Each Critical Hit grants +1 temporary Strength until combat ends."),
+    ("Predator's Mark", "The first hit against a fresh enemy gains +2 ED."),
+    ("Bloodsmith", "Each Critical Hit repairs 2 durability on the weapon used."),
+    ("Predator's Harvest", "Every 3 enemies defeated grants +1 permanent Agility for this Incursion."),
+]
+
+def _ensure_incursion_talents():
+    # These are campaign-native executable talents. They are stored in the same
+    # Craft catalog as normal Talents so ownership, purchases and run snapshots
+    # survive restarts/deploys. Existing rows are never overwritten.
+    for name, effect in INC_NEW_TALENTS:
+        if not _inc_talent_catalog_row({"name": name}):
+            save_craft_item({"kind": "talent", "name": name, "effect": effect,
+                             "cost": 30, "source": "Wrath Incursion",
+                             "details": {"incursion_executable": True}})
 
 def _inc_talent_catalog_row(talent):
     name = str(talent.get("name", "") if isinstance(talent, dict) else talent).strip()
@@ -1222,13 +1285,16 @@ def init_db():
         extra_powers TEXT DEFAULT '[]', extra_keywords TEXT DEFAULT '[]', heal_charges INTEGER DEFAULT 1,
         consumable_charges TEXT DEFAULT '{}', equipped_armor_key TEXT DEFAULT '', free_upgrade_used INTEGER DEFAULT 0,
         wounds_current INTEGER, wounds_max INTEGER, shock_current INTEGER, shock_max INTEGER,
-        wrath_current INTEGER, wrath_max INTEGER, incursion_statuses TEXT DEFAULT '{}',
+        wrath_current INTEGER, wrath_max INTEGER, armour_durability_current INTEGER DEFAULT 0,
+        armour_durability_max INTEGER DEFAULT 0, weapon_durabilities TEXT DEFAULT '{}',
+        incursion_statuses TEXT DEFAULT '{}',
         pending_boss3_pvp INTEGER DEFAULT 0, node TEXT, created_at TEXT, ended_at TEXT, death_reason TEXT, xp_earned INTEGER DEFAULT 0)""")
     _ensure_columns(conn, "incursion_run", {
         "consumable_charges": "TEXT DEFAULT '{}'", "bonus_skills": "TEXT DEFAULT '{}'",
         "equipped_armor_key": "TEXT DEFAULT ''", "free_upgrade_used": "INTEGER DEFAULT 0",
         "wounds_current": "INTEGER", "wounds_max": "INTEGER", "shock_current": "INTEGER", "shock_max": "INTEGER",
-        "wrath_current": "INTEGER", "wrath_max": "INTEGER", "xp_earned": "INTEGER DEFAULT 0",
+        "wrath_current": "INTEGER", "wrath_max": "INTEGER", "armour_durability_current": "INTEGER DEFAULT 0",
+        "armour_durability_max": "INTEGER DEFAULT 0", "weapon_durabilities": "TEXT DEFAULT '{}'", "xp_earned": "INTEGER DEFAULT 0",
         "incursion_statuses": "TEXT DEFAULT '{}'",
     })
     c.execute("""CREATE TABLE IF NOT EXISTS incursion_pvp_queue(
@@ -1313,6 +1379,7 @@ def init_db():
     conn.commit()
     _load_custom_archetypes(conn)
     conn.close()
+    _ensure_incursion_talents()
 
 
 STANDARD_AMMO_CATALOG = {
@@ -3887,7 +3954,8 @@ def inject_theme():
     .inc-player-vital b{display:block;font:700 1.08rem Cinzel,serif;color:#e4d5b0}
     .inc-player-vital .pv-label{display:block;margin-top:3px;font:8px monospace;letter-spacing:.16em;color:#8f8065}
     .inc-player-vital.wounds{--pv-color:hsl(145,62%,42%);--pv-glow:rgba(55,170,95,.3)}
-    .inc-player-vital.shock{--pv-color:#9b72c2;--pv-glow:rgba(150,105,205,.3)}
+    .inc-player-vital.armour{--pv-color:#b58b3a;--pv-glow:rgba(181,139,58,.28)}
+.inc-player-vital.shock{--pv-color:#9b72c2;--pv-glow:rgba(150,105,205,.3)}
     .inc-player-vital.wounds .pv-label{color:#8bcf9b}.inc-player-vital.shock .pv-label{color:#c6a7df}
     .inc-chip{position:relative;background:linear-gradient(180deg,#17120d,#0f0c09);border:1px solid #493a25;border-radius:0;border-top:2px solid #5f4725;padding:8px 9px;font-size:.61rem;color:#8f8065;opacity:1;text-transform:uppercase;letter-spacing:.08em}
     .inc-chip:after{content:"";position:absolute;left:0;bottom:0;width:25%;height:1px;background:#8a2d27}.inc-chip b{display:block;color:#ded0ad;font-family:Cinzel,serif;font-size:1.02rem;letter-spacing:.02em;line-height:1.15}.inc-chip.wound b{color:#c95a50}.inc-chip.shock b{color:#c6a45c}.inc-chip.wrath b{color:#dfc278}
@@ -5815,6 +5883,7 @@ def _inc_decode_run(row):
     r["bonus_skills"] = _inc_json_field(r.get("bonus_skills"), {})
     r["incursion_statuses"] = _inc_json_field(r.get("incursion_statuses"), {})
     r["consumable_charges"] = _inc_json_field(r.get("consumable_charges"), {})
+    r["weapon_durabilities"] = _inc_json_field(r.get("weapon_durabilities"), {})
     for f in ("extra_wargear", "extra_talents", "extra_powers", "extra_keywords"):
         r[f] = _inc_json_field(r.get(f), [])
     r["node"] = _inc_json_field(r.get("node"), None)
@@ -5826,7 +5895,7 @@ def _inc_decode_run(row):
     for f in (
         "wounds_current", "wounds_max", "shock_current", "shock_max",
         "wrath_current", "wrath_max", "xp", "xp_earned", "loop_no", "bosses_cleared",
-        "heal_charges",
+        "heal_charges", "armour_durability_current", "armour_durability_max",
     ):
         value = r.get(f)
         if value is not None:
@@ -5849,7 +5918,7 @@ def _inc_hydrate_run_pools(run):
 
     missing = any(run.get(f) is None for f in (
         "wounds_current", "wounds_max", "shock_current", "shock_max",
-        "wrath_current", "wrath_max",
+        "wrath_current", "wrath_max", "armour_durability_current", "armour_durability_max",
     ))
     if not missing:
         return run
@@ -5865,6 +5934,7 @@ def _inc_hydrate_run_pools(run):
     # Include upgrades already bought during this run when rebuilding maxima.
     merged = _inc_merge_character(ch, run)
     pools = _inc_life_pools(merged)
+    armour_rating = _inc_armour_durability(ch, run)[1]
 
     updates = {}
     if run.get("wounds_max") is None:
@@ -5895,6 +5965,10 @@ def _inc_hydrate_run_pools(run):
         updates["shock_current"] = updates.get("shock_max", pools["shock_max"])
     if run.get("wrath_current") is None:
         updates["wrath_current"] = updates.get("wrath_max", pools["wrath_max"])
+    if run.get("armour_durability_max") is None:
+        updates["armour_durability_max"] = armour_rating
+    if run.get("armour_durability_current") is None:
+        updates["armour_durability_current"] = armour_rating
 
     # Clamp repaired/current values to their maxima.
     final_wounds_max = int(updates.get("wounds_max", run.get("wounds_max") or pools["wounds_max"]))
@@ -5909,9 +5983,11 @@ def _inc_hydrate_run_pools(run):
 
     conn = get_conn()
     conn.execute(
-        "UPDATE incursion_run SET wounds_current=?, wounds_max=?, shock_current=?, shock_max=?, wrath_current=?, wrath_max=? WHERE id=?",
+        "UPDATE incursion_run SET wounds_current=?, wounds_max=?, shock_current=?, shock_max=?, wrath_current=?, wrath_max=?, armour_durability_current=?, armour_durability_max=? WHERE id=?",
         (updates["wounds_current"], updates["wounds_max"], updates["shock_current"],
-         updates["shock_max"], updates["wrath_current"], updates["wrath_max"], run["id"]),
+         updates["shock_max"], updates["wrath_current"], updates["wrath_max"],
+         updates.get("armour_durability_current", run.get("armour_durability_current", 0)),
+         updates.get("armour_durability_max", run.get("armour_durability_max", 0)), run["id"]),
     )
     conn.commit()
     conn.close()
@@ -5981,6 +6057,11 @@ def _inc_merge_character(ch, run):
     attrs = dict(ch.get("attributes") or {})
     for k, v in (run.get("bonus_attributes") or {}).items():
         attrs[k] = int(attrs.get(k, 1)) + int(v)
+    statuses = dict(run.get("incursion_statuses") or {})
+    for k, v in (statuses.get("talent_permanent_attributes") or {}).items():
+        attrs[k] = int(attrs.get(k, 1)) + int(v)
+    for k, v in (statuses.get("combat_attribute_bonus") or {}).items():
+        attrs[k] = int(attrs.get(k, 0)) + int(v)
     merged["attributes"] = attrs
     skills = dict(ch.get("skills") or {})
     for k, v in (run.get("bonus_skills") or {}).items():
@@ -6020,6 +6101,153 @@ def _inc_armour_options(ch, run):
         d = _gear_details_dict(w.get("details", {}))
         options.append({"key": key, "name": w.get("name", "Armour"), "rating": d.get("armour_rating", "")})
     return options
+
+
+def _inc_rarity_rank(w):
+    details = _gear_details_dict(w.get("details", {}))
+    rarity = str(details.get("rarity", "Common") or "Common").strip().lower()
+    return {"common": 1, "uncommon": 2, "rare": 3, "very rare": 4, "unique": 5}.get(rarity, 1)
+
+
+def _inc_wargear_durability_max(w):
+    """Run-local durability ceiling. Rarity 1..5 gives 15..75 durability."""
+    return 15 * _inc_rarity_rank(w)
+
+
+def _inc_destroyed_keys(run):
+    statuses = dict(run.get("incursion_statuses") or {})
+    return set(str(x) for x in (statuses.get("destroyed_wargear") or []))
+
+
+def _inc_weapon_durability_map(run):
+    return {str(k): int(v) for k, v in (run.get("weapon_durabilities") or {}).items()}
+
+
+def _inc_weapon_durability(ch, run, weapon_key, weapon_item=None):
+    weapon_item = weapon_item or next((w for w in (list(ch.get("wargear") or []) + list(run.get("extra_wargear") or []))
+                                       if _inc_weapon_key(w) == weapon_key), None)
+    if weapon_item is None:
+        return 0, 0
+    maximum = _inc_wargear_durability_max(weapon_item)
+    values = _inc_weapon_durability_map(run)
+    current = int(values.get(str(weapon_key), maximum))
+    return max(0, min(current, maximum)), maximum
+
+
+def _inc_set_weapon_durability(run, weapon_key, current):
+    values = _inc_weapon_durability_map(run)
+    values[str(weapon_key)] = max(0, int(current))
+    return _inc_persist(run["id"], weapon_durabilities=values)
+
+
+def _inc_recover_rest_durability(run, ch):
+    """Rest repairs surviving armour by 25-30% and every weapon by 25-100%."""
+    destroyed = _inc_destroyed_keys(run)
+    all_gear = list(ch.get("wargear") or []) + list(run.get("extra_wargear") or [])
+    armour_key = run.get("equipped_armor_key")
+    armour_current, armour_max = _inc_armour_durability(ch, run)
+    armour_gain = random.randint(max(1, math.ceil(armour_max * 0.25)), max(1, math.floor(armour_max * 0.30))) if armour_max > 0 else 0
+    armour_current = min(armour_max, armour_current + armour_gain)
+    values = _inc_weapon_durability_map(run)
+    repaired = []
+    for w in all_gear:
+        if not w.get("equipped", True) or _inc_is_armour_item(w):
+            continue
+        details = _gear_details_dict(w.get("details", {}))
+        if details.get("damage") in (None, ""):
+            continue
+        key = _inc_weapon_key(w)
+        if key in destroyed:
+            continue
+        maximum = _inc_wargear_durability_max(w)
+        current = int(values.get(key, maximum))
+        if current >= maximum:
+            continue
+        low = max(1, math.ceil(maximum * 0.25))
+        high = max(low, maximum)
+        gain = random.randint(low, high)
+        values[key] = min(maximum, current + gain)
+        repaired.append((w.get("name", "Weapon"), gain, values[key], maximum))
+    updates = {"weapon_durabilities": values, "armour_durability_current": armour_current,
+               "armour_durability_max": armour_max}
+    return _inc_persist(run["id"], **updates), repaired, armour_gain
+
+
+def _inc_break_armour_if_needed(run, ch):
+    current, maximum = _inc_armour_durability(ch, run)
+    if maximum <= 0 or current > 0:
+        return run, False
+    armour_key = run.get("equipped_armor_key")
+    if not armour_key:
+        return run, False
+    statuses = dict(run.get("incursion_statuses") or {})
+    destroyed = set(str(x) for x in (statuses.get("destroyed_wargear") or []))
+    destroyed.add(str(armour_key))
+    statuses["destroyed_wargear"] = sorted(destroyed)
+    extra = list(run.get("extra_wargear") or [])
+    extra = [w for w in extra if _inc_weapon_key(w) != str(armour_key)]
+    return _inc_persist(run["id"], equipped_armor_key="", armour_durability_current=0,
+                        armour_durability_max=0, extra_wargear=extra, incursion_statuses=statuses), True
+
+
+def _inc_damage_weapon_from_wrath_one(run, ch, weapon_key):
+    weapon = next((w for w in (list(ch.get("wargear") or []) + list(run.get("extra_wargear") or []))
+                   if _inc_weapon_key(w) == weapon_key), None)
+    if weapon is None or _inc_is_armour_item(weapon):
+        return run, 0, 0, 0
+    current, maximum = _inc_weapon_durability(ch, run, weapon_key, weapon)
+    if maximum <= 0:
+        return run, 0, current, maximum
+    new_current = max(0, current - 1)
+    run = _inc_set_weapon_durability(run, weapon_key, new_current)
+    return run, 1, new_current, maximum
+
+
+def _inc_armour_rating(ch, run=None):
+    """Return the Armour Rating of the armour currently worn in this run."""
+    run = run or {}
+    armor_key = run.get("equipped_armor_key")
+    all_gear = list(ch.get("wargear") or []) + list(run.get("extra_wargear") or [])
+    selected = None
+    if armor_key:
+        selected = next((w for w in all_gear if _inc_is_armour_item(w) and _inc_weapon_key(w) == armor_key), None)
+    if selected is None:
+        selected = next((w for w in all_gear if _inc_is_armour_item(w) and w.get("equipped", True)), None)
+    if selected is None:
+        return 0
+    details = _gear_details_dict(selected.get("details", {}))
+    try:
+        m = re.search(r"[0-9]+", str(details.get("armour_rating", "")))
+        return int(m.group(0)) if m else 0
+    except Exception:
+        return 0
+
+
+def _inc_armour_durability(ch, run):
+    armor_key = run.get("equipped_armor_key")
+    all_gear = list(ch.get("wargear") or []) + list(run.get("extra_wargear") or [])
+    destroyed = _inc_destroyed_keys(run)
+    selected = None
+    if armor_key and str(armor_key) not in destroyed:
+        selected = next((w for w in all_gear if _inc_is_armour_item(w) and _inc_weapon_key(w) == armor_key), None)
+    if selected is None:
+        selected = next((w for w in all_gear if _inc_is_armour_item(w) and _inc_weapon_key(w) not in destroyed and w.get("equipped", True)), None)
+    if selected is None:
+        return 0, 0
+    maximum = _inc_wargear_durability_max(selected)
+    current = int(run.get("armour_durability_current", maximum) or maximum)
+    stored_max = int(run.get("armour_durability_max", maximum) or maximum)
+    if stored_max != maximum:
+        current = maximum
+    return max(0, min(current, maximum)), maximum
+
+
+def _inc_player_traits(ch, run):
+    """Derived Traits with run-local armour durability applied."""
+    merged = _inc_merge_character(ch, run)
+    traits = derived_traits(merged)
+    # Broken armour is removed from the run loadout, so derived Resilience already reflects its loss.
+    return traits
 
 
 def _inc_life_pools(ch):
@@ -6092,8 +6320,12 @@ def _inc_usable_weapons(ch, run):
     attrs = effective_attributes(merged)
     charges = run.get("consumable_charges") or {}
     weapons = []
+    destroyed = _inc_destroyed_keys(run)
     for w in (merged.get("wargear") or []):
         if not w.get("equipped", True):
+            continue
+        key = _inc_weapon_key(w)
+        if key in destroyed:
             continue
         details = _gear_details_dict(w.get("details", {}))
         if details.get("damage") in (None, ""):
@@ -6108,10 +6340,16 @@ def _inc_usable_weapons(ch, run):
                 remaining = int(w.get("quantity", 1) or 0)
             if remaining <= 0:
                 continue
+        base_damage = _weapon_base_damage(details, attrs)
+        durability_current, durability_max = _inc_weapon_durability(ch, run, key, w)
+        damage_penalty = durability_max - durability_current
         weapons.append({
             "key": key,
             "name": w.get("name", "Wargear"),
-            "damage": _weapon_base_damage(details, attrs),
+            "damage": max(0, int(base_damage) - damage_penalty),
+            "base_damage": int(base_damage),
+            "durability_current": durability_current,
+            "durability_max": durability_max,
             "ed": int(details.get("ed", 0) or 0),
             "ap": int(details.get("ap", 0) or 0),
             "melee": bool(details.get("damage_attribute")) or str(details.get("damage", "")).strip().upper().startswith("(S)"),
@@ -6191,12 +6429,16 @@ def _inc_build_enemy_from_bestiary(entry, loop_no, idx):
     sheet, traits, weapon, atk_skill, atk_pool = _inc_enemy_sheet(
         name, tier, species, faction, attrs, skill_pools, wargear, abilities
     )
+    enemy_armour = next((w for w in (sheet.get("wargear") or []) if _inc_is_armour_item(w) and w.get("equipped", True)), None)
+    enemy_armour_max = _inc_wargear_durability_max(enemy_armour) if enemy_armour else 0
+    enemy_armour_rating = int(_gear_details_dict(enemy_armour.get("details", {})).get("armour_rating", 0) or 0) if enemy_armour else 0
     return {
         "uid": f"b-{name}-{idx}-{random.randint(0, 999999)}", "name": name, "tier": int(tier),
         "species": species, "faction": faction, "attributes": attrs,
         "attack_skill": atk_skill, "attack_pool": max(1, round(atk_pool * (1 + (loop_no - 1) * 0.12))),
-        "defence": int(traits["Defence"]), "resilience": int(traits["Resilience"]),
+        "defence": int(traits["Defence"]), "resilience": int(traits["Resilience"]), "base_resilience": int(traits["Resilience"]),
         "speed": int(traits["Speed"]), "statuses": {},
+        "armour_rating": enemy_armour_rating, "armour_durability_max": enemy_armour_max, "armour_durability_current": enemy_armour_max,
         "wounds_max": int(traits["Max Wounds"]), "wounds_current": int(traits["Max Wounds"]),
         "shock_max": int(traits["Max Shock"]), "shock_current": int(traits["Max Shock"]),
         "wrath_current": 2, "wrath_max": 2,
@@ -6232,8 +6474,9 @@ def _inc_build_enemy_from_fallen(row, loop_no, idx):
         "species": row.get("species", ""), "faction": "Fallen", "attributes": attrs,
         "attack_skill": row["attack_skill"],
         "attack_pool": max(1, round(int(row["attack_pool"]) * (1 + (loop_no - 1) * 0.12))),
-        "defence": int(traits["Defence"]), "resilience": int(traits["Resilience"]),
+        "defence": int(traits["Defence"]), "resilience": int(traits["Resilience"]), "base_resilience": int(traits["Resilience"]),
         "speed": int(traits["Speed"]), "statuses": {},
+        "armour_rating": 0, "armour_durability_max": 0, "armour_durability_current": 0,
         "wounds_max": int(traits["Max Wounds"]), "wounds_current": int(traits["Max Wounds"]),
         "shock_max": int(traits["Max Shock"]), "shock_current": int(traits["Max Shock"]),
         "wrath_current": 2, "wrath_max": 2,
@@ -6305,7 +6548,10 @@ def _inc_generate_offers(ch, run):
         candidates.append({"type": "attribute", "attr": attr, "cost": _inc_attribute_cost(cur),
                             "label": f"+1 {attr}", "detail": f"Current: {cur}"})
     wargear_pool = list_craft_items("wargear", active_only=True)
-    talent_pool = list_craft_items("talent", active_only=True)
+    talent_pool = [
+        row for row in list_craft_items("talent", active_only=True)
+        if bool(craft_details(row).get("incursion_executable"))
+    ]
     power_pool = list_craft_items("power", active_only=True) if _inc_is_psyker(merged) else []
     for row in random.sample(wargear_pool, min(6, len(wargear_pool))):
         candidates.append({"type": "wargear", "craft_id": int(row["id"]), "name": row["name"],
@@ -6331,6 +6577,14 @@ def _inc_generate_offers(ch, run):
     offers = random.sample(candidates, min(3, len(candidates)))
     for i, o in enumerate(offers):
         o["offer_id"] = i
+    return offers
+
+
+def _inc_generate_first_encampment_offers(ch, run):
+    offers = _inc_generate_offers(ch, run)
+    for offer in offers:
+        offer["cost"] = 0
+        offer["first_encampment_free"] = True
     return offers
 
 
@@ -6390,6 +6644,64 @@ def _inc_apply_purchase(run, ch, offer):
         heal_charges=heal_charges, **pool_updates,
     )
 
+
+# ---- loot / post-combat choices --------------------------------------
+def _inc_generate_free_item_offer(ch, run):
+    pool = list_craft_items("wargear", active_only=True)
+    if not pool:
+        return None
+    row = random.choice(pool)
+    return {"type": "wargear", "craft_id": int(row["id"]), "name": row["name"],
+            "effect": row.get("effect", ""), "label": row["name"],
+            "detail": row.get("effect", ""), "cost": 0, "offer_id": 0, "free_loot": True}
+
+def _inc_claim_free_item(run, ch, offer):
+    if not offer or offer.get("type") != "wargear":
+        raise ValueError("invalid_loot")
+    conn = get_conn()
+    row = conn.execute("SELECT * FROM craft_items WHERE id=? AND kind='wargear'", (int(offer["craft_id"]),)).fetchone()
+    conn.close()
+    if row is None:
+        raise ValueError("item_not_found")
+    item = _build_craft_entry(row, "wargear")
+    extra = list(run.get("extra_wargear") or [])
+    extra.append(item)
+    updated = _inc_persist(run["id"], extra_wargear=extra)
+    key = _inc_weapon_key(item)
+    if _inc_is_armour_item(item):
+        maximum = _inc_wargear_durability_max(item)
+        updated = _inc_persist(updated["id"], equipped_armor_key=key, armour_durability_current=maximum, armour_durability_max=maximum)
+    else:
+        values = _inc_weapon_durability_map(updated); values[key] = _inc_wargear_durability_max(item)
+        updated = _inc_persist(updated["id"], weapon_durabilities=values)
+    return updated
+
+def _inc_post_combat_loot(run, ch, node):
+    difficulty = str(node.get("difficulty", ""))
+    item = _inc_generate_free_item_offer(ch, run)
+    if difficulty == "boss":
+        return _inc_persist(run["id"], node={"type":"loot", "subtype":"boss", "offer":item, "reward_xp":int(node.get("reward_xp",0) or 0)})
+    if node.get("subtype") == "ambush":
+        return _inc_persist(run["id"], node={"type":"loot_choice", "subtype":"ambush", "offer":item, "reward_xp":int(node.get("reward_xp",0) or 0)})
+    return None
+
+def _inc_loot_take(run, ch):
+    node = run.get("node") or {}
+    offer = node.get("offer")
+    updated = _inc_claim_free_item(run, ch, offer)
+    return _inc_advance(updated, ch)
+
+def _inc_loot_rest(run, ch):
+    node = run.get("node") or {}
+    if node.get("type") != "loot_choice": raise ValueError("wrong_node")
+    heal = max(1, round(run["wounds_max"] * INC_REST_HEAL_FRACTION))
+    updated, _, _ = _inc_recover_rest_durability(run, ch)
+    updated = _inc_persist(updated["id"], wounds_current=min(updated["wounds_max"], updated["wounds_current"] + heal),
+                           shock_current=updated["shock_max"])
+    return _inc_advance(updated, ch)
+
+def _inc_loot_take_and_continue(run, ch):
+    return _inc_loot_take(run, ch)
 
 # ---- node/stage state machine -----------------------------------------
 def _inc_scaled_xp(base, loop_no):
@@ -6462,14 +6774,26 @@ def _inc_start_run(ch):
     if _inc_get_active_run(ch["id"]):
         raise ValueError("run_already_active")
     pools = _inc_life_pools(ch)
+    first_run_stub = {"bonus_attributes": {}, "bonus_skills": {}, "extra_wargear": [],
+                      "extra_talents": [], "extra_powers": [], "equipped_armor_key": ""}
+    first_offers = _inc_generate_first_encampment_offers(ch, first_run_stub)
+    first_node = {"type": "shop", "subtype": "first_encampment", "offers": first_offers}
+    initial_armour = next((w for w in (ch.get("wargear") or []) if _inc_is_armour_item(w) and w.get("equipped", True)), None)
+    initial_armour_key = _inc_weapon_key(initial_armour) if initial_armour else ""
+    armour_max = _inc_wargear_durability_max(initial_armour) if initial_armour else 0
+    weapon_values = {}
+    for w in (ch.get("wargear") or []):
+        details = _gear_details_dict(w.get("details", {}))
+        if w.get("equipped", True) and details.get("damage") not in (None, ""):
+            weapon_values[_inc_weapon_key(w)] = _inc_wargear_durability_max(w)
     conn = get_conn()
     cur = conn.execute(
         "INSERT INTO incursion_run(character_id,status,stage,loop_no,wounds_current,wounds_max,"
-        "shock_current,shock_max,wrath_current,wrath_max,xp,xp_earned,incursion_statuses,node,created_at) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "shock_current,shock_max,wrath_current,wrath_max,xp,xp_earned,armour_durability_current,"
+        "armour_durability_max,weapon_durabilities,incursion_statuses,node,created_at,equipped_armor_key) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (ch["id"], "active", "start", 1, pools["wounds_max"], pools["wounds_max"],
          pools["shock_max"], pools["shock_max"], pools["wrath_max"], pools["wrath_max"], 0, 0,
-         json.dumps({}), json.dumps({"type": "choice_start"}), now_iso()))
+         armour_max, armour_max, json.dumps(weapon_values), json.dumps({}), json.dumps(first_node), now_iso(), initial_armour_key))
     conn.commit()
     new_id = cur.lastrowid
     conn.close()
@@ -6481,9 +6805,13 @@ def _inc_choose_start(run, ch, choice):
         raise ValueError("wrong_node")
     if choice == "rest":
         heal = max(1, round(run["wounds_max"] * INC_REST_HEAL_FRACTION))
+        run, repaired, armour_gain = _inc_recover_rest_durability(run, ch)
         run = _inc_persist(run["id"], wounds_current=min(run["wounds_max"], run["wounds_current"] + heal),
-                            shock_current=run["shock_max"])
-        return _inc_persist(run["id"], node={"type": "rest_upgrade"})
+                            shock_current=run["shock_max"], node={"type": "rest_upgrade"})
+        return run
+    if choice == "first_encampment":
+        offers = _inc_generate_first_encampment_offers(ch, run)
+        return _inc_persist(run["id"], node={"type": "shop", "subtype": "first_encampment", "offers": offers})
     if choice == "shop":
         return _inc_persist(run["id"], node={"type": "shop", "subtype": "start", "offers": _inc_generate_offers(ch, run)})
     raise ValueError("invalid_choice")
@@ -6518,8 +6846,16 @@ def _inc_rest_train_skill(run, ch, skill):
 
 
 def _inc_rest_set_armour(run, ch, armour_key):
-    # A loadout choice, not a purchase - free, doesn't touch free_upgrade_used.
-    return _inc_persist(run["id"], equipped_armor_key=armour_key)
+    # A loadout choice, not a purchase. Rest also restores the selected armour.
+    rating = 0
+    for option in _inc_armour_options(ch, run):
+        if option["key"] == armour_key:
+            all_gear = list(ch.get("wargear") or []) + list(run.get("extra_wargear") or [])
+            item = next((w for w in all_gear if _inc_weapon_key(w) == armour_key and _inc_is_armour_item(w)), None)
+            rating = _inc_wargear_durability_max(item) if item else 0
+            break
+    return _inc_persist(run["id"], equipped_armor_key=armour_key,
+                        armour_durability_current=rating, armour_durability_max=rating)
 
 
 def _inc_rest_continue(run, ch):
@@ -6535,6 +6871,19 @@ def _inc_shop_buy(run, ch, offer_id):
     if offer is None:
         raise ValueError("offer_not_found")
     updated = _inc_apply_purchase(run, ch, offer)
+    if offer.get("type") == "wargear":
+        added = (updated.get("extra_wargear") or [{}])[-1]
+        values = _inc_weapon_durability_map(updated)
+        added_key = _inc_weapon_key(added)
+        added_max = _inc_wargear_durability_max(added)
+        if not _inc_is_armour_item(added):
+            values[added_key] = added_max
+            updated = _inc_persist(updated["id"], weapon_durabilities=values)
+        else:
+            updated = _inc_persist(updated["id"], equipped_armor_key=added_key,
+                                   armour_durability_current=added_max, armour_durability_max=added_max)
+    if run.get("node", {}).get("subtype") == "first_encampment":
+        return _inc_advance(updated, ch)
     remaining = [o for o in run["node"]["offers"] if o["offer_id"] != offer_id]
     node = dict(updated["node"]); node["offers"] = remaining
     return _inc_persist(updated["id"], node=node)
@@ -6552,6 +6901,138 @@ def _inc_reward_continue(run, ch):
 
 
 # ---- combat --------------------------------------------------------------
+def _inc_talent_count(ch, run, name):
+    target = str(name).strip().lower()
+    merged = _inc_merge_character(ch, run)
+    return sum(1 for x in normalize_talents(merged.get("talents", []))
+               if str(x.get("name", "")).strip().lower() == target)
+
+def _inc_talent_names(ch, run):
+    merged = _inc_merge_character(ch, run)
+    return {str(x.get("name", "")).strip().lower() for x in normalize_talents(merged.get("talents", []))}
+
+def _inc_talent_has(ch, run, name):
+    return _inc_talent_count(ch, run, name) > 0
+
+def _inc_talent_status(run):
+    return dict(run.get("incursion_statuses") or {})
+
+def _inc_talent_persist_status(run, statuses):
+    return _inc_persist(run["id"], incursion_statuses=statuses)
+
+def _inc_record_wrath_spend(run, ch, amount):
+    amount = max(0, int(amount or 0))
+    if amount <= 0:
+        return run
+    if not _inc_talent_has(ch, run, "Wrathforged") and not _inc_talent_has(ch, run, "Iron Discipline"):
+        return run
+    statuses = _inc_talent_status(run)
+    perm = dict(statuses.get("talent_permanent_attributes") or {})
+    wrathforged = _inc_talent_count(ch, run, "Wrathforged")
+    iron = _inc_talent_count(ch, run, "Iron Discipline")
+    if wrathforged:
+        perm["Strength"] = int(perm.get("Strength", 0) or 0) + amount * wrathforged
+    if iron:
+        bank = int(statuses.get("iron_discipline_wrath_bank", 0) or 0) + amount
+        gains = bank // 3
+        if gains:
+            perm["Toughness"] = int(perm.get("Toughness", 0) or 0) + gains * iron
+            bank %= 3
+        statuses["iron_discipline_wrath_bank"] = bank
+    statuses["talent_permanent_attributes"] = perm
+    return _inc_talent_persist_status(run, statuses)
+
+def _inc_apply_player_talent_attack_effects(ch, run, target, entry):
+    """Apply executable Incursion talent effects to one successful player attack."""
+    statuses = _inc_talent_status(run)
+    changed = False
+    hit = bool(entry.get("hit"))
+    crit = bool(entry.get("wrath_crit"))
+    icons = int(entry.get("icons", 0) or 0)
+    wounds_before = int(target.get("wounds_current", 0) or 0)
+
+    blood_ledger = _inc_talent_count(ch, run, "Blood Ledger")
+    if hit and blood_ledger:
+        amount = (icons // 2) * blood_ledger
+        if amount:
+            target["statuses"] = dict(target.get("statuses") or {})
+            target["statuses"]["Bleeding"] = int(target["statuses"].get("Bleeding", 0) or 0) + amount
+            entry["talent_bleeding"] = amount
+
+    blood_price = _inc_talent_count(ch, run, "Blood Price")
+    if hit and blood_price and entry.get("rolls") and int(entry["rolls"][-1]) == 1:
+        target["statuses"] = dict(target.get("statuses") or {})
+        target["statuses"]["Bleeding"] = int(target["statuses"].get("Bleeding", 0) or 0) + blood_price
+        entry["talent_bleeding"] = int(entry.get("talent_bleeding", 0) or 0) + 1
+
+    extra_ed = 0
+    pred_focus = _inc_talent_count(ch, run, "Predatory Focus")
+    hunter = _inc_talent_count(ch, run, "Hunter of Weakness")
+    veteran = _inc_talent_count(ch, run, "Combat Veteran")
+    mark = _inc_talent_count(ch, run, "Predator's Mark")
+    if hit and pred_focus and icons >= 3: extra_ed += pred_focus
+    if hit and hunter and int((target.get("statuses") or {}).get("Bleeding", 0) or 0) > 0: extra_ed += hunter
+    if hit and veteran and not statuses.get("combat_first_hit_used"):
+        extra_ed += veteran; statuses["combat_first_hit_used"] = True; changed = True
+    if hit and mark and not statuses.get("predator_mark_used"):
+        if wounds_before == int(target.get("wounds_max", wounds_before) or wounds_before):
+            extra_ed += 2 * mark; statuses["predator_mark_used"] = True; changed = True
+    entry["talent_extra_ed"] = extra_ed
+
+    crimson = _inc_talent_count(ch, run, "Crimson Reprisal")
+    if crit and crimson:
+        current = int(run.get("shock_current", 0) or 0); maximum = int(run.get("shock_max", 0) or 0)
+        recovered = min(maximum - current, crimson)
+        run = _inc_persist(run["id"], shock_current=current + recovered); changed = False
+        entry["talent_shock"] = recovered
+        statuses = _inc_talent_status(run)
+    iron_fury = _inc_talent_count(ch, run, "Iron Fury")
+    if crit and iron_fury:
+        combat = dict(statuses.get("combat_attribute_bonus") or {})
+        combat["Toughness"] = int(combat.get("Toughness", 0) or 0) + 3 * iron_fury
+        statuses["combat_attribute_bonus"] = combat; changed = True
+    critical_mass = _inc_talent_count(ch, run, "Critical Mass")
+    if crit and critical_mass:
+        combat = dict(statuses.get("combat_attribute_bonus") or {})
+        combat["Strength"] = int(combat.get("Strength", 0) or 0) + critical_mass
+        statuses["combat_attribute_bonus"] = combat; changed = True
+    sundering = _inc_talent_count(ch, run, "Sundering Blow")
+    breaker = _inc_talent_count(ch, run, "Armour Breaker")
+    if crit and (sundering or breaker):
+        amount = sundering + (2 * breaker)
+        current = int(target.get("armour_durability_current", 0) or 0)
+        if current > 0:
+            lost = min(amount, current); target["armour_durability_current"] = current - lost
+            entry["enemy_armour_damage"] = lost
+            if target["armour_durability_current"] <= 0 and target.get("armour_rating", 0):
+                target["resilience"] = max(0, int(target.get("base_resilience", target["resilience"])) - int(target.get("armour_rating", 0)))
+                target["armour_broken"] = True
+    execution = _inc_talent_count(ch, run, "Execution Doctrine")
+    skull = _inc_talent_count(ch, run, "Skull Hunter")
+    if crit and execution and wounds_before <= max(1, int(target.get("wounds_max", 1)) // 2):
+        entry["talent_bonus_wounds"] = 2 * execution
+    if crit and skull and int(target.get("tier", 1) or 1) >= 3:
+        entry["talent_bonus_wounds"] = int(entry.get("talent_bonus_wounds", 0) or 0) + skull
+    bloodsmith = _inc_talent_count(ch, run, "Bloodsmith")
+    if crit and bloodsmith:
+        weapon_key = str(entry.get("weapon_key", ""))
+        if weapon_key and weapon_key != "__unarmed__":
+            current, maximum = _inc_weapon_durability(ch, run, weapon_key)
+            repaired = min(maximum, current + 2 * bloodsmith) - current
+            if repaired:
+                run = _inc_set_weapon_durability(run, weapon_key, current + repaired)
+                entry["talent_weapon_repair"] = repaired
+
+    battle_trance = _inc_talent_count(ch, run, "Battle Trance")
+    if hit and battle_trance:
+        recover = (icons // 4) * battle_trance
+        if recover:
+            current = int(run.get("shock_current", 0) or 0); maximum = int(run.get("shock_max", 0) or 0)
+            run = _inc_persist(run["id"], shock_current=min(maximum, current + recover)); entry["talent_shock"] = int(entry.get("talent_shock", 0) or 0) + recover; statuses = _inc_talent_status(run)
+    if changed:
+        run = _inc_talent_persist_status(run, statuses)
+    return run
+
 def _inc_enemy_turn(enemies, player_traits):
     log=[]
     for enemy in enemies:
@@ -6561,7 +7042,9 @@ def _inc_enemy_turn(enemies, player_traits):
             recovered=min(max_shock-current_shock,wrath); enemy["shock_current"]=current_shock+recovered; enemy["wrath_current"]=wrath-recovered
             log.append({"actor":"enemy","action":"recover_shock","actor_name":enemy["name"],"shock":recovered,"wrath_spent":recovered}); continue
         base_pool=max(1,int(enemy.get("attack_pool",1) or 1)); expected_icons=base_pool//2
-        wrath_spent=min(wrath,max(0,int(player_traits["Defence"])-expected_icons)); attack_pool=base_pool+wrath_spent; enemy["wrath_current"]=wrath-wrath_spent
+        needed=max(0,int(player_traits["Defence"])-expected_icons)
+        wrath_spent=min(wrath, max(1, needed) if wrath > 0 else 0)
+        attack_pool=base_pool+wrath_spent; enemy["wrath_current"]=wrath-wrath_spent
         rolls,icons,wrath_die_6=_inc_roll_pool(attack_pool); hit=icons>=player_traits["Defence"]; total_damage=0; shock=0; wounds=0; damage_rolls=[]; critical=bool(hit and wrath_die_6)
         if critical: enemy["wrath_current"]+=1
         if hit:
@@ -6593,11 +7076,18 @@ def _inc_apply_talent_trigger(node, trigger, selected_indices):
 def _inc_resolve_player_attack(ch, run, node, target_uids, weapon, bonus_die=0, six_mode="ED"):
     merged = _inc_merge_character(ch, run)
     skill_name, pool = _inc_best_attack_pool(merged)
-    player_traits = derived_traits(merged)
+    player_traits = _inc_player_traits(ch, run)
     targets = [e for e in node["enemies"] if e["alive"] and e["uid"] in target_uids]
     if not targets:
         raise ValueError("no_valid_targets")
-    per_target_pool = max(1, pool - (len(targets) - 1) + int(bonus_die or 0))
+    status = _inc_talent_status(run)
+    extra_pool = 0
+    last_stand = _inc_talent_count(ch, run, "Last Stand")
+    if last_stand and int(run.get("wounds_current", 0) or 0) <= max(1, int(run.get("wounds_max", 1) or 1) // 4): extra_pool += 2 * last_stand
+    extra_pool += int(status.get("next_attack_bonus_dice", 0) or 0)
+    status["next_attack_bonus_dice"] = 0
+    run = _inc_talent_persist_status(run, status) if extra_pool or _inc_talent_has(ch, run, "Relentless Assault") else run
+    per_target_pool = max(1, pool - (len(targets) - 1) + int(bonus_die or 0) + extra_pool)
     log = []
     wrath_gained = 0
     for target in targets:
@@ -6617,6 +7107,10 @@ def _inc_resolve_player_attack(ch, run, node, target_uids, weapon, bonus_die=0, 
             # Exalted Icons (6s) are always converted to extra ED when available.
             # A Critical (Wrath Die = 6 on a successful attack) always grants 1 Wrath.
             total_ed = int(weapon.get("ed", 0) or 0) + shiftable
+            preview_entry = {"hit": hit, "wrath_crit": critical, "icons": icons, "rolls": rolls,
+                              "weapon_key": weapon.get("key", "__unarmed__")}
+            run = _inc_apply_player_talent_attack_effects(ch, run, target, preview_entry)
+            total_ed += int(preview_entry.get("talent_extra_ed", 0) or 0)
             total_damage, damage_rolls = _inc_roll_damage(weapon["damage"], total_ed)
             if critical:
                 # Simple Critical option: +3 ED and a narrative critical effect.
@@ -6624,15 +7118,43 @@ def _inc_resolve_player_attack(ch, run, node, target_uids, weapon, bonus_die=0, 
                 total_damage += crit_total
                 damage_rolls.extend(crit_rolls)
             shock, wounds, _effective_res = _inc_damage_result(total_damage, target["resilience"], weapon.get("ap", 0))
+            bonus_wounds = int(preview_entry.get("talent_bonus_wounds", 0) or 0)
+            wounds += bonus_wounds
             target["shock_current"] = max(0, int(target.get("shock_current", 0) or 0) - shock)
             target["wounds_current"] = max(0, int(target.get("wounds_current", 0) or 0) - wounds)
             if target["wounds_current"] <= 0:
                 target["alive"] = False
+                statuses = _inc_talent_status(run)
+                ruthless = _inc_talent_count(ch, run, "Ruthless Momentum")
+                if ruthless:
+                    perm = dict(statuses.get("talent_permanent_attributes") or {})
+                    perm["Strength"] = int(perm.get("Strength", 0) or 0) + ruthless
+                    statuses["talent_permanent_attributes"] = perm
+                harvest = _inc_talent_count(ch, run, "Predator's Harvest")
+                if harvest:
+                    kills = int(statuses.get("predator_harvest_kills", 0) or 0) + 1
+                    if kills % 3 == 0:
+                        perm = dict(statuses.get("talent_permanent_attributes") or {})
+                        perm["Agility"] = int(perm.get("Agility", 0) or 0) + harvest
+                        statuses["talent_permanent_attributes"] = perm
+                    statuses["predator_harvest_kills"] = kills
+                if statuses != _inc_talent_status(run):
+                    run = _inc_talent_persist_status(run, statuses)
+            if hit and _inc_talent_has(ch, run, "Relentless Assault"):
+                statuses = _inc_talent_status(run); statuses["next_attack_bonus_dice"] = int(statuses.get("next_attack_bonus_dice", 0) or 0) + _inc_talent_count(ch, run, "Relentless Assault")
+                run = _inc_talent_persist_status(run, statuses)
         log.append({"actor": "player", "action": "attack", "target_name": target["name"], "target_uid": target["uid"],
                     "skill": skill_name, "pool": per_target_pool, "rolls": rolls, "icons": icons,
                     "weapon": weapon["name"], "hit": hit, "damage": total_damage, "shock": shock, "wounds": wounds,
                     "damage_rolls": damage_rolls, "target_defeated": not target["alive"],
-                    "wrath_crit": critical, "shifted_ed": shiftable if hit else 0})
+                    "wrath_crit": critical, "shifted_ed": shiftable if hit else 0,
+                    "talent_bleeding": int(preview_entry.get("talent_bleeding", 0) or 0),
+                    "talent_shock": int(preview_entry.get("talent_shock", 0) or 0),
+                    "talent_extra_ed": int(preview_entry.get("talent_extra_ed", 0) or 0),
+                    "talent_bonus_wounds": int(preview_entry.get("talent_bonus_wounds", 0) or 0),
+                    "enemy_armour_damage": int(preview_entry.get("enemy_armour_damage", 0) or 0),
+                    "enemy_armour_broken": bool(preview_entry.get("armour_broken")),
+                    "talent_weapon_repair": int(preview_entry.get("talent_weapon_repair", 0) or 0)})
         if hit:
             triggers = _inc_attack_talent_triggers(ch, run, target, rolls)
             if triggers: node["pending_talent_triggers"] = triggers
@@ -6645,7 +7167,7 @@ def _inc_resolve_player_heal(ch, run, node, spend_wrath=0):
     if run["heal_charges"] <= 0: raise ValueError("no_heal_charges")
     spend_wrath=max(0,min(1,int(spend_wrath or 0)))
     if spend_wrath>int(run.get("wrath_current",0) or 0): raise ValueError("no_wrath")
-    merged=_inc_merge_character(ch,run); player_traits=derived_traits(merged)
+    merged=_inc_merge_character(ch,run); player_traits=_inc_player_traits(ch,run)
     heal_amount=max(1,round(run["wounds_max"]*0.3)); new_wounds=min(run["wounds_max"],run["wounds_current"]+heal_amount)
     per_wrath=max(1,int(merged.get("rank",1) or 1)+int(merged.get("tier",1) or 1))
     shock_recovered=min(run["shock_max"]-run["shock_current"],spend_wrath*per_wrath); new_shock=run["shock_current"]+shock_recovered
@@ -6658,17 +7180,18 @@ def _inc_resolve_player_flee(ch, run, node, target_uid, bonus_die=0):
     bonus_die=max(0,int(bonus_die or 0))
     if bonus_die>int(run.get("wrath_current",0) or 0): raise ValueError("no_wrath")
     merged = _inc_merge_character(ch, run)
-    player_traits = derived_traits(merged)
+    player_traits = _inc_player_traits(ch, run)
     target = next((e for e in node["enemies"] if e["alive"] and e["uid"] == target_uid), None)
     if target is None:
         raise ValueError("no_valid_target")
     player_speed = max(1,int(player_traits.get("Speed",1))) + bonus_die
     target_speed = max(1, int(target.get("speed", 1)))
-    p_rolls, p_icons = _inc_roll_icons(player_speed)
+    p_rolls, p_icons, p_wrath_die_6 = _inc_roll_pool(player_speed)
     t_rolls, t_icons = _inc_roll_icons(target_speed)
     success = p_icons > t_icons
     log = [{"actor": "player", "action": "flee", "target_name": target["name"],
             "pool": player_speed, "rolls": p_rolls, "icons": p_icons,
+            "wrath_die_1": bool(p_rolls and p_rolls[-1] == 1),
             "target_pool": target_speed, "target_rolls": t_rolls, "target_icons": t_icons,
             "success": success, "wrath_spent": int(bonus_die)}]
     if success:
@@ -6681,12 +7204,39 @@ def _inc_resolve_player_flee(ch, run, node, target_uid, bonus_die=0):
 
 
 def _inc_finish_combat_round(run, ch, node, round_log, wrath_gained=0):
+    enemy_crits = sum(1 for entry in round_log if entry.get("actor") == "enemy" and entry.get("critical"))
+    if enemy_crits:
+        current_armour, max_armour = _inc_armour_durability(ch, run)
+        if max_armour > 0 and current_armour > 0:
+            lost = min(current_armour, enemy_crits)
+            run = _inc_persist(run["id"], armour_durability_current=current_armour - lost, armour_durability_max=max_armour)
+            round_log = list(round_log) + [{"actor":"player","action":"armour_damage","amount":lost,
+                                             "armour_durability":current_armour-lost,"reason":"enemy_critical"}]
+        run, broken = _inc_break_armour_if_needed(run, ch)
+        if broken:
+            round_log.append({"actor":"player","action":"armour_broken","amount":0})
     node["log"] = (node.get("log") or []) + round_log
     enemy_shock = sum(int(e.get("shock", 0) or 0) for e in round_log if e.get("actor") == "enemy")
     enemy_wounds = sum(int(e.get("wounds", 0) or 0) for e in round_log if e.get("actor") == "enemy")
     new_shock = max(0, int(run.get("shock_current", 0) or 0) - enemy_shock)
     new_wounds = max(0, int(run.get("wounds_current", 0) or 0) - enemy_wounds)
+    if _inc_talent_has(ch, run, "Unyielding Flesh") and enemy_wounds > 0:
+        statuses = _inc_talent_status(run)
+        if not statuses.get("unyielding_used"):
+            new_wounds = min(int(run.get("wounds_max", 0) or 0), new_wounds + _inc_talent_count(ch, run, "Unyielding Flesh"))
+            statuses["unyielding_used"] = True
+            run = _inc_talent_persist_status(run, statuses)
+    if enemy_wounds > 0 and _inc_talent_has(ch, run, "Adrenaline Surge"):
+        statuses = _inc_talent_status(run); statuses["next_attack_bonus_dice"] = int(statuses.get("next_attack_bonus_dice", 0) or 0) + _inc_talent_count(ch, run, "Adrenaline Surge")
+        run = _inc_talent_persist_status(run, statuses)
     new_wrath = max(0, int(run.get("wrath_current",0) or 0)) + int(wrath_gained or 0)
+    if _inc_talent_has(ch, run, "Iron Resolve") and new_shock <= 0 and enemy_shock > 0:
+        statuses = _inc_talent_status(run)
+        if not statuses.get("iron_resolve_used"):
+            new_wrath += _inc_talent_count(ch, run, "Iron Resolve"); statuses["iron_resolve_used"] = True; run = _inc_talent_persist_status(run, statuses)
+    merciless = _inc_talent_count(ch, run, "Merciless")
+    if merciless and any(e.get("actor") == "player" and e.get("target_defeated") for e in round_log):
+        new_shock = min(int(run.get("shock_max", 0) or 0), new_shock + merciless)
     all_dead = all(not e["alive"] for e in node["enemies"])
 
     if new_wounds <= 0:
@@ -6700,9 +7250,11 @@ def _inc_finish_combat_round(run, ch, node, round_log, wrath_gained=0):
             bosses_cleared += 1
             if bosses_cleared % 3 == 0:
                 pending_boss3 = True
-        return _inc_persist(run["id"], shock_current=new_shock, wounds_current=new_wounds, wrath_current=new_wrath,
-                             xp=run["xp"] + node["reward_xp"], xp_earned=run.get("xp_earned", 0) + node["reward_xp"], node=node,
-                             bosses_cleared=bosses_cleared, pending_boss3_pvp=pending_boss3)
+        updated = _inc_persist(run["id"], shock_current=new_shock, wounds_current=new_wounds, wrath_current=new_wrath,
+                               xp=run["xp"] + node["reward_xp"], xp_earned=run.get("xp_earned", 0) + node["reward_xp"], node=node,
+                               bosses_cleared=bosses_cleared, pending_boss3_pvp=pending_boss3)
+        loot_node = _inc_post_combat_loot(updated, ch, node)
+        return loot_node if loot_node is not None else updated
 
     return _inc_persist(run["id"], shock_current=new_shock, wounds_current=new_wounds, wrath_current=new_wrath, node=node)
 
@@ -6714,7 +7266,7 @@ def _inc_resolve_pending_talent(run, ch, selected_indices):
     applied = sum(_inc_apply_talent_trigger(node, t, selected_indices) for t in triggers)
     node.pop("pending_talent_triggers", None)
     log = [{"actor":"player","action":"talent_trigger","talent":"Blood Must Die","amount":applied,"target_name":triggers[0].get("target_name","Target")}]
-    log += _inc_enemy_turn(node.get("enemies", []), derived_traits(_inc_merge_character(ch, run)))
+    log += _inc_enemy_turn(node.get("enemies", []), _inc_player_traits(ch, run))
     return _inc_finish_combat_round(run, ch, node, log)
 
 def _inc_combat_attack(run, ch, target_uids, weapon_key, bonus_die=0, six_mode="ED", restore_shock=False):
@@ -6726,6 +7278,8 @@ def _inc_combat_attack(run, ch, target_uids, weapon_key, bonus_die=0, six_mode="
     if bonus_die>int(run.get("wrath_current",0) or 0): raise ValueError("no_wrath")
     if restore_shock and int(run.get("wrath_current",0) or 0)<1: raise ValueError("no_wrath")
     node=copy.deepcopy(run["node"]); weapon=_inc_weapon_by_key(ch,run,weapon_key)
+    if weapon.get("key") != "__unarmed__" and int(weapon.get("durability_current", 0)) <= 0:
+        raise ValueError("weapon_broken")
     if restore_shock:
         merged=_inc_merge_character(ch,run)
         current_shock=int(run.get("shock_current",0) or 0); max_shock=int(run.get("shock_max",0) or 0)
@@ -6733,14 +7287,19 @@ def _inc_combat_attack(run, ch, target_uids, weapon_key, bonus_die=0, six_mode="
         rank=max(1,int(merged.get("rank",1) or 1)); tier=max(1,int(merged.get("tier",1) or 1))
         recovered=min(max_shock-current_shock,rank+tier)
         run=_inc_persist(run["id"],shock_current=current_shock+recovered,wrath_current=int(run["wrath_current"])-1)
+        run=_inc_record_wrath_spend(run, ch, 1)
         bonus_die=0
     elif bonus_die:
         run=_inc_persist(run["id"],wrath_current=int(run["wrath_current"])-bonus_die)
+        run=_inc_record_wrath_spend(run, ch, bonus_die)
     round_log,wrath_gained=_inc_resolve_player_attack(ch,run,node,target_uids,weapon,bonus_die=bonus_die,six_mode=six_mode)
+    weapon_ones = sum(1 for entry in round_log if entry.get("actor") == "player" and entry.get("rolls") and int(entry["rolls"][-1]) == 1)
+    if weapon_ones and weapon.get("key") != "__unarmed__":
+        run, lost, weapon_cur, weapon_max = _inc_damage_weapon_from_wrath_one(run, ch, weapon["key"])
+        round_log.append({"actor":"player","action":"weapon_damage","amount":lost,"weapon":weapon.get("name","Weapon"),
+                          "durability_current":weapon_cur,"durability_max":weapon_max})
     if weapon.get("consumable"):
         charges=dict(run.get("consumable_charges") or {}); charges[weapon["key"]]=max(0,int(weapon["remaining"])-1); run=_inc_persist(run["id"],consumable_charges=charges)
-    if node.get("pending_talent_triggers"):
-        node["log"]=(node.get("log") or [])+round_log; return _inc_persist(run["id"],node=node,wrath_current=int(run.get("wrath_current",0))+wrath_gained)
     return _inc_finish_combat_round(run,ch,node,round_log,wrath_gained)
 
 
@@ -6760,7 +7319,7 @@ def _inc_resolve_restore_shock(ch, run, node):
     recovered = min(max_shock - current_shock, rank + tier)
     new_shock = current_shock + recovered
     log = [{"actor": "player", "action": "restore_shock", "shock_recovered": recovered, "wrath_spent": 1}]
-    player_traits = derived_traits(merged)
+    player_traits = _inc_player_traits(ch, run)
     return log + _inc_enemy_turn(node.get("enemies", []), player_traits), new_shock, current_wrath - 1
 
 
@@ -6770,6 +7329,7 @@ def _inc_combat_restore_shock(run, ch):
     node = copy.deepcopy(run["node"])
     round_log, new_shock, wrath_left = _inc_resolve_restore_shock(ch, run, node)
     run = _inc_persist(run["id"], shock_current=new_shock, wrath_current=wrath_left)
+    run = _inc_record_wrath_spend(run, ch, 1)
     return _inc_finish_combat_round(run, ch, node, round_log)
 
 
@@ -6777,6 +7337,7 @@ def _inc_combat_heal(run, ch, spend_wrath=0):
     if not run.get("node") or run["node"].get("type")!="combat": raise ValueError("wrong_node")
     node=copy.deepcopy(run["node"]); round_log,new_wounds,new_shock,charges_left,wrath_left=_inc_resolve_player_heal(ch,run,node,spend_wrath=spend_wrath)
     run=_inc_persist(run["id"],heal_charges=charges_left,wounds_current=new_wounds,shock_current=new_shock,wrath_current=wrath_left)
+    run=_inc_record_wrath_spend(run,ch,int(spend_wrath or 0))
     return _inc_finish_combat_round(run,ch,node,round_log)
 
 
@@ -6787,8 +7348,10 @@ def _inc_combat_flee(run, ch, target_uid, bonus_die=0):
     round_log, wrath_left, escaped = _inc_resolve_player_flee(ch, run, node, target_uid, bonus_die=bonus_die)
     if escaped:
         node["log"] = (node.get("log") or []) + round_log
-        return _inc_persist(run["id"], wrath_current=wrath_left, node=node)
+        run = _inc_persist(run["id"], wrath_current=wrath_left, node=node)
+        return _inc_record_wrath_spend(run, ch, int(bonus_die or 0))
     run = _inc_persist(run["id"], wrath_current=wrath_left)
+    run = _inc_record_wrath_spend(run, ch, int(bonus_die or 0))
     return _inc_finish_combat_round(run, ch, node, round_log)
 
 
@@ -7078,7 +7641,9 @@ def _inc_render_hud(ch, run):
     merged=_inc_merge_character(ch,run); traits=derived_traits(merged); adapters=_inc_talent_adapters(ch,run)
     st.markdown(f"<div class='inc-identity'><div class='inc-kicker'>OPERATIVE RECORD // ACTIVE DEPLOYMENT</div><div class='inc-hero-name'>{html.escape(str(ch.get('name') or 'Unnamed'))}</div><div class='inc-hero-sub'>{html.escape(str(ch.get('archetype') or ch.get('species') or 'Operative'))} · TIER {int(ch.get('tier',1) or 1)} · RANK {int(ch.get('rank',1) or 1)} · STATUS: DEPLOYED</div></div>",unsafe_allow_html=True)
     wounds_pct=100.0*max(0,int(run['wounds_current'] or 0))/max(1,int(run['wounds_max'] or 1)); shock_pct=100.0*max(0,int(run['shock_current'] or 0))/max(1,int(run['shock_max'] or 1)); wounds_hue=max(0.0,min(120.0,wounds_pct*1.2))
-    st.markdown(f"<div class='inc-player-vitals'><div class='inc-player-vital wounds' style='--pv-pct:{wounds_pct:.1f}%;--pv-hue:{wounds_hue:.1f}'><b>{run['wounds_current']}/{run['wounds_max']}</b><span class='pv-label'>WOUNDS · LIFE</span></div><div class='inc-player-vital shock' style='--pv-pct:{shock_pct:.1f}%'><b>{run['shock_current']}/{run['shock_max']}</b><span class='pv-label'>SHOCK</span></div></div><div class='inc-hud'><div class='inc-chip wrath'><b>{run['wrath_current']} ∞</b><small>WRATH</small></div><div class='inc-chip'><b>{run['xp']}</b><small>RUN XP</small></div><div class='inc-chip'><b>{run['loop_no']}</b><small>LOOP</small></div><div class='inc-chip'><b>{run['bosses_cleared']}</b><small>CHAMPIONS</small></div><div class='inc-chip'><b>{run['heal_charges']}</b><small>MEDICAE</small></div><div class='inc-chip'><b>{traits['Defence']}/{traits['Resilience']}</b><small>DEF / RES</small></div></div>",unsafe_allow_html=True)
+    armour_current, armour_max = _inc_armour_durability(ch, run)
+    armour_label = f"{armour_current}/{armour_max}" if armour_max else "NONE"
+    st.markdown(f"<div class='inc-player-vitals'><div class='inc-player-vital wounds' style='--pv-pct:{wounds_pct:.1f}%;--pv-hue:{wounds_hue:.1f}'><b>{run['wounds_current']}/{run['wounds_max']}</b><span class='pv-label'>WOUNDS · LIFE</span></div><div class='inc-player-vital shock' style='--pv-pct:{shock_pct:.1f}%'><b>{run['shock_current']}/{run['shock_max']}</b><span class='pv-label'>SHOCK</span></div><div class='inc-player-vital armour'><b>{armour_label}</b><span class='pv-label'>ARMOUR DURABILITY</span></div></div><div class='inc-hud'><div class='inc-chip wrath'><b>{run['wrath_current']} ∞</b><small>WRATH</small></div><div class='inc-chip'><b>{run['xp']}</b><small>RUN XP</small></div><div class='inc-chip'><b>{run['loop_no']}</b><small>LOOP</small></div><div class='inc-chip'><b>{run['bosses_cleared']}</b><small>CHAMPIONS</small></div><div class='inc-chip'><b>{run['heal_charges']}</b><small>MEDICAE</small></div><div class='inc-chip'><b>{traits['Defence']}/{traits['Resilience']}</b><small>DEF / RES</small></div></div>",unsafe_allow_html=True)
     track=''.join(f"<div class='inc-stage {'now' if s==run['stage'] else ''}'><span>{'✠' if s==run['stage'] else '·'}</span>{INC_STAGE_LABELS[s]}</div>" for s in INC_SEQUENCE)
     st.markdown(f"<div class='inc-track'>{track}</div>",unsafe_allow_html=True)
     with st.expander(f"TALENT CODEX · {len(adapters)}",expanded=False):
@@ -7098,6 +7663,21 @@ def _inc_render_log(log):
             continue
         if e.get("action") == "talent_trigger":
             lines.append(f"<div class='inc-log-line player'><b>Blood Must Die</b> marks {html.escape(str(e.get('target_name','the target')))} with <b>Bleeding [{int(e.get('amount',0))}]</b>.</div>")
+            continue
+        if e.get("action") == "attack" and e.get("talent_bleeding"):
+            lines.append(f"<div class='inc-log-line player'><b>{html.escape(str(e.get('talent_bleeding')))}</b> Bleeding from Incursion Talent.</div>")
+        if e.get("action") == "attack" and e.get("enemy_armour_damage"):
+            lines.append(f"<div class='inc-log-line player'><b>Enemy armour</b> loses {int(e.get('enemy_armour_damage',0))} durability from a Critical Hit.</div>")
+        if e.get("action") == "weapon_damage":
+            lines.append(f"<div class='inc-log-line system'><b>{html.escape(str(e.get('weapon','Weapon')))}</b> loses 1 durability from the Wrath Die. "
+                         f"Durability {int(e.get('durability_current',0))}/{int(e.get('durability_max',0))}.</div>")
+            continue
+        if e.get("action") == "armour_damage":
+            lines.append(f"<div class='inc-log-line enemy'><b>Armour</b> loses {int(e.get('amount',0))} durability from an enemy critical. "
+                         f"Durability {int(e.get('armour_durability',0))}.</div>")
+            continue
+        if e.get("action") == "armour_broken":
+            lines.append("<div class='inc-log-line enemy'><b>Armour broken.</b> The item is lost.</div>")
             continue
         if e.get("action") == "flee":
             result="ESCAPED" if e.get("success") else "FAILED · enemy turn"
@@ -7172,12 +7752,18 @@ def _inc_render_dead(run, ch):
 
 
 def _inc_render_choice_start(run, ch):
+    if int(run.get("loop_no", 1) or 1) == 1:
+        st.markdown("<div class='inc-card'><div class='inc-title'>First Encampment</div>"
+                    "<div class='inc-flavor'>Choose one field acquisition. It costs no XP.</div></div>", unsafe_allow_html=True)
+        if st.button("OPEN FIELD CACHE", key=f"inc_first_cache_{run['id']}", use_container_width=True):
+            _inc_choose_start(run, ch, "first_encampment"); st.rerun()
+        return
     st.markdown("<div class='inc-card'><div class='inc-title'>Encampment</div>"
                 "<div class='inc-flavor'>A brief respite before pressing on.</div></div>", unsafe_allow_html=True)
     c1, c2 = st.columns(2)
     with c1:
         st.markdown("<div class='inc-card'><b>Rest</b><br><span style='font-size:.8rem;opacity:.75'>"
-                    "Fully recover Shock and 25% of max Wounds, then a moment to train.</span></div>",
+                    "Fully recover Shock and 25% of max Wounds. Armour recovers 25-30% durability and weapons recover 25-100%.</span></div>",
                     unsafe_allow_html=True)
         if st.button("Rest", key="inc_rest", use_container_width=True):
             _inc_choose_start(run, ch, "rest"); st.rerun()
@@ -7247,9 +7833,17 @@ def _inc_render_rest_upgrade(run, ch):
 
 
 def _inc_render_shop(run, ch, node):
-    st.markdown(f"<div class='inc-card'><div class='inc-title'>Supplies</div>"
-                f"<div class='inc-flavor'>Available XP: <b>{run['xp']}</b></div></div>", unsafe_allow_html=True)
+    if node.get("subtype") == "first_encampment":
+        st.markdown("<div class='inc-card'><div class='inc-title'>First Encampment</div>"
+                    "<div class='inc-flavor'>Choose ONE acquisition. Cost: 0 XP. The other offers are lost.</div></div>", unsafe_allow_html=True)
+    else:
+        st.markdown(f"<div class='inc-card'><div class='inc-title'>Supplies</div>"
+                    f"<div class='inc-flavor'>Available XP: <b>{run['xp']}</b></div></div>", unsafe_allow_html=True)
     offers = node.get("offers") or []
+    if node.get("subtype") == "first_encampment" and not offers:
+        offers = _inc_generate_first_encampment_offers(ch, run)
+        node = dict(node); node["offers"] = offers
+        _inc_persist(run["id"], node=node)
     type_label = {"attribute": "Attribute", "wargear": "Wargear", "talent": "Talent",
                   "power": "Psychic Power", "heal_charge": "Supply", "keyword": "Keyword"}
     if not offers:
@@ -7270,8 +7864,9 @@ def _inc_render_shop(run, ch, node):
                     except ValueError:
                         pass
                     st.rerun()
-    if st.button("Continue", key="inc_shop_leave", use_container_width=True):
-        _inc_shop_leave(run, ch); st.rerun()
+    if node.get("subtype") != "first_encampment":
+        if st.button("Continue", key="inc_shop_leave", use_container_width=True):
+            _inc_shop_leave(run, ch); st.rerun()
 
 
 def _inc_wrath_spend_control(run_id, current, key_prefix, label="WRATH", compact=False):
@@ -7328,7 +7923,7 @@ def _inc_render_combat(run, ch, node):
                 f"<div class='en'>{html.escape(e['name'])}</div>"
                 f"<div class='et'>TIER {e['tier']} · {html.escape(e['weapon_name'])}</div>"
                 f"<div class='inc-npc-vitals'><span class='inc-vital wounds' style='--vital-pct:{wounds_pct:.1f}%;--vital-pct-num:{wounds_pct/100:.3f};--vital-color:#b23a35'><b>{wounds_cur}/{wounds_max}</b><span class='inc-vital-label'>WOUNDS · LIFE</span></span><span class='inc-vital shock' style='--vital-pct:{shock_pct:.1f}%;--vital-pct-num:{shock_pct/100:.3f};--vital-color:hsl(270,55%,{shock_light:.1f}%)'><b>{shock_cur}/{shock_max}</b><span class='inc-vital-label'>SHOCK</span></span><span><b>{e.get('wrath_current',0)}</b>WRATH</span></div>"
-                f"<div class='inc-npc-def'>DEF {e['defence']} · RES {e['resilience']} · SPD {e.get('speed',1)}</div>"
+                f"<div class='inc-npc-def'>DEF {e['defence']} · RES {e['resilience']} · SPD {e.get('speed',1)}" + (f" · ARM DUR {int(e.get('armour_durability_current',0))}/{int(e.get('armour_durability_max',0))}" if int(e.get('armour_durability_max',0) or 0) > 0 else "") + "</div>"
                 f"<div class='inc-vox'><span class='vox-label'>VOX LINK</span><span class='vox-wave'><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class='vox-state'>{('LOCKED' if e['uid'] in selected_targets else 'ACTIVE')}</span></div>"
                 f"<div class='inc-enemy-status'>{bleed_html}</div></div>", unsafe_allow_html=True)
             if e["alive"] and not node.get("resolved"):
@@ -7355,7 +7950,7 @@ def _inc_render_combat(run, ch, node):
             weapons=_inc_usable_weapons(ch,run); keys=[w["key"] for w in weapons]; wk=f"inc_weapon_{run['id']}"
             if st.session_state.get(wk) not in keys: st.session_state[wk]=keys[0]
             def wl(k):
-                w=next(w for w in weapons if w["key"]==k); return f"{w['name']} · {w['damage']} DMG · +{int(w.get('ed',0) or 0)} ED · AP {int(w.get('ap',0) or 0)}"
+                w=next(w for w in weapons if w["key"]==k); return f"{w['name']} · {w['damage']} DMG · DUR {int(w.get('durability_current',0))}/{int(w.get('durability_max',0))} · +{int(w.get('ed',0) or 0)} ED · AP {int(w.get('ap',0) or 0)}"
             c1,c2=st.columns([2,1]); c1.selectbox("Weapon",keys,key=wk,format_func=wl); c2.markdown(f"<div class='inc-mini-readout'><b>{len(selected_targets)}</b><span>LOCKED</span></div>",unsafe_allow_html=True)
             spend=0
             if int(run.get("wrath_current",0))>0:
@@ -7395,6 +7990,34 @@ def _inc_render_combat(run, ch, node):
                 st.rerun()
     _inc_render_log(node.get("log"))
 
+
+def _inc_render_loot(run, ch, node):
+    offer = node.get("offer") or {}
+    title = "Champion Spoils" if node.get("subtype") == "boss" else "Ambush Spoils"
+    st.markdown(f"<div class='inc-card'><div class='inc-title'>{title}</div>"
+                f"<div class='inc-flavor'>A usable item remains among the battlefield wreckage.</div>"
+                f"<div class='inc-offer'><div class='ot'>Wargear</div><div class='on'>{html.escape(str(offer.get('name','Item')))}</div>"
+                f"<div class='od'>{html.escape(str(offer.get('detail','')))}</div><div class='oc'>FREE</div></div></div>", unsafe_allow_html=True)
+    if st.button("TAKE ITEM", key=f"inc_take_loot_{run['id']}", use_container_width=True):
+        try: _inc_loot_take(run, ch)
+        except ValueError as exc: st.error(str(exc).replace('_',' ').title())
+        st.rerun()
+
+def _inc_render_loot_choice(run, ch, node):
+    offer = node.get("offer") or {}
+    st.markdown("<div class='inc-card'><div class='inc-title'>Ambush Aftermath</div>"
+                "<div class='inc-flavor'>The field is quiet. Recover now, or take what the ambushers left behind.</div></div>", unsafe_allow_html=True)
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown("<div class='inc-card'><b>REST</b><br><span style='font-size:.8rem;opacity:.75'>Recover 25% Wounds, all Shock, and repair durability.</span></div>", unsafe_allow_html=True)
+        if st.button("REST", key=f"inc_ambush_rest_{run['id']}", use_container_width=True):
+            _inc_loot_rest(run, ch); st.rerun()
+    with c2:
+        st.markdown(f"<div class='inc-card'><b>ITEM</b><br><span style='font-size:.8rem;opacity:.75'>{html.escape(str(offer.get('name','Item')))}</span></div>", unsafe_allow_html=True)
+        if st.button("TAKE ITEM", key=f"inc_ambush_item_{run['id']}", use_container_width=True):
+            try: _inc_loot_take_and_continue(run, ch)
+            except ValueError as exc: st.error(str(exc).replace('_',' ').title())
+            st.rerun()
 
 def _inc_render_reward(run, ch, node):
     st.markdown(f"<div class='inc-card'><div class='inc-title'>Spoils</div>"
@@ -7545,6 +8168,10 @@ def incursion_view():
         _inc_render_combat(run, ch, node)
     elif ntype == "reward":
         _inc_render_reward(run, ch, node)
+    elif ntype == "loot":
+        _inc_render_loot(run, ch, node)
+    elif ntype == "loot_choice":
+        _inc_render_loot_choice(run, ch, node)
     elif ntype == "pvp_choice":
         _inc_render_pvp_choice(run, ch, node)
     elif ntype == "pvp_waiting":

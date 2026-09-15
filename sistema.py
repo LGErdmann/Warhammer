@@ -1176,12 +1176,12 @@ def init_db():
         consumable_charges TEXT DEFAULT '{}', equipped_armor_key TEXT DEFAULT '', free_upgrade_used INTEGER DEFAULT 0,
         wounds_current INTEGER, wounds_max INTEGER, shock_current INTEGER, shock_max INTEGER,
         wrath_current INTEGER, wrath_max INTEGER,
-        pending_boss3_pvp INTEGER DEFAULT 0, node TEXT, created_at TEXT, ended_at TEXT, death_reason TEXT)""")
+        pending_boss3_pvp INTEGER DEFAULT 0, node TEXT, created_at TEXT, ended_at TEXT, death_reason TEXT, xp_earned INTEGER DEFAULT 0)""")
     _ensure_columns(conn, "incursion_run", {
         "consumable_charges": "TEXT DEFAULT '{}'", "bonus_skills": "TEXT DEFAULT '{}'",
         "equipped_armor_key": "TEXT DEFAULT ''", "free_upgrade_used": "INTEGER DEFAULT 0",
         "wounds_current": "INTEGER", "wounds_max": "INTEGER", "shock_current": "INTEGER", "shock_max": "INTEGER",
-        "wrath_current": "INTEGER", "wrath_max": "INTEGER",
+        "wrath_current": "INTEGER", "wrath_max": "INTEGER", "xp_earned": "INTEGER DEFAULT 0",
     })
     c.execute("""CREATE TABLE IF NOT EXISTS incursion_pvp_queue(
         id INTEGER PRIMARY KEY AUTOINCREMENT, run_id INTEGER NOT NULL, character_id INTEGER NOT NULL,
@@ -3816,7 +3816,16 @@ def inject_theme():
     .inc-stage{ flex:0 0 auto; padding:4px 10px; border-radius:3px; font-size:.66rem; letter-spacing:.05em;
         text-transform:uppercase; background:var(--panel2); border:1px solid #3a2e18; color:var(--bone); opacity:.55; white-space:nowrap; }
     .inc-stage.now{ border-color:var(--blood2); opacity:1; color:#fff; background:linear-gradient(var(--blood),var(--blood2)); }
-    .inc-card{ border:1px solid #4a3a20; border-radius:6px; background:var(--panel); padding:20px; margin-bottom:14px; }
+    
+.inc-ranking { margin-top: .4rem; border: 1px solid rgba(170, 20, 20, .35); }
+.inc-rank-row { display:grid; grid-template-columns: 48px 1fr 1fr auto; gap:12px; align-items:center; padding:10px 14px; border-bottom:1px solid rgba(170,20,20,.18); background:rgba(20,15,12,.55); }
+.inc-rank-row:last-child { border-bottom:0; }
+.inc-rank-pos { font-weight:800; color:#b99a70; text-align:center; }
+.inc-rank-name { font-weight:700; letter-spacing:.04em; }
+.inc-rank-user { opacity:.62; font-size:.82rem; }
+.inc-rank-xp { font-weight:800; color:#d2b06f; white-space:nowrap; }
+@media (max-width: 700px) { .inc-rank-row { grid-template-columns: 36px 1fr auto; } .inc-rank-user { display:none; } }
+.inc-card{ border:1px solid #4a3a20; border-radius:6px; background:var(--panel); padding:20px; margin-bottom:14px; }
     .inc-title{ font-family:'Cinzel',serif; color:#e8a0a0; text-transform:uppercase; letter-spacing:.08em; font-size:1rem; margin:0 0 6px; }
     .inc-flavor{ color:var(--bone); opacity:.7; font-size:.82rem; font-style:italic; margin-bottom:14px; }
     .inc-enemy{ border:1px solid #3a2e18; border-radius:4px; padding:10px; background:var(--panel2); }
@@ -5753,7 +5762,7 @@ def _inc_decode_run(row):
     # Never let NULL reach combat arithmetic.
     for f in (
         "wounds_current", "wounds_max", "shock_current", "shock_max",
-        "wrath_current", "wrath_max", "xp", "loop_no", "bosses_cleared",
+        "wrath_current", "wrath_max", "xp", "xp_earned", "loop_no", "bosses_cleared",
         "heal_charges",
     ):
         value = r.get(f)
@@ -6354,10 +6363,10 @@ def _inc_start_run(ch):
     conn = get_conn()
     cur = conn.execute(
         "INSERT INTO incursion_run(character_id,status,stage,loop_no,wounds_current,wounds_max,"
-        "shock_current,shock_max,wrath_current,wrath_max,node,created_at) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+        "shock_current,shock_max,wrath_current,wrath_max,xp,xp_earned,node,created_at) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (ch["id"], "active", "start", 1, pools["wounds_max"], pools["wounds_max"],
-         pools["shock_max"], pools["shock_max"], pools["wrath_max"], pools["wrath_max"],
+         pools["shock_max"], pools["shock_max"], pools["wrath_max"], pools["wrath_max"], 0, 0,
          json.dumps({"type": "choice_start"}), now_iso()))
     conn.commit()
     new_id = cur.lastrowid
@@ -6436,7 +6445,7 @@ def _inc_shop_leave(run, ch):
 def _inc_reward_continue(run, ch):
     if not run.get("node") or run["node"].get("type") != "reward":
         raise ValueError("wrong_node")
-    run = _inc_persist(run["id"], xp=run["xp"] + run["node"]["xp_bonus"])
+    run = _inc_persist(run["id"], xp=run["xp"] + run["node"]["xp_bonus"], xp_earned=run.get("xp_earned", 0) + run["node"]["xp_bonus"])
     return _inc_advance(run, ch)
 
 
@@ -6532,7 +6541,7 @@ def _inc_finish_combat_round(run, ch, node, round_log, wrath_gained=0):
             if bosses_cleared % 3 == 0:
                 pending_boss3 = True
         return _inc_persist(run["id"], shock_current=new_shock, wounds_current=new_wounds, wrath_current=new_wrath,
-                             xp=run["xp"] + node["reward_xp"], node=node,
+                             xp=run["xp"] + node["reward_xp"], xp_earned=run.get("xp_earned", 0) + node["reward_xp"], node=node,
                              bosses_cleared=bosses_cleared, pending_boss3_pvp=pending_boss3)
 
     return _inc_persist(run["id"], shock_current=new_shock, wounds_current=new_wounds, wrath_current=new_wrath, node=node)
@@ -6680,7 +6689,7 @@ def _inc_pvp_queue(run, ch):
         return _inc_persist(run["id"], node={"type": "pvp_waiting", "checkpoint": checkpoint, "queue_id": outcome["queue_id"]})
     new_wounds = outcome["hp"]
     updated = _inc_persist(
-        run["id"], wounds_current=new_wounds, xp=run["xp"] + outcome.get("xp_gained", 0),
+        run["id"], wounds_current=new_wounds, xp=run["xp"] + outcome.get("xp_gained", 0), xp_earned=run.get("xp_earned", 0) + outcome.get("xp_gained", 0),
         node={"type": "pvp_result", "won": outcome["won"], "opponent_name": outcome["opponent_name"],
               "log": outcome["log"], "xp_gained": outcome.get("xp_gained", 0)})
     if new_wounds <= 0:
@@ -6708,7 +6717,7 @@ def _inc_resolve_waiting_pvp(run, ch):
         return run
     new_wounds = result["hp"]
     updated = _inc_persist(
-        run["id"], wounds_current=new_wounds, xp=run["xp"] + result.get("xp_gained", 0),
+        run["id"], wounds_current=new_wounds, xp=run["xp"] + result.get("xp_gained", 0), xp_earned=run.get("xp_earned", 0) + result.get("xp_gained", 0),
         node={"type": "pvp_result", "won": result["won"], "opponent_name": result["opponent_name"],
               "log": result["log"], "xp_gained": result.get("xp_gained", 0)})
     if new_wounds <= 0:
@@ -6716,24 +6725,58 @@ def _inc_resolve_waiting_pvp(run, ch):
     return updated
 
 
-def _inc_leaderboard(limit=50):
+def _inc_leaderboard(limit=10):
+    """Return each player's best single-run XP total, highest first."""
     conn = get_conn()
     rows = conn.execute("""
-        SELECT c.id, c.name, c.species, c.archetype, r.status, r.loop_no, r.bosses_cleared, r.xp
-        FROM incursion_run r JOIN characters c ON c.id = r.character_id
-        ORDER BY r.id DESC
+        SELECT u.id AS user_id, u.username, c.name AS character_name,
+               r.xp_earned, r.loop_no, r.bosses_cleared, r.status, r.id AS run_id
+        FROM incursion_run r
+        JOIN characters c ON c.id = r.character_id
+        JOIN users u ON u.id = c.user_id
+        WHERE u.role != 'spectator'
+          AND COALESCE(r.xp_earned, 0) > 0
+        ORDER BY COALESCE(r.xp_earned, 0) DESC, r.loop_no DESC, r.id ASC
     """).fetchall()
     conn.close()
-    best_by_char = {}
+
+    # One entry per player: only their highest-XP run counts.
+    best = {}
     for row in rows:
         r = dict(row)
-        key = r["id"]
-        score = r["bosses_cleared"] * 1000 + r["loop_no"]
-        if key not in best_by_char or score > best_by_char[key]["_score"]:
-            r["_score"] = score
-            best_by_char[key] = r
-    ranked = sorted(best_by_char.values(), key=lambda r: -r["_score"])
+        uid = r["user_id"]
+        if uid not in best:
+            best[uid] = r
+    ranked = sorted(best.values(), key=lambda r: (-int(r["xp_earned"] or 0), -int(r["loop_no"] or 0), int(r["run_id"])))
+    for i, r in enumerate(ranked[:limit], 1):
+        r["rank"] = i
     return ranked[:limit]
+
+
+def _inc_render_login_leaderboard():
+    ranking = _inc_leaderboard(10)
+    st.markdown(
+        "<div class='inc-card' style='margin-top:2rem'>"
+        "<div class='inc-title'>✠ HALL OF ASCENSION ✠</div>"
+        "<div class='inc-flavor'>The greatest single-run XP hauls recorded in the Incursion.</div>"
+        "</div>", unsafe_allow_html=True)
+    if not ranking:
+        st.caption("No Incursion runs have earned XP yet. Be the first to descend.")
+        return
+
+    rows = []
+    for r in ranking:
+        medal = {1: "I", 2: "II", 3: "III"}.get(r["rank"], str(r["rank"]))
+        name = r.get("character_name") or r.get("username") or "Unknown"
+        rows.append(
+            f"<div class='inc-rank-row'>"
+            f"<span class='inc-rank-pos'>{medal}</span>"
+            f"<span class='inc-rank-name'>{html.escape(str(name))}</span>"
+            f"<span class='inc-rank-user'>{html.escape(str(r.get('username') or ''))}</span>"
+            f"<span class='inc-rank-xp'>{int(r['xp_earned'])} XP</span>"
+            f"</div>"
+        )
+    st.markdown("<div class='inc-ranking'>" + "".join(rows) + "</div>", unsafe_allow_html=True)
 
 
 # ---- UI ------------------------------------------------------------------
@@ -7114,6 +7157,7 @@ def incursion_login_page():
                 st.session_state.user = user; st.rerun()
             else:
                 st.error("Access denied.")
+    _inc_render_login_leaderboard()
     st.markdown("<div class='foot'>THE EMPEROR PROTECTS</div>", unsafe_allow_html=True)
 
 

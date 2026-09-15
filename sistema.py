@@ -1,4 +1,4 @@
-﻿"""
+"""
 
 """
 
@@ -50,6 +50,47 @@ CONDITION_COLOR = {
 }
 POSITIVE_STATUSES = ["Cover", "Stealth"]
 POSITIVE_STATUS_COLOR = {"Cover": "#2e7d32", "Stealth": "#1565c0", "Cameleoline": "#6a1b9a"}
+
+INC_TALENT_ADAPTERS = {
+    "blood must die": {"kind": "trigger", "rule": "After an attack roll, choose rolled 6s to convert into Bleeding on the target.", "trigger": "attack_sixes_to_bleeding"},
+    "touched by fate": {"kind": "resource", "rule": "+Rank maximum Wrath in the Incursion.", "trigger": "wrath_cap"},
+}
+
+def _inc_talent_catalog_row(talent):
+    name = str(talent.get("name", "") if isinstance(talent, dict) else talent).strip()
+    try: cid = int(talent.get("craft_id", -1) or -1) if isinstance(talent, dict) else -1
+    except Exception: cid = -1
+    rows = list_craft_items("talent", active_only=False)
+    if cid > 0:
+        row = next((r for r in rows if int(r.get("id", -1)) == cid), None)
+        if row: return row
+    return next((r for r in rows if str(r.get("name", "")).strip().lower() == name.lower()), None)
+
+def _inc_talent_adapters(ch, run=None):
+    merged = _inc_merge_character(ch, run or {}) if run else ch
+    out = []
+    for talent in normalize_talents(merged.get("talents", [])):
+        name = str(talent.get("name", "")).strip(); low = name.lower()
+        row = _inc_talent_catalog_row(talent)
+        details = craft_details(row) if row else _gear_details_dict(talent.get("details", {}))
+        modifiers = craft_modifiers(row) if row else {}
+        adapter = INC_TALENT_ADAPTERS.get(low)
+        if adapter:
+            out.append({"name": name, "status": "active", "rule": adapter["rule"], "trigger": adapter["trigger"], "modifiers": modifiers})
+        elif modifiers:
+            mods = ", ".join(f"{k.replace('_',' ').title()} {int(v):+d}" for k,v in modifiers.items())
+            out.append({"name": name, "status": "passive", "rule": f"Passive sheet effect: {mods}.", "trigger": "", "modifiers": modifiers})
+        else:
+            effect = str((row or {}).get("effect", talent.get("effect", "")) or "").strip()
+            out.append({"name": name, "status": "source" if effect else "manual",
+                        "rule": f"Roguelike adaptation: {effect}" if effect else "No executable Incursion rule registered yet.",
+                        "trigger": "", "modifiers": modifiers, "details": details})
+    return out
+
+def _inc_has_talent(ch, name, run=None):
+    target = str(name).strip().lower()
+    merged = _inc_merge_character(ch, run or {}) if run else ch
+    return any(str(x.get("name", "")).strip().lower() == target for x in normalize_talents(merged.get("talents", [])))
 
 _COND_CUSTOM = "__custom__"
 PLAYER_SPECIES = ["Human", "Adeptus Astartes", "Primaris Astartes", "Aeldari", "Ork"]
@@ -1181,13 +1222,14 @@ def init_db():
         extra_powers TEXT DEFAULT '[]', extra_keywords TEXT DEFAULT '[]', heal_charges INTEGER DEFAULT 1,
         consumable_charges TEXT DEFAULT '{}', equipped_armor_key TEXT DEFAULT '', free_upgrade_used INTEGER DEFAULT 0,
         wounds_current INTEGER, wounds_max INTEGER, shock_current INTEGER, shock_max INTEGER,
-        wrath_current INTEGER, wrath_max INTEGER,
+        wrath_current INTEGER, wrath_max INTEGER, incursion_statuses TEXT DEFAULT '{}',
         pending_boss3_pvp INTEGER DEFAULT 0, node TEXT, created_at TEXT, ended_at TEXT, death_reason TEXT, xp_earned INTEGER DEFAULT 0)""")
     _ensure_columns(conn, "incursion_run", {
         "consumable_charges": "TEXT DEFAULT '{}'", "bonus_skills": "TEXT DEFAULT '{}'",
         "equipped_armor_key": "TEXT DEFAULT ''", "free_upgrade_used": "INTEGER DEFAULT 0",
         "wounds_current": "INTEGER", "wounds_max": "INTEGER", "shock_current": "INTEGER", "shock_max": "INTEGER",
         "wrath_current": "INTEGER", "wrath_max": "INTEGER", "xp_earned": "INTEGER DEFAULT 0",
+        "incursion_statuses": "TEXT DEFAULT '{}'",
     })
     c.execute("""CREATE TABLE IF NOT EXISTS incursion_pvp_queue(
         id INTEGER PRIMARY KEY AUTOINCREMENT, run_id INTEGER NOT NULL, character_id INTEGER NOT NULL,
@@ -3887,6 +3929,17 @@ def inject_theme():
     .shock-value{ font-family:'Cinzel',serif; color:var(--bone); opacity:.85; font-size:.78rem; min-width:44px;
         text-align:right; }
 
+    .inq-nav-title{font-family:Cinzel,serif;color:var(--gold2);letter-spacing:.14em;font-size:.7rem;text-align:center;margin:2px 0 9px}
+    .inq-nav-title:after{content:"";display:block;border-bottom:1px solid #4a3a20;margin:7px 0 2px}
+    .inc-combat-header,.inc-identity{border:1px solid #5a4523;background:linear-gradient(135deg,#17110b,#0d0a07);padding:16px 18px;margin:8px 0 12px;box-shadow:0 0 24px rgba(0,0,0,.28)}
+    .inc-kicker{font-size:.63rem;letter-spacing:.24em;color:var(--gold);text-transform:uppercase;font-family:Cinzel,serif}
+    .inc-hero-name{font-family:Cinzel,serif;font-size:1.45rem;color:var(--gold2);letter-spacing:.08em;text-transform:uppercase;margin-top:3px}
+    .inc-hero-sub{font-size:.72rem;letter-spacing:.12em;color:var(--bone);opacity:.62;text-transform:uppercase;margin-top:3px}
+    .inc-action-title{font-family:Cinzel,serif;color:var(--gold2);letter-spacing:.18em;font-size:.8rem;text-align:center;margin-bottom:8px}
+    .inc-status-blood{color:#d65a52;font-weight:700;text-transform:uppercase;letter-spacing:.05em}
+    .inc-talent-reaction{border:1px solid #7b2b2b;background:linear-gradient(135deg,#190b0b,#0d0808);padding:16px;margin:12px 0;box-shadow:0 0 22px rgba(120,0,0,.18)}
+    .inc-talent-card{border-left:3px solid #77633c;background:#14100b;padding:9px 12px;margin:6px 0;border-radius:2px}.inc-talent-card.active{border-left-color:#b23a35}.inc-talent-card.passive{border-left-color:#3e7f5a}.inc-talent-card.manual{border-left-color:#6d5a39;opacity:.7}.inc-talent-card span{display:block;font-size:.72rem;opacity:.72;margin-top:3px;line-height:1.45}
+    .inc-chip small{display:block;font-size:.52rem;letter-spacing:.14em;opacity:.58;margin-top:2px}.inc-chip.wound b{color:#d85a50}.inc-chip.shock b{color:#d4a94c}.inc-chip.wrath b{color:#e8c96a}.inc-enemy{transition:transform .15s ease,border-color .15s ease}.inc-enemy:hover{transform:translateY(-2px);border-color:#80602c}
     /* ============================================================
        RESPONSIVE / MOBILE
        Streamlit has no reliable server-side "is this a phone" signal,
@@ -5757,6 +5810,7 @@ def _inc_decode_run(row):
     r = dict(row)
     r["bonus_attributes"] = _inc_json_field(r.get("bonus_attributes"), {})
     r["bonus_skills"] = _inc_json_field(r.get("bonus_skills"), {})
+    r["incursion_statuses"] = _inc_json_field(r.get("incursion_statuses"), {})
     r["consumable_charges"] = _inc_json_field(r.get("consumable_charges"), {})
     for f in ("extra_wargear", "extra_talents", "extra_powers", "extra_keywords"):
         r[f] = _inc_json_field(r.get(f), [])
@@ -6139,7 +6193,7 @@ def _inc_build_enemy_from_bestiary(entry, loop_no, idx):
         "species": species, "faction": faction, "attributes": attrs,
         "attack_skill": atk_skill, "attack_pool": max(1, round(atk_pool * (1 + (loop_no - 1) * 0.12))),
         "defence": int(traits["Defence"]), "resilience": int(traits["Resilience"]),
-        "speed": int(traits["Speed"]),
+        "speed": int(traits["Speed"]), "statuses": {},
         "wounds_max": int(traits["Max Wounds"]), "wounds_current": int(traits["Max Wounds"]),
         "shock_max": int(traits["Max Shock"]), "shock_current": int(traits["Max Shock"]),
         "weapon_name": weapon["name"] if weapon else (wargear[0] if wargear else "Melee Attack"),
@@ -6175,7 +6229,7 @@ def _inc_build_enemy_from_fallen(row, loop_no, idx):
         "attack_skill": row["attack_skill"],
         "attack_pool": max(1, round(int(row["attack_pool"]) * (1 + (loop_no - 1) * 0.12))),
         "defence": int(traits["Defence"]), "resilience": int(traits["Resilience"]),
-        "speed": int(traits["Speed"]),
+        "speed": int(traits["Speed"]), "statuses": {},
         "wounds_max": int(traits["Max Wounds"]), "wounds_current": int(traits["Max Wounds"]),
         "shock_max": int(traits["Max Shock"]), "shock_current": int(traits["Max Shock"]),
         "weapon_name": row["weapon_name"], "weapon_damage": round(int(row["weapon_damage"]) * scale),
@@ -6253,9 +6307,13 @@ def _inc_generate_offers(ch, run):
                             "effect": row.get("effect", ""), "cost": max(20, int(row.get("cost", 0) or 0) * 4),
                             "label": row["name"], "detail": row.get("effect", "")})
     for row in random.sample(talent_pool, min(6, len(talent_pool))):
+        detail = str(row.get("effect", "") or "")
+        adapter = INC_TALENT_ADAPTERS.get(str(row.get("name", "")).strip().lower())
+        if adapter:
+            detail = "✠ INCURSION: " + adapter["rule"]
         candidates.append({"type": "talent", "craft_id": int(row["id"]), "name": row["name"],
                             "effect": row.get("effect", ""), "cost": max(25, int(row.get("cost", 0) or 0) * 3),
-                            "label": row["name"], "detail": row.get("effect", "")})
+                            "label": row["name"], "detail": detail})
     for row in random.sample(power_pool, min(4, len(power_pool))):
         candidates.append({"type": "power", "craft_id": int(row["id"]), "name": row["name"],
                             "effect": row.get("effect", ""), "cost": max(25, int(row.get("cost", 0) or 0) * 3),
@@ -6402,11 +6460,11 @@ def _inc_start_run(ch):
     conn = get_conn()
     cur = conn.execute(
         "INSERT INTO incursion_run(character_id,status,stage,loop_no,wounds_current,wounds_max,"
-        "shock_current,shock_max,wrath_current,wrath_max,xp,xp_earned,node,created_at) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "shock_current,shock_max,wrath_current,wrath_max,xp,xp_earned,incursion_statuses,node,created_at) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (ch["id"], "active", "start", 1, pools["wounds_max"], pools["wounds_max"],
          pools["shock_max"], pools["shock_max"], pools["wrath_max"], pools["wrath_max"], 0, 0,
-         json.dumps({"type": "choice_start"}), now_iso()))
+         json.dumps({}), json.dumps({"type": "choice_start"}), now_iso()))
     conn.commit()
     new_id = cur.lastrowid
     conn.close()
@@ -6518,6 +6576,23 @@ def _inc_enemy_turn(enemies, player_traits):
     return log
 
 
+def _inc_attack_talent_triggers(ch, run, target, rolls):
+    if not _inc_has_talent(ch, "Blood Must Die", run): return []
+    sixes = [i for i, value in enumerate(rolls) if int(value) == 6]
+    if not sixes: return []
+    return [{"type": "blood_must_die", "target_uid": target["uid"], "target_name": target["name"], "dice_indices": sixes}]
+
+def _inc_apply_talent_trigger(node, trigger, selected_indices):
+    if trigger.get("type") != "blood_must_die": return 0
+    target = next((e for e in node.get("enemies", []) if e.get("uid") == trigger.get("target_uid")), None)
+    if not target or not target.get("alive"): return 0
+    selected = [int(i) for i in selected_indices]
+    if not selected: return 0
+    statuses = dict(target.get("statuses") or {})
+    statuses["Bleeding"] = int(statuses.get("Bleeding", 0) or 0) + len(selected)
+    target["statuses"] = statuses
+    return len(selected)
+
 def _inc_resolve_player_attack(ch, run, node, target_uids, weapon, bonus_die=False):
     merged = _inc_merge_character(ch, run)
     skill_name, pool = _inc_best_attack_pool(merged)
@@ -6559,6 +6634,11 @@ def _inc_resolve_player_attack(ch, run, node, target_uids, weapon, bonus_die=Fal
                     "weapon": weapon["name"], "hit": hit, "damage": total_damage, "shock": shock, "wounds": wounds,
                     "damage_rolls": damage_rolls, "target_defeated": not target["alive"],
                     "wrath_crit": critical, "shifted_ed": shiftable if hit else 0})
+        if hit:
+            triggers = _inc_attack_talent_triggers(ch, run, target, rolls)
+            if triggers: node["pending_talent_triggers"] = triggers
+    if node.get("pending_talent_triggers"):
+        return log, wrath_gained
     return log + _inc_enemy_turn(node["enemies"], player_traits), wrath_gained
 
 
@@ -6638,6 +6718,16 @@ def _inc_finish_combat_round(run, ch, node, round_log, wrath_gained=0):
     return _inc_persist(run["id"], shock_current=new_shock, wounds_current=new_wounds, wrath_current=new_wrath, node=node)
 
 
+def _inc_resolve_pending_talent(run, ch, selected_indices):
+    node = copy.deepcopy(run.get("node") or {})
+    triggers = node.get("pending_talent_triggers") or []
+    if not triggers: raise ValueError("no_pending_talent")
+    applied = sum(_inc_apply_talent_trigger(node, t, selected_indices) for t in triggers)
+    node.pop("pending_talent_triggers", None)
+    log = [{"actor":"player","action":"talent_trigger","talent":"Blood Must Die","amount":applied,"target_name":triggers[0].get("target_name","Target")}]
+    log += _inc_enemy_turn(node.get("enemies", []), derived_traits(_inc_merge_character(ch, run)))
+    return _inc_finish_combat_round(run, ch, node, log)
+
 def _inc_combat_attack(run, ch, target_uids, weapon_key, bonus_die=False):
     if not run.get("node") or run["node"].get("type") != "combat":
         raise ValueError("wrong_node")
@@ -6652,6 +6742,9 @@ def _inc_combat_attack(run, ch, target_uids, weapon_key, bonus_die=False):
         run = _inc_persist(run["id"], consumable_charges=charges)
     if bonus_die:
         run = _inc_persist(run["id"], wrath_current=max(0, int(run["wrath_current"]) - 1))
+    if node.get("pending_talent_triggers"):
+        node["log"] = (node.get("log") or []) + round_log
+        return _inc_persist(run["id"], node=node, wrath_current=min(run["wrath_max"], run["wrath_current"] + wrath_gained))
     return _inc_finish_combat_round(run, ch, node, round_log, wrath_gained)
 
 
@@ -6892,26 +6985,13 @@ def _inc_render_login_leaderboard():
 
 # ---- UI ------------------------------------------------------------------
 def _inc_render_hud(ch, run):
-    merged = _inc_merge_character(ch, run)
-    traits = derived_traits(merged)
-    weapon = _inc_best_weapon(merged)
-    _skill_name, _pool = _inc_best_attack_pool(merged)
-    st.markdown(
-        "<div class='inc-hud'>"
-        f"<div class='inc-chip'><b>{run['wounds_current']}/{run['wounds_max']}</b>Wounds</div>"
-        f"<div class='inc-chip'><b>{run['shock_current']}/{run['shock_max']}</b>Shock</div>"
-        f"<div class='inc-chip'><b>{run['wrath_current']}/{run['wrath_max']}</b>Wrath</div>"
-        f"<div class='inc-chip'><b>{run['xp']}</b>Run XP</div>"
-        f"<div class='inc-chip'><b>{run['loop_no']}</b>Loop</div>"
-        f"<div class='inc-chip'><b>{run['bosses_cleared']}</b>Champions Slain</div>"
-        f"<div class='inc-chip'><b>{run['heal_charges']}</b>Heals</div>"
-        f"<div class='inc-chip'><b>{html.escape(weapon['name'])}</b>Dmg {weapon['damage']}</div>"
-        f"<div class='inc-chip'><b>{traits['Defence']}</b>Def · <b>{traits['Resilience']}</b>Res</div>"
-        "</div>", unsafe_allow_html=True)
-    track = "".join(
-        f"<div class='inc-stage {'now' if s == run['stage'] else ''}'>{INC_STAGE_LABELS[s]}</div>" for s in INC_SEQUENCE
-    )
-    st.markdown(f"<div class='inc-track'>{track}</div>", unsafe_allow_html=True)
+    merged=_inc_merge_character(ch,run); traits=derived_traits(merged); adapters=_inc_talent_adapters(ch,run)
+    st.markdown(f"<div class='inc-identity'><div class='inc-kicker'>ADEPTUS DOSSIER</div><div class='inc-hero-name'>{html.escape(str(ch.get('name') or 'Unnamed'))}</div><div class='inc-hero-sub'>{html.escape(str(ch.get('archetype') or ch.get('species') or 'Operative'))} · Tier {int(ch.get('tier',1) or 1)} · Rank {int(ch.get('rank',1) or 1)}</div></div>",unsafe_allow_html=True)
+    st.markdown(f"<div class='inc-hud'><div class='inc-chip wound'><b>{run['wounds_current']}/{run['wounds_max']}</b><small>WOUNDS</small></div><div class='inc-chip shock'><b>{run['shock_current']}/{run['shock_max']}</b><small>SHOCK</small></div><div class='inc-chip wrath'><b>{run['wrath_current']}/{run['wrath_max']}</b><small>WRATH</small></div><div class='inc-chip'><b>{run['xp']}</b><small>RUN XP</small></div><div class='inc-chip'><b>{run['loop_no']}</b><small>LOOP</small></div><div class='inc-chip'><b>{run['bosses_cleared']}</b><small>CHAMPIONS</small></div><div class='inc-chip'><b>{run['heal_charges']}</b><small>MEDICAE</small></div><div class='inc-chip'><b>{traits['Defence']}/{traits['Resilience']}</b><small>DEF / RES</small></div></div>",unsafe_allow_html=True)
+    track=''.join(f"<div class='inc-stage {'now' if s==run['stage'] else ''}'><span>{'✠' if s==run['stage'] else '·'}</span>{INC_STAGE_LABELS[s]}</div>" for s in INC_SEQUENCE)
+    st.markdown(f"<div class='inc-track'>{track}</div>",unsafe_allow_html=True)
+    with st.expander(f"✠ TALENT CODEX · {len(adapters)}",expanded=False):
+        for t in adapters: st.markdown(f"<div class='inc-talent-card {t.get('status','manual')}'><b>{html.escape(t['name'])}</b><span>{html.escape(t['rule'])}</span></div>",unsafe_allow_html=True)
 
 
 def _inc_render_log(log):
@@ -6924,6 +7004,13 @@ def _inc_render_log(log):
         if e.get("action") == "recover_shock":
             lines.append(f"<div class='inc-log-line system'>You spend 1 Wrath and recover "
                          f"<b>{e['amount']}</b> Shock.</div>")
+            continue
+        if e.get("action") == "talent_trigger":
+            lines.append(f"<div class='inc-log-line player'><b>Blood Must Die</b> marks {html.escape(str(e.get('target_name','the target')))} with <b>Bleeding [{int(e.get('amount',0))}]</b>.</div>")
+            continue
+        if e.get("action") == "flee":
+            result="ESCAPED" if e.get("success") else "FAILED — enemy turn"
+            lines.append(f"<div class='inc-log-line player'><b>You</b> contest Speed against {html.escape(str(e.get('target_name','the target')))} — {e.get('icons',0)} vs {e.get('target_icons',0)} Icons · <b>{result}</b></div>")
             continue
         who = "You" if e["actor"] == "player" else e.get("actor_name", "Enemy")
         cls = "player" if e["actor"] == "player" else "enemy"
@@ -7097,122 +7184,60 @@ def _inc_render_shop(run, ch, node):
 
 
 def _inc_render_combat(run, ch, node):
-    diff_label = {"easy": "Easy Patrol", "medium": "Ambush", "hard": "Front Line", "boss": "ENEMY CHAMPION"}[node["difficulty"]]
-    st.markdown(
-        f"<div class='inc-card'><div class='inc-title'>{diff_label}</div>"
-        f"<div class='inc-flavor'>{'Multiple enemies. Selecting several at once spreads your attack thinner on each.' if len(node['enemies']) > 1 else 'A single enemy approaches.'}</div></div>",
-        unsafe_allow_html=True)
-
+    diff_label = {"easy":"PATROL","medium":"AMBUSH","hard":"FRONT LINE","boss":"ENEMY CHAMPION"}[node["difficulty"]]
+    merged = _inc_merge_character(ch, run); traits = derived_traits(merged)
+    live = [e for e in node["enemies"] if e["alive"]]
+    st.markdown(f"<div class='inc-combat-header'><div class='inc-kicker'>THREAT CONTACT</div><div class='inc-title'>{diff_label}</div><div class='inc-flavor'>One action. One decision. Survive the turn.</div></div>",unsafe_allow_html=True)
     if node.get("resolved"):
-        if node.get("fled"):
-            st.markdown("<div class='inc-banner-win'>ESCAPED — no XP awarded</div>", unsafe_allow_html=True)
-        else:
-            st.markdown(f"<div class='inc-banner-win'>VICTORY — +{node['reward_xp']} XP</div>", unsafe_allow_html=True)
-
-    sel_key = f"inc_targets_{run['id']}_{run['stage']}"
-    selected = st.session_state.setdefault(sel_key, set())
-
-    if not node.get("resolved"):
-        weapon_options = _inc_usable_weapons(ch, run)
-        wkey = f"inc_weapon_{run['id']}"
-        keys = [w["key"] for w in weapon_options]
-        if st.session_state.get(wkey) not in keys:
-            st.session_state[wkey] = keys[0]
-
-        def _weapon_label(k):
-            w = next(w for w in weapon_options if w["key"] == k)
-            tag = f" (x{w['remaining']} left)" if w["consumable"] else ""
-            ap = int(w.get("ap", 0) or 0)
-            ap_label = f"AP {ap}" if ap else "AP –"
-            return f"{w['name']} — Dmg {w['damage']} +{int(w.get('ed', 0) or 0)} ED · {ap_label}{tag}"
-
-        st.selectbox("Weapon", keys, key=wkey, format_func=_weapon_label)
-
-    n_cols = min(4, len(node["enemies"])) or 1
-    cols = st.columns(n_cols)
-    for i, enemy in enumerate(node["enemies"]):
-        with cols[i % n_cols]:
-            status = "dead" if not enemy["alive"] else ""
-            st.markdown(
-                f"<div class='inc-enemy {status}'>"
-                f"<div class='en'>{html.escape(enemy['name'])}</div>"
-                f"<div class='et'>Tier {enemy['tier']} · {html.escape(enemy['weapon_name'])}</div>"
-                f"<div class='inc-npc-vitals'>"
-                f"<span><b>{enemy['wounds_current']}/{enemy['wounds_max']}</b> Wounds</span>"
-                f"<span><b>{enemy['shock_current']}/{enemy['shock_max']}</b> Shock</span>"
-                f"</div>"
-                f"<div class='inc-npc-def'>Def {enemy['defence']} · Res {enemy['resilience']} · Spd {enemy.get('speed', 1)}</div>"
-                f"</div>", unsafe_allow_html=True)
-            if enemy["alive"] and not node.get("resolved"):
-                checked = st.checkbox("Target", key=f"inc_tgt_{run['id']}_{enemy['uid']}", value=enemy["uid"] in selected)
-                if checked:
-                    selected.add(enemy["uid"])
-                else:
-                    selected.discard(enemy["uid"])
-
+        msg = "✠ ESCAPED INTO THE DARK — NO XP AWARDED" if node.get("fled") else f"✠ VICTORY — +{node['reward_xp']} XP"
+        st.markdown(f"<div class='inc-banner-win'>{msg}</div>",unsafe_allow_html=True)
+    cols=st.columns(min(3,max(1,len(node["enemies"]))))
+    for i,e in enumerate(node["enemies"]):
+        with cols[i%len(cols)]:
+            bleed=int((e.get("statuses") or {}).get("Bleeding",0) or 0)
+            b=f" · <span class='inc-status-blood'>Bleeding {bleed}</span>" if bleed else ""
+            st.markdown(f"<div class='inc-enemy {'dead' if not e['alive'] else ''}'><div class='en'>{html.escape(e['name'])}</div><div class='et'>Tier {e['tier']} · {html.escape(e['weapon_name'])}</div><div class='inc-npc-vitals'><span><b>{e['wounds_current']}/{e['wounds_max']}</b> W</span><span><b>{e['shock_current']}/{e['shock_max']}</b> S</span></div><div class='inc-npc-def'>DEF {e['defence']} · RES {e['resilience']} · SPD {e.get('speed',1)}{b}</div></div>",unsafe_allow_html=True)
     if node.get("resolved"):
-        if st.button("Continue", key="inc_combat_continue", use_container_width=True):
-            st.session_state.pop(sel_key, None)
-            _inc_combat_continue(run, ch); st.rerun()
-    else:
-        action_key = f"inc_action_{run['id']}"
-        action = st.radio("Action", ["Attack", "Flee", "Heal"], key=action_key, horizontal=True)
-        live_enemies = [e for e in node["enemies"] if e["alive"]]
-        target_options = [e["uid"] for e in live_enemies]
-
-        if action == "Attack":
-            target_uid = st.selectbox(
-                "Target", target_options, key=f"inc_attack_target_{run['id']}",
-                format_func=lambda uid: next(e["name"] for e in live_enemies if e["uid"] == uid)
-            ) if target_options else None
-            spend_wrath = st.checkbox(
-                "Spend 1 Wrath: +1 die", key=f"inc_attack_wrath_{run['id']}",
-                disabled=run["wrath_current"] < 1
-            )
-            if st.button("Execute Attack", key="inc_attack", use_container_width=True):
-                if not target_uid:
-                    st.warning("Select a target.")
-                else:
-                    try:
-                        _inc_combat_attack(run, ch, [target_uid], st.session_state.get(f"inc_weapon_{run['id']}"),
-                                           bonus_die=spend_wrath)
-                        st.session_state[sel_key] = set()
-                    except ValueError:
-                        pass
-                    st.rerun()
-
-        elif action == "Flee":
-            target_uid = st.selectbox(
-                "Escape from", target_options, key=f"inc_flee_target_{run['id']}",
-                format_func=lambda uid: next(e["name"] for e in live_enemies if e["uid"] == uid)
-            ) if target_options else None
-            spend_wrath = st.checkbox(
-                "Spend 1 Wrath: +1 die", key=f"inc_flee_wrath_{run['id']}",
-                disabled=run["wrath_current"] < 1
-            )
-            if st.button("Attempt Flee", key="inc_flee", use_container_width=True):
-                if not target_uid:
-                    st.warning("Select a target.")
-                else:
-                    try:
-                        _inc_combat_flee(run, ch, target_uid, bonus_die=spend_wrath)
-                    except ValueError:
-                        pass
-                    st.rerun()
-
-        else:
-            spend_wrath = st.checkbox(
-                "Spend 1 Wrath: recover Shock", key=f"inc_heal_wrath_{run['id']}",
-                disabled=run["wrath_current"] < 1
-            )
-            if st.button(f"Heal ({run['heal_charges']})", key="inc_heal",
-                         disabled=run["heal_charges"] < 1, use_container_width=True):
-                try:
-                    _inc_combat_heal(run, ch, spend_wrath=spend_wrath)
-                except ValueError:
-                    pass
+        if st.button("CONTINUE THE DESCENT  ✠",key="inc_combat_continue",use_container_width=True): _inc_combat_continue(run,ch); st.rerun()
+        _inc_render_log(node.get("log")); return
+    pending=node.get("pending_talent_triggers") or []
+    if pending:
+        tr=pending[0]; choices=[int(i) for i in tr.get("dice_indices",[])]; labels=[f"Die {i+1} · 6" for i in choices]
+        st.markdown(f"<div class='inc-talent-reaction'><div class='inc-kicker'>TALENT TRIGGER</div><div class='inc-title'>Blood Must Die</div><div class='inc-flavor'>Choose the 6s to convert into Bleeding on {html.escape(str(tr.get('target_name','the target')))}.</div></div>",unsafe_allow_html=True)
+        picked=st.multiselect("Exalted Icons",labels,key=f"inc_bmd_{run['id']}")
+        selected=[choices[labels.index(x)] for x in picked]
+        if st.button("APPLY BLOOD  ✠  END TURN",key=f"inc_bmd_apply_{run['id']}",use_container_width=True): _inc_resolve_pending_talent(run,ch,selected); st.rerun()
+        _inc_render_log(node.get("log")); return
+    action=st.radio("",["⚔ ATTACK","☠ FLEE","✚ HEAL"],key=f"inc_action_{run['id']}",horizontal=True)
+    with st.container(border=True):
+        st.markdown("<div class='inc-action-title'>COMBAT ACTION</div>",unsafe_allow_html=True)
+        opts=[e["uid"] for e in live]
+        if action=="⚔ ATTACK":
+            weapons=_inc_usable_weapons(ch,run); keys=[w["key"] for w in weapons]; wk=f"inc_weapon_{run['id']}"
+            if st.session_state.get(wk) not in keys: st.session_state[wk]=keys[0]
+            def wl(k):
+                w=next(w for w in weapons if w["key"]==k); return f"{w['name']} · Dmg {w['damage']} +{int(w.get('ed',0) or 0)} ED · AP {int(w.get('ap',0) or 0)}"
+            c1,c2=st.columns([2.1,1]); c1.selectbox("Weapon",keys,key=wk,format_func=wl); target=c2.selectbox("Target",opts,key=f"inc_at_{run['id']}",format_func=lambda uid:next(e['name'] for e in live if e['uid']==uid))
+            spend=st.checkbox("Spend 1 Wrath · +1 die",key=f"inc_attack_wrath_{run['id']}",disabled=run['wrath_current']<1)
+            if st.button("STRIKE  ✠",key="inc_attack",use_container_width=True):
+                try:_inc_combat_attack(run,ch,[target],st.session_state.get(wk),bonus_die=spend)
+                except ValueError as exc:st.error(str(exc).replace('_',' ').title())
                 st.rerun()
-
+        elif action=="☠ FLEE":
+            target=st.selectbox("Break contact with",opts,key=f"inc_fl_{run['id']}",format_func=lambda uid:next(e['name'] for e in live if e['uid']==uid))
+            spend=st.checkbox("Spend 1 Wrath · +1 die",key=f"inc_flee_wrath_{run['id']}",disabled=run['wrath_current']<1)
+            enemy_speed=next(e['speed'] for e in live if e['uid']==target); st.caption(f"Speed contest · You {traits['Speed']}d6 vs target {enemy_speed}d6 · more Icons escapes.")
+            if st.button("BREAK CONTACT  ✠",key="inc_flee",use_container_width=True):
+                try:_inc_combat_flee(run,ch,target,bonus_die=spend)
+                except ValueError as exc:st.error(str(exc).replace('_',' ').title())
+                st.rerun()
+        else:
+            spend=st.checkbox("Spend 1 Wrath · recover Rank + Tier Shock",key=f"inc_heal_wrath_{run['id']}",disabled=run['wrath_current']<1)
+            st.caption(f"Medicae charges: {run['heal_charges']} · Restore 30% max Wounds.")
+            if st.button("ADMINISTER MEDICAE  ✠",key="inc_heal",disabled=run['heal_charges']<1,use_container_width=True):
+                try:_inc_combat_heal(run,ch,spend_wrath=spend)
+                except ValueError as exc:st.error(str(exc).replace('_',' ').title())
+                st.rerun()
     _inc_render_log(node.get("log"))
 
 
@@ -9119,14 +9144,15 @@ def main():
                 with ruin_cols[1]:
                     st.button("+", key="sidebar_ruin_plus", on_click=adjust_ruin, args=(+1,), use_container_width=True)
                     st.button("−", key="sidebar_ruin_minus", on_click=adjust_ruin, args=(-1,), use_container_width=True)
-        st.divider()
-        if st.button("ENTER WRATH INCURSION", key="system_to_incursion", use_container_width=True):
-            st.session_state.app_mode = "incursion"; st.rerun()
-        if st.button("Sign Out"):
-            st.session_state.user = None; st.session_state.editing = None; st.rerun()
-        if st.button("← Imperial Cogitator Login", key="system_to_chooser"):
-            st.session_state.user = None; st.session_state.editing = None
-            st.session_state.app_mode = "system"; st.rerun()
+        with st.container(border=True):
+            st.markdown("<div class='inq-nav-title'>✠ TERMINAL ACCESS</div>", unsafe_allow_html=True)
+            if st.button("☠  ENTER WRATH INCURSION", key="system_to_incursion", use_container_width=True):
+                st.session_state.app_mode = "incursion"; st.rerun()
+            if st.button("⟲  SIGN OUT", key="system_signout", use_container_width=True):
+                st.session_state.user = None; st.session_state.editing = None; st.rerun()
+            if st.button("←  IMPERIAL COGITATOR LOGIN", key="system_to_chooser", use_container_width=True):
+                st.session_state.user = None; st.session_state.editing = None
+                st.session_state.app_mode = "system"; st.rerun()
 
         if role == "player" and camp.get("owlbear_enabled"):
             sidebar_cid = char_id_for_user(st.session_state.user["id"])

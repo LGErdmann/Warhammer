@@ -1170,9 +1170,19 @@ def init_db():
         id INTEGER PRIMARY KEY AUTOINCREMENT, character_id INTEGER NOT NULL,
         status TEXT DEFAULT 'active', stage TEXT DEFAULT 'start', loop_no INTEGER DEFAULT 1,
         bosses_cleared INTEGER DEFAULT 0, hp_current INTEGER, hp_max INTEGER, xp INTEGER DEFAULT 0,
-        bonus_attributes TEXT DEFAULT '{}', extra_wargear TEXT DEFAULT '[]', extra_talents TEXT DEFAULT '[]',
+        bonus_attributes TEXT DEFAULT '{}', bonus_skills TEXT DEFAULT '{}',
+        extra_wargear TEXT DEFAULT '[]', extra_talents TEXT DEFAULT '[]',
         extra_powers TEXT DEFAULT '[]', extra_keywords TEXT DEFAULT '[]', heal_charges INTEGER DEFAULT 1,
+        consumable_charges TEXT DEFAULT '{}', equipped_armor_key TEXT DEFAULT '', free_upgrade_used INTEGER DEFAULT 0,
+        wounds_current INTEGER, wounds_max INTEGER, shock_current INTEGER, shock_max INTEGER,
+        wrath_current INTEGER, wrath_max INTEGER,
         pending_boss3_pvp INTEGER DEFAULT 0, node TEXT, created_at TEXT, ended_at TEXT, death_reason TEXT)""")
+    _ensure_columns(conn, "incursion_run", {
+        "consumable_charges": "TEXT DEFAULT '{}'", "bonus_skills": "TEXT DEFAULT '{}'",
+        "equipped_armor_key": "TEXT DEFAULT ''", "free_upgrade_used": "INTEGER DEFAULT 0",
+        "wounds_current": "INTEGER", "wounds_max": "INTEGER", "shock_current": "INTEGER", "shock_max": "INTEGER",
+        "wrath_current": "INTEGER", "wrath_max": "INTEGER",
+    })
     c.execute("""CREATE TABLE IF NOT EXISTS incursion_pvp_queue(
         id INTEGER PRIMARY KEY AUTOINCREMENT, run_id INTEGER NOT NULL, character_id INTEGER NOT NULL,
         checkpoint TEXT NOT NULL, snapshot TEXT NOT NULL, status TEXT DEFAULT 'waiting',
@@ -5711,13 +5721,33 @@ INC_FLAVOR_KEYWORDS = ["Zealous", "Grim", "Vigilant", "Bloodied", "Unyielding", 
 
 
 # ---- persistence -----------------------------------------------------
+def _inc_json_field(value, fallback):
+    """Decode a JSON-bearing column that may come back either as a plain
+    string (TEXT columns, the normal case for every table this feature
+    creates) or already-parsed (psycopg2 auto-deserializes a genuine JSONB
+    column, which incursion_fallen_mob.attributes ended up as - a leftover
+    from an earlier prototype - so this stays defensive rather than
+    assuming one representation)."""
+    if isinstance(value, (dict, list)):
+        return value
+    if not value:
+        return fallback
+    try:
+        return json.loads(value)
+    except Exception:
+        return fallback
+
+
 def _inc_decode_run(row):
     r = dict(row)
-    r["bonus_attributes"] = json.loads(r.get("bonus_attributes") or "{}")
+    r["bonus_attributes"] = _inc_json_field(r.get("bonus_attributes"), {})
+    r["bonus_skills"] = _inc_json_field(r.get("bonus_skills"), {})
+    r["consumable_charges"] = _inc_json_field(r.get("consumable_charges"), {})
     for f in ("extra_wargear", "extra_talents", "extra_powers", "extra_keywords"):
-        r[f] = json.loads(r.get(f) or "[]")
-    r["node"] = json.loads(r.get("node") or "null")
+        r[f] = _inc_json_field(r.get(f), [])
+    r["node"] = _inc_json_field(r.get("node"), None)
     r["pending_boss3_pvp"] = bool(r.get("pending_boss3_pvp"))
+    r["free_upgrade_used"] = bool(r.get("free_upgrade_used"))
     return r
 
 
@@ -5767,6 +5797,14 @@ def _inc_persist(run_id, **fields):
 
 
 # ---- character rules (reuses the real sheet's own math) --------------
+def _inc_is_armour_item(w):
+    d = _gear_details_dict(w.get("details", {}))
+    category = str(d.get("category", "")).lower()
+    if "armour" in category or "armor" in category:
+        return True
+    return d.get("armour_rating") not in (None, "")
+
+
 def _inc_merge_character(ch, run):
     """Layers a run's mid-run purchases on top of the real sheet. One-way:
     the sheet feeds the run, the run never writes back, so this merged dict
@@ -5776,15 +5814,62 @@ def _inc_merge_character(ch, run):
     for k, v in (run.get("bonus_attributes") or {}).items():
         attrs[k] = int(attrs.get(k, 1)) + int(v)
     merged["attributes"] = attrs
-    merged["wargear"] = list(ch.get("wargear") or []) + list(run.get("extra_wargear") or [])
+    skills = dict(ch.get("skills") or {})
+    for k, v in (run.get("bonus_skills") or {}).items():
+        skills[k] = int(skills.get(k, 0)) + int(v)
+    merged["skills"] = skills
+
+    wargear = list(ch.get("wargear") or []) + list(run.get("extra_wargear") or [])
+    armor_key = run.get("equipped_armor_key")
+    if armor_key:
+        rewired = []
+        for w in wargear:
+            if _inc_is_armour_item(w):
+                w = dict(w)
+                w["equipped"] = (_inc_weapon_key(w) == armor_key)
+            rewired.append(w)
+        wargear = rewired
+    merged["wargear"] = wargear
     merged["talents"] = list(ch.get("talents") or []) + list(run.get("extra_talents") or [])
     merged["powers"] = list(ch.get("powers") or []) + list(run.get("extra_powers") or [])
     return merged
 
 
-def _inc_hp_max_for(ch):
+def _inc_armour_options(ch, run):
+    """Every distinct owned/bought Armour-category item, for the Rest
+    screen's 'Worn Armour' picker - lets a character who owns more than one
+    suit choose which is equipped for the run, same idea as the weapon
+    picker in combat."""
+    all_gear = list(ch.get("wargear") or []) + list(run.get("extra_wargear") or [])
+    seen, options = set(), []
+    for w in all_gear:
+        if not _inc_is_armour_item(w):
+            continue
+        key = _inc_weapon_key(w)
+        if key in seen:
+            continue
+        seen.add(key)
+        d = _gear_details_dict(w.get("details", {}))
+        options.append({"key": key, "name": w.get("name", "Armour"), "rating": d.get("armour_rating", "")})
+    return options
+
+
+def _inc_life_pools(ch):
     t = derived_traits(ch)
-    return max(10, int(t["Max Wounds"]) * 4)
+    return {"wounds_max": int(t["Max Wounds"]), "shock_max": int(t["Max Shock"]), "wrath_max": int(t["Max Wrath"])}
+
+
+def _inc_apply_damage(shock_current, wounds_current, damage):
+    """Damage hits Shock first (a buffer); only once Shock is fully spent
+    does the remainder carry over into real Wounds, per the book."""
+    remaining = damage
+    new_shock = shock_current
+    if remaining > 0 and new_shock > 0:
+        absorbed = min(new_shock, remaining)
+        new_shock -= absorbed
+        remaining -= absorbed
+    new_wounds = max(0, wounds_current - remaining)
+    return new_shock, new_wounds
 
 
 def _inc_best_weapon(ch):
@@ -5805,6 +5890,52 @@ def _inc_best_weapon(ch):
     return best
 
 
+def _inc_weapon_key(w):
+    cid = _wargear_craft_id(w)
+    return str(cid) if cid > 0 else str(w.get("name", ""))
+
+
+def _inc_usable_weapons(ch, run):
+    """Every equipped weapon the player can pick this turn - regular
+    weapons (unlimited uses) plus Grenades/Missiles as consumables with a
+    run-local remaining count. Consuming one only ever decrements this
+    run's own consumable_charges, never the character's real owned
+    quantity - the tabletop sheet's supply is untouched either way."""
+    merged = _inc_merge_character(ch, run)
+    attrs = effective_attributes(merged)
+    charges = run.get("consumable_charges") or {}
+    weapons = []
+    for w in (merged.get("wargear") or []):
+        if not w.get("equipped", True):
+            continue
+        details = _gear_details_dict(w.get("details", {}))
+        if details.get("damage") in (None, ""):
+            continue
+        is_stackable, _ = _infer_stackable_gear(w.get("name", ""), details)
+        is_consumable = is_stackable and not _is_ammo_resource(w)
+        key = _inc_weapon_key(w)
+        remaining = None
+        if is_consumable:
+            remaining = charges.get(key)
+            if remaining is None:
+                remaining = int(w.get("quantity", 1) or 0)
+            if remaining <= 0:
+                continue
+        dmg = _weapon_base_damage(details, attrs)
+        weapons.append({"key": key, "name": w.get("name", "Wargear"), "damage": dmg,
+                        "consumable": is_consumable, "remaining": remaining})
+    if not weapons:
+        s = int(attrs.get("Strength", 1))
+        weapons.append({"key": "__unarmed__", "name": "Unarmed Strike",
+                        "damage": 3 + max(0, s - 3), "consumable": False, "remaining": None})
+    return weapons
+
+
+def _inc_weapon_by_key(ch, run, key):
+    options = _inc_usable_weapons(ch, run)
+    return next((w for w in options if w["key"] == key), options[0])
+
+
 def _inc_best_attack_pool(ch):
     attrs = effective_attributes(ch)
     skills = effective_skills(ch)
@@ -5820,7 +5951,10 @@ def _inc_best_attack_pool(ch):
 def _inc_roll_pool(size):
     rolls = [random.randint(1, 6) for _ in range(max(1, size))]
     icons = sum(2 if r == 6 else (1 if r >= 4 else 0) for r in rolls)
-    return rolls, icons
+    # One die in the pool is always the Wrath Die (p.158); by convention the
+    # last one rolled. A 6 on it is a critical that regains 1 Wrath.
+    wrath_crit = rolls[-1] == 6
+    return rolls, icons, wrath_crit
 
 
 # ---- enemies: Bestiary + fallen players -------------------------------
@@ -5869,7 +6003,7 @@ def _inc_fetch_fallen_pool(tier, limit=20):
 
 def _inc_build_enemy_from_fallen(row, loop_no, idx):
     scale = _inc_scale_factor(loop_no)
-    base_attrs = json.loads(row.get("attributes") or "{}")
+    base_attrs = _inc_json_field(row.get("attributes"), {})
     attrs = {k: max(1, round(v + (loop_no - 1) * 0.6)) for k, v in base_attrs.items()}
     T, I = attrs.get("Toughness", 3), attrs.get("Initiative", 3)
     tier = int(row["tier"])
@@ -5973,6 +6107,27 @@ def _inc_generate_offers(ch, run):
     return offers
 
 
+def _inc_pool_updates_for_attribute(ch, run, bonus_attrs, attr):
+    """When a purchased Attribute is Toughness or Willpower, Max Wounds/Max
+    Shock grow immediately - recompute them and carry the current value's
+    absolute increase over to current, same as leveling up would on the
+    real sheet."""
+    if attr not in ("Toughness", "Willpower"):
+        return {}
+    merged = _inc_merge_character(ch, {**run, "bonus_attributes": bonus_attrs})
+    pools = _inc_life_pools(merged)
+    updates = {}
+    if attr == "Toughness":
+        delta = max(0, pools["wounds_max"] - run["wounds_max"])
+        updates["wounds_max"] = pools["wounds_max"]
+        updates["wounds_current"] = min(pools["wounds_max"], run["wounds_current"] + delta)
+    if attr == "Willpower":
+        delta = max(0, pools["shock_max"] - run["shock_max"])
+        updates["shock_max"] = pools["shock_max"]
+        updates["shock_current"] = min(pools["shock_max"], run["shock_current"] + delta)
+    return updates
+
+
 def _inc_apply_purchase(run, ch, offer):
     if run["xp"] < offer["cost"]:
         raise ValueError("not_enough_xp")
@@ -5982,15 +6137,11 @@ def _inc_apply_purchase(run, ch, offer):
     extra_powers = list(run.get("extra_powers") or [])
     extra_keywords = list(run.get("extra_keywords") or [])
     heal_charges = run["heal_charges"]
-    hp_current, hp_max = run["hp_current"], run["hp_max"]
+    pool_updates = {}
 
     if offer["type"] == "attribute":
         bonus_attrs[offer["attr"]] = int(bonus_attrs.get(offer["attr"], 0)) + 1
-        if offer["attr"] == "Toughness":
-            merged = _inc_merge_character(ch, {**run, "bonus_attributes": bonus_attrs})
-            new_max = _inc_hp_max_for(merged)
-            hp_current = min(new_max, hp_current + max(0, new_max - hp_max))
-            hp_max = new_max
+        pool_updates = _inc_pool_updates_for_attribute(ch, run, bonus_attrs, offer["attr"])
     elif offer["type"] in ("wargear", "talent", "power"):
         conn = get_conn()
         row = conn.execute("SELECT * FROM craft_items WHERE id=? AND kind=?", (offer["craft_id"], offer["type"])).fetchone()
@@ -6009,7 +6160,7 @@ def _inc_apply_purchase(run, ch, offer):
     return _inc_persist(
         run["id"], xp=run["xp"] - offer["cost"], bonus_attributes=bonus_attrs, extra_wargear=extra_wargear,
         extra_talents=extra_talents, extra_powers=extra_powers, extra_keywords=extra_keywords,
-        heal_charges=heal_charges, hp_current=hp_current, hp_max=hp_max,
+        heal_charges=heal_charges, **pool_updates,
     )
 
 
@@ -6083,12 +6234,15 @@ def _inc_mark_dead(run, ch, reason):
 def _inc_start_run(ch):
     if _inc_get_active_run(ch["id"]):
         raise ValueError("run_already_active")
-    hp_max = _inc_hp_max_for(ch)
+    pools = _inc_life_pools(ch)
     conn = get_conn()
     cur = conn.execute(
-        "INSERT INTO incursion_run(character_id,status,stage,loop_no,hp_current,hp_max,node,created_at) "
-        "VALUES (?,?,?,?,?,?,?,?)",
-        (ch["id"], "active", "start", 1, hp_max, hp_max, json.dumps({"type": "choice_start"}), now_iso()))
+        "INSERT INTO incursion_run(character_id,status,stage,loop_no,wounds_current,wounds_max,"
+        "shock_current,shock_max,wrath_current,wrath_max,node,created_at) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+        (ch["id"], "active", "start", 1, pools["wounds_max"], pools["wounds_max"],
+         pools["shock_max"], pools["shock_max"], pools["wrath_max"], pools["wrath_max"],
+         json.dumps({"type": "choice_start"}), now_iso()))
     conn.commit()
     new_id = cur.lastrowid
     conn.close()
@@ -6099,12 +6253,52 @@ def _inc_choose_start(run, ch, choice):
     if not run.get("node") or run["node"].get("type") != "choice_start":
         raise ValueError("wrong_node")
     if choice == "rest":
-        heal = max(1, round(run["hp_max"] * INC_REST_HEAL_FRACTION))
-        run = _inc_persist(run["id"], hp_current=min(run["hp_max"], run["hp_current"] + heal))
-        return _inc_advance(run, ch)
+        heal = max(1, round(run["wounds_max"] * INC_REST_HEAL_FRACTION))
+        run = _inc_persist(run["id"], wounds_current=min(run["wounds_max"], run["wounds_current"] + heal),
+                            shock_current=run["shock_max"])
+        return _inc_persist(run["id"], node={"type": "rest_upgrade"})
     if choice == "shop":
         return _inc_persist(run["id"], node={"type": "shop", "subtype": "start", "offers": _inc_generate_offers(ch, run)})
     raise ValueError("invalid_choice")
+
+
+def _inc_skill_cost(current_value):
+    return round(12 * (1.5 ** max(0, current_value)))
+
+
+def _inc_rest_train_attribute(run, ch, attr):
+    free = not run["free_upgrade_used"]
+    merged = _inc_merge_character(ch, run)
+    cost = 0 if free else _inc_attribute_cost(int(effective_attributes(merged).get(attr, 1)))
+    if run["xp"] < cost:
+        raise ValueError("not_enough_xp")
+    bonus_attrs = dict(run.get("bonus_attributes") or {})
+    bonus_attrs[attr] = int(bonus_attrs.get(attr, 0)) + 1
+    pool_updates = _inc_pool_updates_for_attribute(ch, run, bonus_attrs, attr)
+    return _inc_persist(run["id"], xp=run["xp"] - cost, bonus_attributes=bonus_attrs,
+                         free_upgrade_used=True, **pool_updates)
+
+
+def _inc_rest_train_skill(run, ch, skill):
+    free = not run["free_upgrade_used"]
+    merged = _inc_merge_character(ch, run)
+    cost = 0 if free else _inc_skill_cost(int(effective_skills(merged).get(skill, 0)))
+    if run["xp"] < cost:
+        raise ValueError("not_enough_xp")
+    bonus_skills = dict(run.get("bonus_skills") or {})
+    bonus_skills[skill] = int(bonus_skills.get(skill, 0)) + 1
+    return _inc_persist(run["id"], xp=run["xp"] - cost, bonus_skills=bonus_skills, free_upgrade_used=True)
+
+
+def _inc_rest_set_armour(run, ch, armour_key):
+    # A loadout choice, not a purchase - free, doesn't touch free_upgrade_used.
+    return _inc_persist(run["id"], equipped_armor_key=armour_key)
+
+
+def _inc_rest_continue(run, ch):
+    if not run.get("node") or run["node"].get("type") != "rest_upgrade":
+        raise ValueError("wrong_node")
+    return _inc_advance(run, ch)
 
 
 def _inc_shop_buy(run, ch, offer_id):
@@ -6136,7 +6330,7 @@ def _inc_enemy_turn(enemies, player_traits):
     for enemy in enemies:
         if not enemy["alive"]:
             continue
-        rolls, icons = _inc_roll_pool(enemy["attack_pool"])
+        rolls, icons, _wc = _inc_roll_pool(enemy["attack_pool"])
         hit = icons >= player_traits["Defence"]
         damage = 0
         if hit:
@@ -6148,9 +6342,8 @@ def _inc_enemy_turn(enemies, player_traits):
     return log
 
 
-def _inc_resolve_player_attack(ch, run, node, target_uids):
+def _inc_resolve_player_attack(ch, run, node, target_uids, weapon):
     merged = _inc_merge_character(ch, run)
-    weapon = _inc_best_weapon(merged)
     skill_name, pool = _inc_best_attack_pool(merged)
     player_traits = derived_traits(merged)
     targets = [e for e in node["enemies"] if e["alive"] and e["uid"] in target_uids]
@@ -6158,8 +6351,11 @@ def _inc_resolve_player_attack(ch, run, node, target_uids):
         raise ValueError("no_valid_targets")
     per_target_pool = max(1, pool - (len(targets) - 1))
     log = []
+    wrath_gained = 0
     for target in targets:
-        rolls, icons = _inc_roll_pool(per_target_pool)
+        rolls, icons, wrath_crit = _inc_roll_pool(per_target_pool)
+        if wrath_crit:
+            wrath_gained += 1
         hit = icons >= target["defence"]
         damage = 0
         if hit:
@@ -6170,30 +6366,45 @@ def _inc_resolve_player_attack(ch, run, node, target_uids):
                 target["alive"] = False
         log.append({"actor": "player", "action": "attack", "target_name": target["name"], "target_uid": target["uid"],
                     "skill": skill_name, "pool": per_target_pool, "rolls": rolls, "icons": icons,
-                    "weapon": weapon["name"], "hit": hit, "damage": damage, "target_defeated": not target["alive"]})
-    return log + _inc_enemy_turn(node["enemies"], player_traits)
+                    "weapon": weapon["name"], "hit": hit, "damage": damage, "target_defeated": not target["alive"],
+                    "wrath_crit": wrath_crit})
+    return log + _inc_enemy_turn(node["enemies"], player_traits), wrath_gained
 
 
 def _inc_resolve_player_heal(ch, run, node):
+    """Medicae Ration (a bought consumable, tracked via heal_charges) heals
+    Wounds directly - Shock is what Recover Shock/Rest are for."""
     if run["heal_charges"] <= 0:
         raise ValueError("no_heal_charges")
     merged = _inc_merge_character(ch, run)
     player_traits = derived_traits(merged)
-    heal_amount = max(1, round(run["hp_max"] * 0.3))
-    new_hp = min(run["hp_max"], run["hp_current"] + heal_amount)
-    log = [{"actor": "player", "action": "heal", "amount": new_hp - run["hp_current"]}]
-    return log + _inc_enemy_turn(node["enemies"], player_traits), new_hp, run["heal_charges"] - 1
+    heal_amount = max(1, round(run["wounds_max"] * 0.3))
+    new_wounds = min(run["wounds_max"], run["wounds_current"] + heal_amount)
+    log = [{"actor": "player", "action": "heal", "amount": new_wounds - run["wounds_current"]}]
+    return log + _inc_enemy_turn(node["enemies"], player_traits), new_wounds, run["heal_charges"] - 1
 
 
-def _inc_finish_combat_round(run, ch, node, round_log):
+def _inc_resolve_player_recover_shock(ch, run, node):
+    """Spend 1 Wrath to fully recover Shock - still costs you the turn, the
+    enemies still swing back."""
+    if run["wrath_current"] <= 0:
+        raise ValueError("no_wrath")
+    merged = _inc_merge_character(ch, run)
+    player_traits = derived_traits(merged)
+    log = [{"actor": "player", "action": "recover_shock", "amount": run["shock_max"] - run["shock_current"]}]
+    return log + _inc_enemy_turn(node["enemies"], player_traits), run["shock_max"], run["wrath_current"] - 1
+
+
+def _inc_finish_combat_round(run, ch, node, round_log, wrath_gained=0):
     node["log"] = (node.get("log") or []) + round_log
     enemy_damage = sum(e.get("damage", 0) for e in round_log if e.get("actor") == "enemy")
-    new_hp = max(0, run["hp_current"] - enemy_damage)
+    new_shock, new_wounds = _inc_apply_damage(run["shock_current"], run["wounds_current"], enemy_damage)
+    new_wrath = min(run["wrath_max"], run["wrath_current"] + wrath_gained)
     all_dead = all(not e["alive"] for e in node["enemies"])
 
-    if new_hp <= 0:
-        _inc_persist(run["id"], hp_current=0, node=node)
-        return _inc_mark_dead({**run, "hp_current": 0}, ch, "Fell in battle")
+    if new_wounds <= 0:
+        _inc_persist(run["id"], shock_current=new_shock, wounds_current=0, wrath_current=new_wrath, node=node)
+        return _inc_mark_dead({**run, "wounds_current": 0}, ch, "Fell in battle")
 
     if all_dead:
         node["resolved"], node["victory"] = True, True
@@ -6202,27 +6413,42 @@ def _inc_finish_combat_round(run, ch, node, round_log):
             bosses_cleared += 1
             if bosses_cleared % 3 == 0:
                 pending_boss3 = True
-        return _inc_persist(run["id"], hp_current=new_hp, xp=run["xp"] + node["reward_xp"], node=node,
+        return _inc_persist(run["id"], shock_current=new_shock, wounds_current=new_wounds, wrath_current=new_wrath,
+                             xp=run["xp"] + node["reward_xp"], node=node,
                              bosses_cleared=bosses_cleared, pending_boss3_pvp=pending_boss3)
 
-    return _inc_persist(run["id"], hp_current=new_hp, node=node)
+    return _inc_persist(run["id"], shock_current=new_shock, wounds_current=new_wounds, wrath_current=new_wrath, node=node)
 
 
-def _inc_combat_attack(run, ch, target_uids):
+def _inc_combat_attack(run, ch, target_uids, weapon_key):
     if not run.get("node") or run["node"].get("type") != "combat":
         raise ValueError("wrong_node")
     node = copy.deepcopy(run["node"])
-    round_log = _inc_resolve_player_attack(ch, run, node, target_uids)
-    return _inc_finish_combat_round(run, ch, node, round_log)
+    weapon = _inc_weapon_by_key(ch, run, weapon_key)
+    round_log, wrath_gained = _inc_resolve_player_attack(ch, run, node, target_uids, weapon)
+    if weapon.get("consumable"):
+        charges = dict(run.get("consumable_charges") or {})
+        charges[weapon["key"]] = max(0, int(weapon["remaining"]) - 1)
+        run = _inc_persist(run["id"], consumable_charges=charges)
+    return _inc_finish_combat_round(run, ch, node, round_log, wrath_gained)
 
 
 def _inc_combat_heal(run, ch):
     if not run.get("node") or run["node"].get("type") != "combat":
         raise ValueError("wrong_node")
     node = copy.deepcopy(run["node"])
-    round_log, new_hp, charges_left = _inc_resolve_player_heal(ch, run, node)
-    _inc_persist(run["id"], heal_charges=charges_left, hp_current=new_hp)
-    return _inc_finish_combat_round({**run, "hp_current": new_hp}, ch, node, round_log)
+    round_log, new_wounds, charges_left = _inc_resolve_player_heal(ch, run, node)
+    run = _inc_persist(run["id"], heal_charges=charges_left, wounds_current=new_wounds)
+    return _inc_finish_combat_round(run, ch, node, round_log)
+
+
+def _inc_combat_recover_shock(run, ch):
+    if not run.get("node") or run["node"].get("type") != "combat":
+        raise ValueError("wrong_node")
+    node = copy.deepcopy(run["node"])
+    round_log, new_shock, wrath_left = _inc_resolve_player_recover_shock(ch, run, node)
+    run = _inc_persist(run["id"], wrath_current=wrath_left, shock_current=new_shock)
+    return _inc_finish_combat_round(run, ch, node, round_log)
 
 
 def _inc_combat_continue(run, ch):
@@ -6238,12 +6464,15 @@ def _inc_build_snapshot(ch, run):
         "name": ch.get("name", ""), "tier": ch.get("tier"), "armour": ch.get("armour", 0),
         "species": ch.get("species", ""), "attributes": merged["attributes"], "skills": merged.get("skills", {}),
         "wargear": merged["wargear"], "talents": merged.get("talents", []), "powers": merged.get("powers", []),
-        "hp_current": run["hp_current"], "hp_max": run["hp_max"],
+        "wounds_current": run["wounds_current"], "wounds_max": run["wounds_max"],
         "loop_no": run["loop_no"], "bosses_cleared": run["bosses_cleared"],
     }
 
 
 def _inc_simulate_fight(attacker, defender, hp_a_start, hp_b_start):
+    """A Duel of Glory/Challenge is resolved compressed, without turn-by-turn
+    resource spending - it tracks Wounds only (no Shock buffer, no Wrath),
+    a deliberate simplification for an instant, unattended fight."""
     atk_traits, def_traits = derived_traits(attacker), derived_traits(defender)
     atk_skill, atk_pool = _inc_best_attack_pool(attacker)
     def_skill, def_pool = _inc_best_attack_pool(defender)
@@ -6253,7 +6482,7 @@ def _inc_simulate_fight(attacker, defender, hp_a_start, hp_b_start):
     for _round in range(1, 7):
         if hp_a <= 0 or hp_b <= 0:
             break
-        rolls, icons = _inc_roll_pool(atk_pool)
+        rolls, icons, _wc = _inc_roll_pool(atk_pool)
         hit = icons >= def_traits["Defence"]
         dmg = 0
         if hit:
@@ -6263,7 +6492,7 @@ def _inc_simulate_fight(attacker, defender, hp_a_start, hp_b_start):
                     "weapon": atk_weapon["name"], "hit": hit, "damage": dmg})
         if hp_b <= 0:
             break
-        rolls, icons = _inc_roll_pool(def_pool)
+        rolls, icons, _wc = _inc_roll_pool(def_pool)
         hit = icons >= atk_traits["Defence"]
         dmg = 0
         if hit:
@@ -6293,8 +6522,8 @@ def _inc_queue_or_match(run, ch, checkpoint):
     ).fetchone()
     if waiting:
         opp = dict(waiting)
-        opp_snapshot = json.loads(opp["snapshot"])
-        result = _inc_simulate_fight(my_snapshot, opp_snapshot, my_snapshot["hp_current"], opp_snapshot["hp_current"])
+        opp_snapshot = _inc_json_field(opp["snapshot"], {})
+        result = _inc_simulate_fight(my_snapshot, opp_snapshot, my_snapshot["wounds_current"], opp_snapshot["wounds_current"])
         i_won, opp_won = result["winner"] == "attacker", result["winner"] == "defender"
         conn.execute(
             "UPDATE incursion_pvp_queue SET status='resolved', result=? WHERE id=?",
@@ -6321,7 +6550,7 @@ def _inc_check_resolved(queue_id):
     conn.close()
     if not row or row["status"] != "resolved":
         return None
-    return json.loads(row["result"])
+    return _inc_json_field(row["result"], None)
 
 
 def _inc_pvp_queue(run, ch):
@@ -6331,13 +6560,13 @@ def _inc_pvp_queue(run, ch):
     outcome = _inc_queue_or_match(run, ch, checkpoint)
     if not outcome["matched"]:
         return _inc_persist(run["id"], node={"type": "pvp_waiting", "checkpoint": checkpoint, "queue_id": outcome["queue_id"]})
-    new_hp = outcome["hp"]
+    new_wounds = outcome["hp"]
     updated = _inc_persist(
-        run["id"], hp_current=new_hp, xp=run["xp"] + outcome.get("xp_gained", 0),
+        run["id"], wounds_current=new_wounds, xp=run["xp"] + outcome.get("xp_gained", 0),
         node={"type": "pvp_result", "won": outcome["won"], "opponent_name": outcome["opponent_name"],
               "log": outcome["log"], "xp_gained": outcome.get("xp_gained", 0)})
-    if new_hp <= 0:
-        return _inc_mark_dead({**updated, "hp_current": 0}, ch, "Defeated in a duel against another player")
+    if new_wounds <= 0:
+        return _inc_mark_dead({**updated, "wounds_current": 0}, ch, "Defeated in a duel against another player")
     return updated
 
 
@@ -6359,12 +6588,12 @@ def _inc_resolve_waiting_pvp(run, ch):
     result = _inc_check_resolved(run["node"]["queue_id"])
     if not result:
         return run
-    new_hp = result["hp"]
+    new_wounds = result["hp"]
     updated = _inc_persist(
-        run["id"], hp_current=new_hp, xp=run["xp"] + result.get("xp_gained", 0),
+        run["id"], wounds_current=new_wounds, xp=run["xp"] + result.get("xp_gained", 0),
         node={"type": "pvp_result", "won": result["won"], "opponent_name": result["opponent_name"],
               "log": result["log"], "xp_gained": result.get("xp_gained", 0)})
-    if new_hp <= 0:
+    if new_wounds <= 0:
         updated = _inc_mark_dead(updated, ch, "Defeated in a duel against another player")
     return updated
 
@@ -6397,7 +6626,9 @@ def _inc_render_hud(ch, run):
     _skill_name, _pool = _inc_best_attack_pool(merged)
     st.markdown(
         "<div class='inc-hud'>"
-        f"<div class='inc-chip'><b>{run['hp_current']}/{run['hp_max']}</b>Health</div>"
+        f"<div class='inc-chip'><b>{run['wounds_current']}/{run['wounds_max']}</b>Wounds</div>"
+        f"<div class='inc-chip'><b>{run['shock_current']}/{run['shock_max']}</b>Shock</div>"
+        f"<div class='inc-chip'><b>{run['wrath_current']}/{run['wrath_max']}</b>Wrath</div>"
         f"<div class='inc-chip'><b>{run['xp']}</b>Run XP</div>"
         f"<div class='inc-chip'><b>{run['loop_no']}</b>Loop</div>"
         f"<div class='inc-chip'><b>{run['bosses_cleared']}</b>Champions Slain</div>"
@@ -6415,19 +6646,24 @@ def _inc_render_log(log):
     for e in reversed(log or []):
         if e.get("action") == "heal":
             lines.append(f"<div class='inc-log-line system'>You use medicae supplies and recover "
-                         f"<b>{e['amount']}</b> Health.</div>")
+                         f"<b>{e['amount']}</b> Wounds.</div>")
+            continue
+        if e.get("action") == "recover_shock":
+            lines.append(f"<div class='inc-log-line system'>You spend 1 Wrath and recover "
+                         f"<b>{e['amount']}</b> Shock.</div>")
             continue
         who = "You" if e["actor"] == "player" else e.get("actor_name", "Enemy")
         cls = "player" if e["actor"] == "player" else "enemy"
         target = f" at {html.escape(e['target_name'])}" if e.get("target_name") else ""
+        wrath_tag = " <span class='dice'>(Wrath Die critical, +1 Wrath)</span>" if e.get("wrath_crit") else ""
         if not e["hit"]:
             lines.append(f"<div class='inc-log-line {cls}'><b>{html.escape(who)}</b> attacks{target} with "
-                         f"{html.escape(e['weapon'])} — <i>misses</i> ({e['pool']}d6, {e['icons']} icons)</div>")
+                         f"{html.escape(e['weapon'])} — <i>misses</i> ({e['pool']}d6, {e['icons']} icons){wrath_tag}</div>")
         else:
             defeated = " — <b>defeated!</b>" if e.get("target_defeated") else ""
             lines.append(f"<div class='inc-log-line {cls}'><b>{html.escape(who)}</b> hits{target} with "
                          f"{html.escape(e['weapon'])}: <b>{e['damage']}</b> damage{defeated} "
-                         f"({e['pool']}d6, {e['icons']} icons)</div>")
+                         f"({e['pool']}d6, {e['icons']} icons){wrath_tag}</div>")
     if not lines:
         lines = ["<div class='inc-log-line system'>The battle begins...</div>"]
     st.markdown(f"<div class='inc-log'>{''.join(lines)}</div>", unsafe_allow_html=True)
@@ -6489,7 +6725,8 @@ def _inc_render_choice_start(run, ch):
     c1, c2 = st.columns(2)
     with c1:
         st.markdown("<div class='inc-card'><b>Rest</b><br><span style='font-size:.8rem;opacity:.75'>"
-                    "Recover 25% of max Health.</span></div>", unsafe_allow_html=True)
+                    "Fully recover Shock and 25% of max Wounds, then a moment to train.</span></div>",
+                    unsafe_allow_html=True)
         if st.button("Rest", key="inc_rest", use_container_width=True):
             _inc_choose_start(run, ch, "rest"); st.rerun()
     with c2:
@@ -6497,6 +6734,64 @@ def _inc_render_choice_start(run, ch):
                     "Visit the field shop: weapons, talents, powers, attributes.</span></div>", unsafe_allow_html=True)
         if st.button("Supplies", key="inc_shop_choice", use_container_width=True):
             _inc_choose_start(run, ch, "shop"); st.rerun()
+
+
+def _inc_render_rest_upgrade(run, ch):
+    st.markdown("<div class='inc-card'><div class='inc-title'>Field Preparations</div>"
+                "<div class='inc-flavor'>Train an Attribute or Skill, adjust your worn Armour, or move on.</div></div>",
+                unsafe_allow_html=True)
+    if not run["free_upgrade_used"]:
+        st.info("Your first Attribute or Skill upgrade this Incursion is free.")
+
+    merged = _inc_merge_character(ch, run)
+    attrs = effective_attributes(merged)
+    skills = effective_skills(merged)
+    free = not run["free_upgrade_used"]
+
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.markdown("**Train Attribute**")
+        attr_pick = st.selectbox("Attribute", ATTRS, key=f"inc_attr_pick_{run['id']}", label_visibility="collapsed")
+        cost = 0 if free else _inc_attribute_cost(int(attrs.get(attr_pick, 1)))
+        st.caption(f"Current {attr_pick}: {attrs.get(attr_pick, 1)} · Cost: {cost} XP")
+        if st.button("Train Attribute", key=f"inc_train_attr_{run['id']}", disabled=run["xp"] < cost,
+                     use_container_width=True):
+            try:
+                _inc_rest_train_attribute(run, ch, attr_pick)
+            except ValueError:
+                pass
+            st.rerun()
+    with c2:
+        st.markdown("**Train Skill**")
+        skill_names = list(SKILLS.keys())
+        skill_pick = st.selectbox("Skill", skill_names, key=f"inc_skill_pick_{run['id']}", label_visibility="collapsed")
+        cost = 0 if free else _inc_skill_cost(int(skills.get(skill_pick, 0)))
+        st.caption(f"Current {skill_pick}: {skills.get(skill_pick, 0)} · Cost: {cost} XP")
+        if st.button("Train Skill", key=f"inc_train_skill_{run['id']}", disabled=run["xp"] < cost,
+                     use_container_width=True):
+            try:
+                _inc_rest_train_skill(run, ch, skill_pick)
+            except ValueError:
+                pass
+            st.rerun()
+    with c3:
+        st.markdown("**Worn Armour**")
+        armour_opts = _inc_armour_options(ch, run)
+        if armour_opts:
+            keys = [a["key"] for a in armour_opts]
+            names = {a["key"]: a["name"] for a in armour_opts}
+            cur = run.get("equipped_armor_key") or keys[0]
+            if cur not in keys:
+                cur = keys[0]
+            picked = st.selectbox("Armour", keys, index=keys.index(cur), format_func=lambda k: names[k],
+                                   key=f"inc_armour_pick_{run['id']}", label_visibility="collapsed")
+            if picked != run.get("equipped_armor_key"):
+                _inc_rest_set_armour(run, ch, picked); st.rerun()
+        else:
+            st.caption("No Armour owned.")
+
+    if st.button("Continue", key="inc_rest_continue", use_container_width=True):
+        _inc_rest_continue(run, ch); st.rerun()
 
 
 def _inc_render_shop(run, ch, node):
@@ -6540,6 +6835,20 @@ def _inc_render_combat(run, ch, node):
     sel_key = f"inc_targets_{run['id']}_{run['stage']}"
     selected = st.session_state.setdefault(sel_key, set())
 
+    if not node.get("resolved"):
+        weapon_options = _inc_usable_weapons(ch, run)
+        wkey = f"inc_weapon_{run['id']}"
+        keys = [w["key"] for w in weapon_options]
+        if st.session_state.get(wkey) not in keys:
+            st.session_state[wkey] = keys[0]
+
+        def _weapon_label(k):
+            w = next(w for w in weapon_options if w["key"] == k)
+            tag = f" (x{w['remaining']} left)" if w["consumable"] else ""
+            return f"{w['name']} — Dmg {w['damage']}{tag}"
+
+        st.selectbox("Weapon", keys, key=wkey, format_func=_weapon_label)
+
     n_cols = min(4, len(node["enemies"])) or 1
     cols = st.columns(n_cols)
     for i, enemy in enumerate(node["enemies"]):
@@ -6564,14 +6873,14 @@ def _inc_render_combat(run, ch, node):
             st.session_state.pop(sel_key, None)
             _inc_combat_continue(run, ch); st.rerun()
     else:
-        c1, c2 = st.columns(2)
+        c1, c2, c3 = st.columns(3)
         with c1:
             if st.button("Attack Selected", key="inc_attack", use_container_width=True):
                 if not selected:
                     st.warning("Select at least one target.")
                 else:
                     try:
-                        _inc_combat_attack(run, ch, list(selected))
+                        _inc_combat_attack(run, ch, list(selected), st.session_state.get(f"inc_weapon_{run['id']}"))
                         st.session_state[sel_key] = set()
                     except ValueError:
                         pass
@@ -6581,6 +6890,14 @@ def _inc_render_combat(run, ch, node):
                          use_container_width=True):
                 try:
                     _inc_combat_heal(run, ch)
+                except ValueError:
+                    pass
+                st.rerun()
+        with c3:
+            if st.button(f"Recover Shock (1 Wrath)", key="inc_recover_shock", disabled=run["wrath_current"] < 1,
+                         use_container_width=True):
+                try:
+                    _inc_combat_recover_shock(run, ch)
                 except ValueError:
                     pass
                 st.rerun()
@@ -6715,6 +7032,8 @@ def incursion_view():
     ntype = node.get("type")
     if ntype == "choice_start":
         _inc_render_choice_start(run, ch)
+    elif ntype == "rest_upgrade":
+        _inc_render_rest_upgrade(run, ch)
     elif ntype == "shop":
         _inc_render_shop(run, ch, node)
     elif ntype == "combat":

@@ -3880,13 +3880,13 @@ def inject_theme():
     .inc-command-line{display:flex;justify-content:space-between;gap:12px;align-items:center;border-top:1px solid #342719;border-bottom:1px solid #342719;padding:7px 3px;margin:5px 0 14px;color:#806b4b;font:10px/1.2 monospace;letter-spacing:.12em;text-transform:uppercase}
     .inc-command-line b{color:#c9ad70;font-weight:700}.inc-command-line .live{color:#b84b42}
     .inc-hud{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px;margin:10px 0 15px}
-    .inc-player-vitals{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:10px 0 8px}
+    .inc-shock-action{border:1px solid rgba(155,114,194,.45);background:linear-gradient(90deg,rgba(55,31,75,.42),rgba(16,11,22,.7));padding:8px 10px;margin:8px 0;font-size:.68rem;letter-spacing:.08em;text-transform:uppercase}.inc-shock-action span{display:block;color:#b89bd0;font-size:.55rem}.inc-shock-action b{display:block;color:#e0d1e8;margin-top:2px}.inc-shock-action small{display:block;color:#9d8da7;margin-top:2px;text-transform:none;letter-spacing:.02em}.inc-player-vitals{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:10px 0 8px}
     .inc-player-vital{position:relative;overflow:hidden;min-height:58px;padding:8px 10px;border:1px solid #403323;background:#0d0b09;box-shadow:inset 0 0 20px var(--pv-glow)}
     .inc-player-vital:before{content:"";position:absolute;inset:0;background:linear-gradient(90deg,var(--pv-color) 0%,var(--pv-color) var(--pv-pct),transparent var(--pv-pct),transparent 100%);opacity:.28;transition:all .25s ease}
     .inc-player-vital>*{position:relative;z-index:1}
     .inc-player-vital b{display:block;font:700 1.08rem Cinzel,serif;color:#e4d5b0}
     .inc-player-vital .pv-label{display:block;margin-top:3px;font:8px monospace;letter-spacing:.16em;color:#8f8065}
-    .inc-player-vital.wounds{--pv-color:hsl(var(--pv-hue),72%,42%);--pv-glow:rgba(55,170,95,.3)}
+    .inc-player-vital.wounds{--pv-color:hsl(145,62%,42%);--pv-glow:rgba(55,170,95,.3)}
     .inc-player-vital.shock{--pv-color:#9b72c2;--pv-glow:rgba(150,105,205,.3)}
     .inc-player-vital.wounds .pv-label{color:#8bcf9b}.inc-player-vital.shock .pv-label{color:#c6a7df}
     .inc-chip{position:relative;background:linear-gradient(180deg,#17120d,#0f0c09);border:1px solid #493a25;border-radius:0;border-top:2px solid #5f4725;padding:8px 9px;font-size:.61rem;color:#8f8065;opacity:1;text-transform:uppercase;letter-spacing:.08em}
@@ -6733,10 +6733,9 @@ def _inc_combat_attack(run, ch, target_uids, weapon_key, bonus_die=0, six_mode="
         rank=max(1,int(merged.get("rank",1) or 1)); tier=max(1,int(merged.get("tier",1) or 1))
         recovered=min(max_shock-current_shock,rank+tier)
         run=_inc_persist(run["id"],shock_current=current_shock+recovered,wrath_current=int(run["wrath_current"])-1)
-        run=dict(run); run["shock_current"]=current_shock+recovered; run["wrath_current"]-=1
         bonus_die=0
     elif bonus_die:
-        run=_inc_persist(run["id"],wrath_current=int(run["wrath_current"])-bonus_die); run=dict(run); run["wrath_current"]-=bonus_die
+        run=_inc_persist(run["id"],wrath_current=int(run["wrath_current"])-bonus_die)
     round_log,wrath_gained=_inc_resolve_player_attack(ch,run,node,target_uids,weapon,bonus_die=bonus_die,six_mode=six_mode)
     if weapon.get("consumable"):
         charges=dict(run.get("consumable_charges") or {}); charges[weapon["key"]]=max(0,int(weapon["remaining"])-1); run=_inc_persist(run["id"],consumable_charges=charges)
@@ -7328,7 +7327,7 @@ def _inc_render_combat(run, ch, node):
                 f"<div class='inc-enemy-strip'><span>THREAT {i+1:02d}</span><span>{state}</span></div>"
                 f"<div class='en'>{html.escape(e['name'])}</div>"
                 f"<div class='et'>TIER {e['tier']} · {html.escape(e['weapon_name'])}</div>"
-                f"<div class='inc-npc-vitals'><span class='inc-vital wounds' style='--vital-pct:{wounds_pct:.1f}%;--vital-pct-num:{wounds_pct/100:.3f};--vital-color:hsl({wounds_hue:.1f},72%,42%)'><b>{wounds_cur}/{wounds_max}</b><span class='inc-vital-label'>WOUNDS · LIFE</span></span><span class='inc-vital shock' style='--vital-pct:{shock_pct:.1f}%;--vital-pct-num:{shock_pct/100:.3f};--vital-color:hsl(270,55%,{shock_light:.1f}%)'><b>{shock_cur}/{shock_max}</b><span class='inc-vital-label'>SHOCK</span></span><span><b>{e.get('wrath_current',0)}</b>WRATH</span></div>"
+                f"<div class='inc-npc-vitals'><span class='inc-vital wounds' style='--vital-pct:{wounds_pct:.1f}%;--vital-pct-num:{wounds_pct/100:.3f};--vital-color:#b23a35'><b>{wounds_cur}/{wounds_max}</b><span class='inc-vital-label'>WOUNDS · LIFE</span></span><span class='inc-vital shock' style='--vital-pct:{shock_pct:.1f}%;--vital-pct-num:{shock_pct/100:.3f};--vital-color:hsl(270,55%,{shock_light:.1f}%)'><b>{shock_cur}/{shock_max}</b><span class='inc-vital-label'>SHOCK</span></span><span><b>{e.get('wrath_current',0)}</b>WRATH</span></div>"
                 f"<div class='inc-npc-def'>DEF {e['defence']} · RES {e['resilience']} · SPD {e.get('speed',1)}</div>"
                 f"<div class='inc-vox'><span class='vox-label'>VOX LINK</span><span class='vox-wave'><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class='vox-state'>{('LOCKED' if e['uid'] in selected_targets else 'ACTIVE')}</span></div>"
                 f"<div class='inc-enemy-status'>{bleed_html}</div></div>", unsafe_allow_html=True)
@@ -7362,18 +7361,20 @@ def _inc_render_combat(run, ch, node):
             if int(run.get("wrath_current",0))>0:
                 spend=_inc_wrath_spend_control(run['id'],int(run.get('wrath_current',0)),"inc_attack_wrath","WRATH TO DICE")
             shock_full = int(run.get("shock_current",0) or 0) >= int(run.get("shock_max",0) or 0)
-            shock_key=f"inc_attack_shock_{run['id']}"
-            use_shock_wrath=bool(st.session_state.get(shock_key,False))
-            if int(run.get("wrath_current",0))>0 and not shock_full:
-                if st.button(("WRATH TO SHOCK · SELECTED" if use_shock_wrath else "WRATH TO SHOCK · 1"),key=shock_key,use_container_width=True):
-                    st.session_state[shock_key]=not use_shock_wrath
-                    st.rerun()
-            if use_shock_wrath:
-                spend=0
-            if st.button("STRIKE",key="inc_attack",use_container_width=True,disabled=not selected_targets):
-                try: _inc_combat_attack(run,ch,selected_targets,st.session_state.get(wk),bonus_die=int(spend),restore_shock=use_shock_wrath)
-                except ValueError as exc: st.error(str(exc).replace('_',' ').title())
-                st.session_state[target_key]=[]; st.session_state[shock_key]=False; st.rerun()
+            if not shock_full and int(run.get("wrath_current",0))>0:
+                st.markdown("<div class='inc-shock-action'><span>ALTERNATIVE WRATH USE</span><b>Recover Rank + Tier Shock</b><small>Costs exactly 1 Wrath and still attacks. No bonus attack die.</small></div>",unsafe_allow_html=True)
+            a1,a2=st.columns(2)
+            with a1:
+                if st.button("STRIKE",key="inc_attack",use_container_width=True,disabled=not selected_targets):
+                    try: _inc_combat_attack(run,ch,selected_targets,st.session_state.get(wk),bonus_die=int(spend),restore_shock=False)
+                    except ValueError as exc: st.error(str(exc).replace('_',' ').title())
+                    st.session_state[target_key]=[]; st.rerun()
+            with a2:
+                can_shock=(not shock_full and int(run.get("wrath_current",0))>0)
+                if st.button("STRIKE + RECOVER SHOCK",key="inc_attack_shock",use_container_width=True,disabled=(not selected_targets or not can_shock)):
+                    try: _inc_combat_attack(run,ch,selected_targets,st.session_state.get(wk),bonus_die=0,restore_shock=True)
+                    except ValueError as exc: st.error(str(exc).replace('_',' ').title())
+                    st.session_state[target_key]=[]; st.rerun()
         elif action=="FLEE":
             target=st.selectbox("Target",[e["uid"] for e in live],key=f"inc_fl_{run['id']}",format_func=lambda uid:next(e['name'] for e in live if e['uid']==uid))
             if int(run.get("wrath_current",0))>0:

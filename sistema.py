@@ -5748,14 +5748,110 @@ def _inc_decode_run(row):
     r["node"] = _inc_json_field(r.get("node"), None)
     r["pending_boss3_pvp"] = bool(r.get("pending_boss3_pvp"))
     r["free_upgrade_used"] = bool(r.get("free_upgrade_used"))
+
+    # Older Incursion rows can have NULL in the newer life-pool columns.
+    # Never let NULL reach combat arithmetic.
+    for f in (
+        "wounds_current", "wounds_max", "shock_current", "shock_max",
+        "wrath_current", "wrath_max", "xp", "loop_no", "bosses_cleared",
+        "heal_charges",
+    ):
+        value = r.get(f)
+        if value is not None:
+            try:
+                r[f] = int(value)
+            except (TypeError, ValueError):
+                pass
     return r
+
+
+def _inc_hydrate_run_pools(run):
+    """Repair legacy/incomplete runs before they reach the Incursion UI or combat.
+
+    The Incursion life pools are run-local. If a database row was created before
+    the wounds/shock/wrath columns were added, those columns are NULL. Rebuild
+    the missing values from the character sheet and persist them once.
+    """
+    if not run:
+        return run
+
+    missing = any(run.get(f) is None for f in (
+        "wounds_current", "wounds_max", "shock_current", "shock_max",
+        "wrath_current", "wrath_max",
+    ))
+    if not missing:
+        return run
+
+    conn = get_conn()
+    row = conn.execute("SELECT * FROM characters WHERE id=?", (run["character_id"],)).fetchone()
+    if not row:
+        conn.close()
+        return run
+    ch = _decode(row)
+    conn.close()
+
+    # Include upgrades already bought during this run when rebuilding maxima.
+    merged = _inc_merge_character(ch, run)
+    pools = _inc_life_pools(merged)
+
+    updates = {}
+    if run.get("wounds_max") is None:
+        updates["wounds_max"] = pools["wounds_max"]
+    if run.get("shock_max") is None:
+        updates["shock_max"] = pools["shock_max"]
+    if run.get("wrath_max") is None:
+        updates["wrath_max"] = pools["wrath_max"]
+
+    # Prefer the old hp columns if an older run has them; otherwise start full.
+    old_hp_max = run.get("hp_max")
+    old_hp_current = run.get("hp_current")
+    if run.get("wounds_max") is None and old_hp_max is not None:
+        try:
+            updates["wounds_max"] = int(old_hp_max)
+        except (TypeError, ValueError):
+            pass
+    if run.get("wounds_current") is None:
+        if old_hp_current is not None:
+            try:
+                updates["wounds_current"] = max(0, int(old_hp_current))
+            except (TypeError, ValueError):
+                pass
+        if "wounds_current" not in updates:
+            updates["wounds_current"] = updates.get("wounds_max", pools["wounds_max"])
+
+    if run.get("shock_current") is None:
+        updates["shock_current"] = updates.get("shock_max", pools["shock_max"])
+    if run.get("wrath_current") is None:
+        updates["wrath_current"] = updates.get("wrath_max", pools["wrath_max"])
+
+    # Clamp repaired/current values to their maxima.
+    final_wounds_max = int(updates.get("wounds_max", run.get("wounds_max") or pools["wounds_max"]))
+    final_shock_max = int(updates.get("shock_max", run.get("shock_max") or pools["shock_max"]))
+    final_wrath_max = int(updates.get("wrath_max", run.get("wrath_max") or pools["wrath_max"]))
+    updates["wounds_max"] = final_wounds_max
+    updates["shock_max"] = final_shock_max
+    updates["wrath_max"] = final_wrath_max
+    updates["wounds_current"] = min(final_wounds_max, max(0, int(updates["wounds_current"])))
+    updates["shock_current"] = min(final_shock_max, max(0, int(updates["shock_current"])))
+    updates["wrath_current"] = min(final_wrath_max, max(0, int(updates["wrath_current"])))
+
+    conn = get_conn()
+    conn.execute(
+        "UPDATE incursion_run SET wounds_current=?, wounds_max=?, shock_current=?, shock_max=?, wrath_current=?, wrath_max=? WHERE id=?",
+        (updates["wounds_current"], updates["wounds_max"], updates["shock_current"],
+         updates["shock_max"], updates["wrath_current"], updates["wrath_max"], run["id"]),
+    )
+    conn.commit()
+    conn.close()
+    run.update(updates)
+    return run
 
 
 def _inc_get_run(run_id):
     conn = get_conn()
     row = conn.execute("SELECT * FROM incursion_run WHERE id=?", (run_id,)).fetchone()
     conn.close()
-    return _inc_decode_run(row) if row else None
+    return _inc_hydrate_run_pools(_inc_decode_run(row)) if row else None
 
 
 def _inc_get_active_run(cid):
@@ -5764,7 +5860,7 @@ def _inc_get_active_run(cid):
         "SELECT * FROM incursion_run WHERE character_id=? AND status='active' ORDER BY id DESC LIMIT 1", (cid,)
     ).fetchone()
     conn.close()
-    return _inc_decode_run(row) if row else None
+    return _inc_hydrate_run_pools(_inc_decode_run(row)) if row else None
 
 
 def _inc_get_latest_run(cid):
@@ -5777,7 +5873,7 @@ def _inc_get_latest_run(cid):
         "SELECT * FROM incursion_run WHERE character_id=? ORDER BY id DESC LIMIT 1", (cid,)
     ).fetchone()
     conn.close()
-    return _inc_decode_run(row) if row else None
+    return _inc_hydrate_run_pools(_inc_decode_run(row)) if row else None
 
 
 def _inc_persist(run_id, **fields):
@@ -5860,14 +5956,18 @@ def _inc_life_pools(ch):
 
 
 def _inc_apply_damage(shock_current, wounds_current, damage):
-    """Damage hits Shock first (a buffer); only once Shock is fully spent
-    does the remainder carry over into real Wounds, per the book."""
-    remaining = damage
-    new_shock = shock_current
-    if remaining > 0 and new_shock > 0:
-        absorbed = min(new_shock, remaining)
-        new_shock -= absorbed
-        remaining -= absorbed
+    """Apply damage to Shock first, then carry excess into Wounds.
+
+    Be defensive about database values because older Incursion rows may contain
+    NULLs. Combat must always operate on integers.
+    """
+    shock_current = max(0, int(shock_current or 0))
+    wounds_current = max(0, int(wounds_current or 0))
+    damage = max(0, int(damage or 0))
+
+    absorbed = min(shock_current, damage)
+    new_shock = shock_current - absorbed
+    remaining = damage - absorbed
     new_wounds = max(0, wounds_current - remaining)
     return new_shock, new_wounds
 
@@ -8780,10 +8880,7 @@ def main():
     inject_theme(); init_db()
     st.session_state.setdefault("user", None)
     st.session_state.setdefault("editing", None)
-    st.session_state.setdefault("app_mode", None)
-
-    if st.session_state.app_mode is None:
-        mode_chooser_page(); return
+    st.session_state.setdefault("app_mode", "system")
 
     if st.session_state.app_mode == "incursion":
         if st.session_state.user is None:

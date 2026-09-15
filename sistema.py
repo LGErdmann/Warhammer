@@ -3885,11 +3885,11 @@ def inject_theme():
     .inc-track{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;overflow:hidden;margin:0 0 17px;padding:0}.inc-stage{position:relative;text-align:center;padding:7px 5px;border-radius:0;font-size:.57rem;letter-spacing:.1em;text-transform:uppercase;background:#100d09;border:1px solid #322719;color:#665941;white-space:nowrap;opacity:.72}.inc-stage.now{border-color:#8c642a;opacity:1;color:#ead7a8;background:linear-gradient(180deg,#322317,#17110b);box-shadow:inset 0 -2px 0 #9b2d27}.inc-stage.now span{display:none}.inc-stage.now:before{content:"CURRENT";display:block;font-size:.43rem;color:#b64a40;letter-spacing:.16em;margin-bottom:2px}
     .inc-card{position:relative;border:1px solid #473822;border-radius:0;background:linear-gradient(180deg,rgba(22,17,12,.97),rgba(12,10,8,.97));padding:20px;margin-bottom:14px;box-shadow:inset 0 0 25px rgba(0,0,0,.32)}.inc-card:before{content:"";position:absolute;top:-1px;left:12px;right:12px;height:1px;background:linear-gradient(90deg,transparent,#74552a,transparent)}
     .inc-title{font-family:Cinzel,serif;color:#d8c18a;text-transform:uppercase;letter-spacing:.15em;font-size:1rem;margin:0 0 7px}.inc-flavor{color:#b4a78d;opacity:.78;font-size:.78rem;line-height:1.6;margin-bottom:14px}
-    .inc-enemy{position:relative;border:1px solid #3a2e18;border-radius:0;padding:13px;background:#11100d;min-height:160px;overflow:hidden;transition:transform .15s ease,border-color .15s ease,box-shadow .15s ease}.inc-enemy:after{content:"";position:absolute;right:-28px;bottom:-28px;width:90px;height:90px;border:1px solid rgba(190,160,90,.12);transform:rotate(45deg);pointer-events:none}.inc-enemy.selected{transform:translateY(-2px);border-color:#c64a3d;box-shadow:0 0 0 1px rgba(198,74,61,.25),0 0 24px rgba(120,20,15,.18)}.inc-enemy.selected:before{content:"TARGET LOCK";position:absolute;right:8px;top:7px;font:9px monospace;letter-spacing:.13em;color:#d96a5d}.inc-enemy.dead{opacity:.3;filter:grayscale(1)}.inc-enemy .en{font-family:Cinzel,serif;font-weight:700;font-size:.9rem;color:#ded0ad;letter-spacing:.06em;text-transform:uppercase}.inc-enemy .et{font-size:.61rem;color:#89785d;opacity:.9;text-transform:uppercase;margin:3px 0 8px;letter-spacing:.08em}.inc-npc-vitals{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin:8px 0}.inc-npc-vitals span{border:1px solid #2e2418;padding:5px;text-align:center;font-size:.56rem;color:#766750;text-transform:uppercase}.inc-npc-vitals b{display:block;color:#c9b98f;font:700 .82rem Cinzel,serif}.inc-npc-def{font:10px monospace;color:#827157;letter-spacing:.05em;border-top:1px solid #292016;padding-top:7px}.inc-enemy.enemy-v0{background:linear-gradient(155deg,#101715 0%,#0b0d0c 55%,#101812 100%);border-left:4px solid #5d8b73}.inc-enemy.enemy-v0 .inc-enemy-strip{color:#79a88f;border-bottom-color:#294238}.inc-enemy.enemy-v0 .en{color:#b9d4c4}.inc-enemy.enemy-v1{background:linear-gradient(155deg,#18130c 0%,#0e0b08 58%,#191208 100%);border-left:4px solid #b08a45}.inc-enemy.enemy-v1 .inc-enemy-strip{color:#c7a662;border-bottom-color:#4c3a1f}.inc-enemy.enemy-v1 .en{color:#e0c994}.inc-enemy.enemy-v2{background:linear-gradient(155deg,#190d0d 0%,#0e0909 58%,#1a0d0c 100%);border-left:4px solid #a7473d}.inc-enemy.enemy-v2 .inc-enemy-strip{color:#d06a60;border-bottom-color:#54231f}.inc-enemy.enemy-v2 .en{color:#e1aaa4}.inc-enemy.enemy-v3{background:linear-gradient(155deg,#16101b 0%,#0b0910 58%,#17101d 100%);border-left:4px solid #8760a8}.inc-enemy.enemy-v3 .inc-enemy-strip{color:#a985c1;border-bottom-color:#3c2849}.inc-enemy.enemy-v3 .en{color:#ceb9d9}.inc-enemy.enemy-v0 .inc-npc-vitals span{border-color:#294238}.inc-enemy.enemy-v1 .inc-npc-vitals span{border-color:#4c3a1f}.inc-enemy.enemy-v2 .inc-npc-vitals span{border-color:#54231f}.inc-enemy.enemy-v3 .inc-npc-vitals span{border-color:#3c2849}
+    .inc-enemy{position:relative;border:1px solid #3a2e18;border-radius:0;padding:13px;background:#11100d;min-height:160px;overflow:hidden;transition:transform .15s ease,border-color .15s ease,box-shadow .15s ease}.inc-enemy:after{content:"";position:absolute;right:-28px;bottom:-28px;width:90px;height:90px;border:1px solid rgba(190,160,90,.12);transform:rotate(45deg);pointer-events:none}.inc-enemy.selected{transform:translateY(-2px);border-color:#c64a3d;box-shadow:0 0 0 1px rgba(198,74,61,.25),0 0 24px rgba(120,20,15,.18)}.inc-enemy.selected:before{content:"TARGET LOCK";position:absolute;right:8px;top:7px;font:9px monospace;letter-spacing:.13em;color:#d96a5d}.inc-enemy.dead{opacity:.3;filter:grayscale(1)}.inc-enemy .en{font-family:Cinzel,serif;font-weight:700;font-size:.9rem;color:#ded0ad;letter-spacing:.06em;text-transform:uppercase}.inc-enemy .et{font-size:.61rem;color:#89785d;opacity:.9;text-transform:uppercase;margin:3px 0 8px;letter-spacing:.08em}.inc-npc-vitals{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin:8px 0}.inc-npc-vitals span{border:1px solid #2e2418;padding:6px 5px;text-align:center;font-size:.56rem;color:#766750;text-transform:uppercase}.inc-npc-vitals b{display:block;color:#c9b98f;font:700 .82rem Cinzel,serif}.inc-vital{position:relative;overflow:hidden;box-shadow:inset 0 0 18px var(--vital-glow)}.inc-vital:before{content:"";position:absolute;inset:0;z-index:0;background:linear-gradient(90deg,var(--vital-color) 0%,var(--vital-color) var(--vital-pct),transparent var(--vital-pct),transparent 100%);opacity:.22}.inc-vital>*{position:relative;z-index:1}.inc-vital.wounds{--vital-glow:rgba(55,170,95,.30);--vital-color:hsl(calc(120 * var(--vital-pct-num)),72%,42%)}.inc-vital.shock{--vital-glow:rgba(150,105,205,.30);--vital-color:#9b72c2}.inc-vital-label{display:block;margin-top:2px;font-size:.52rem;letter-spacing:.12em}.inc-vital.wounds .inc-vital-label{color:#8bcf9b}.inc-vital.shock .inc-vital-label{color:#c6a7df}.inc-npc-def{font:10px monospace;color:#827157;letter-spacing:.05em;border-top:1px solid #292016;padding-top:7px}.inc-enemy.enemy-v0{background:linear-gradient(155deg,#101715 0%,#0b0d0c 55%,#101812 100%);border-left:4px solid #5d8b73}.inc-enemy.enemy-v0 .inc-enemy-strip{color:#79a88f;border-bottom-color:#294238}.inc-enemy.enemy-v0 .en{color:#b9d4c4}.inc-enemy.enemy-v1{background:linear-gradient(155deg,#18130c 0%,#0e0b08 58%,#191208 100%);border-left:4px solid #b08a45}.inc-enemy.enemy-v1 .inc-enemy-strip{color:#c7a662;border-bottom-color:#4c3a1f}.inc-enemy.enemy-v1 .en{color:#e0c994}.inc-enemy.enemy-v2{background:linear-gradient(155deg,#190d0d 0%,#0e0909 58%,#1a0d0c 100%);border-left:4px solid #a7473d}.inc-enemy.enemy-v2 .inc-enemy-strip{color:#d06a60;border-bottom-color:#54231f}.inc-enemy.enemy-v2 .en{color:#e1aaa4}.inc-enemy.enemy-v3{background:linear-gradient(155deg,#16101b 0%,#0b0910 58%,#17101d 100%);border-left:4px solid #8760a8}.inc-enemy.enemy-v3 .inc-enemy-strip{color:#a985c1;border-bottom-color:#3c2849}.inc-enemy.enemy-v3 .en{color:#ceb9d9}.inc-enemy.enemy-v0 .inc-npc-vitals span{border-color:#294238}.inc-enemy.enemy-v1 .inc-npc-vitals span{border-color:#4c3a1f}.inc-enemy.enemy-v2 .inc-npc-vitals span{border-color:#54231f}.inc-enemy.enemy-v3 .inc-npc-vitals span{border-color:#3c2849}
     .inc-log{max-height:280px;overflow-y:auto;background:#090807;border:1px solid #332719;border-radius:0;padding:10px;margin-bottom:14px;display:flex;flex-direction:column-reverse;gap:4px}.inc-log-line{font-size:.7rem;padding:6px 8px;border-radius:0;border-left:2px solid transparent;font-family:monospace}.inc-log-line.player{background:rgba(70,82,72,.1);border-left-color:#8c7546}.inc-log-line.enemy{background:rgba(120,20,20,.09);border-left-color:#87322c}.inc-log-line.system{text-align:center;font-style:italic;color:#9b8455;border-left:none}
     .inc-banner-win{font-family:Cinzel,serif;text-align:center;padding:14px;border-radius:0;margin-bottom:14px;letter-spacing:.15em;text-transform:uppercase;background:linear-gradient(90deg,rgba(80,60,20,.08),rgba(201,162,39,.16),rgba(80,60,20,.08));border:1px solid #8a6b32;color:#ddc581}.inc-banner-lose{font-family:Cinzel,serif;text-align:center;padding:14px;border-radius:0;margin-bottom:14px;letter-spacing:.15em;text-transform:uppercase;background:rgba(100,15,15,.13);border:1px solid #7d302b;color:#d87870}
     .inc-action-title{font-family:Cinzel,serif;color:#cdb77f;letter-spacing:.2em;font-size:.72rem;text-align:center;margin-bottom:8px;text-transform:uppercase}.inc-status-blood{color:#d65a52;font-weight:700;text-transform:uppercase;letter-spacing:.05em}.inc-talent-reaction{border:1px solid #6f2d28;background:linear-gradient(135deg,#190b0b,#0d0808);padding:16px;margin:12px 0;box-shadow:0 0 22px rgba(120,0,0,.18)}
-    .inc-talent-card{border-left:2px solid #77633c;background:#14100b;padding:9px 12px;margin:6px 0;border-radius:0}.inc-talent-card.active{border-left-color:#b23a35}.inc-talent-card.passive{border-left-color:#3e7f5a}.inc-talent-card.manual{border-left-color:#6d5a39;opacity:.7}.inc-talent-card span{display:block;font-size:.72rem;opacity:.72;margin-top:3px;line-height:1.45}.inc-chip small{display:block;font-size:.49rem;letter-spacing:.14em;opacity:.72;margin-top:3px}.inc-enemy{transition:transform .15s ease,border-color .15s ease;min-height:176px}.inc-enemy:hover{transform:translateY(-2px);border-color:#80602c}.inc-enemy-strip{display:flex;justify-content:space-between;border-bottom:1px solid #2d2418;padding-bottom:6px;margin-bottom:9px;font:9px monospace;letter-spacing:.12em;color:#75654c}.inc-enemy.tier-1{border-top:3px solid #59604b}.inc-enemy.tier-2{border-top:3px solid #827044}.inc-enemy.tier-3{border-top:3px solid #9b4b39}.inc-enemy.tier-4{border-top:3px solid #b6a05e;box-shadow:0 0 18px rgba(180,150,70,.08)}.inc-enemy.selected{border-color:#b23d32;background:linear-gradient(180deg,#21100d,#100b08)}.inc-enemy-status{min-height:16px;margin-top:8px}.inc-vox{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:7px;margin-top:9px;padding:5px 6px;border-top:1px solid #2e2518;border-bottom:1px solid #2e2518;background:rgba(0,0,0,.18)}.vox-label,.vox-state{font:7px monospace;letter-spacing:.12em;color:#75664c}.vox-wave{height:16px;display:flex;align-items:center;justify-content:center;gap:2px;overflow:hidden}.vox-wave i{display:block;width:2px;height:4px;background:#8d7650;opacity:.8;animation:incvox 1.05s ease-in-out infinite}.vox-wave i:nth-child(2){animation-delay:.08s}.vox-wave i:nth-child(3){animation-delay:.16s}.vox-wave i:nth-child(4){animation-delay:.24s}.vox-wave i:nth-child(5){animation-delay:.32s}.vox-wave i:nth-child(6){animation-delay:.40s}.vox-wave i:nth-child(7){animation-delay:.48s}.inc-enemy.selected .vox-wave i{background:#c65b50}.inc-enemy.selected .vox-state{color:#c65b50}.inc-enemy.enemy-v1 .vox-wave i{background:#c7a662}.inc-enemy.enemy-v2 .vox-wave i{background:#c65b50}.inc-enemy.enemy-v3 .vox-wave i{background:#a985c1}@keyframes incvox{0%,100%{height:3px;opacity:.35}20%{height:9px;opacity:.7}40%{height:15px;opacity:1}60%{height:7px;opacity:.75}80%{height:12px;opacity:.9}}
+    .inc-talent-card{border-left:2px solid #77633c;background:#14100b;padding:9px 12px;margin:6px 0;border-radius:0}.inc-talent-card.active{border-left-color:#b23a35}.inc-talent-card.passive{border-left-color:#3e7f5a}.inc-talent-card.manual{border-left-color:#6d5a39;opacity:.7}.inc-talent-card span{display:block;font-size:.72rem;opacity:.72;margin-top:3px;line-height:1.45}.inc-chip small{display:block;font-size:.49rem;letter-spacing:.14em;opacity:.72;margin-top:3px}.inc-enemy{transition:transform .15s ease,border-color .15s ease;min-height:176px;border:1px solid #3a2d1d;box-sizing:border-box}.inc-enemy:hover{transform:translateY(-2px);border-color:#80602c}.inc-enemy-strip{display:flex;justify-content:space-between;border-bottom:1px solid #2d2418;padding-bottom:6px;margin-bottom:9px;font:9px monospace;letter-spacing:.12em;color:#75654c}.inc-enemy.tier-1{border-top:3px solid #59604b}.inc-enemy.tier-2{border-top:3px solid #827044}.inc-enemy.tier-3{border-top:3px solid #9b4b39}.inc-enemy.tier-4{border-top:3px solid #b6a05e;box-shadow:0 0 18px rgba(180,150,70,.08)}.inc-enemy.selected{border:1px solid #c34b3e;box-shadow:0 0 0 1px rgba(195,75,62,.22),0 0 16px rgba(160,40,30,.14);background:linear-gradient(180deg,#21100d,#100b08)}.inc-enemy-status{min-height:16px;margin-top:8px}.inc-vox{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:7px;width:100%;box-sizing:border-box;margin:10px 0 0;padding:6px 8px;border:1px solid #4b3a25;background:linear-gradient(90deg,rgba(20,16,10,.92),rgba(7,7,6,.96),rgba(20,16,10,.92));box-shadow:inset 0 0 12px rgba(0,0,0,.55),0 0 8px rgba(0,0,0,.18)}.vox-label,.vox-state{font:7px monospace;letter-spacing:.12em;color:#75664c}.vox-wave{height:16px;display:flex;align-items:center;justify-content:center;gap:2px;overflow:hidden}.vox-wave i{display:block;width:2px;height:4px;background:#8d7650;opacity:.8;animation:incvox 1.05s ease-in-out infinite}.vox-wave i:nth-child(2){animation-delay:.08s}.vox-wave i:nth-child(3){animation-delay:.16s}.vox-wave i:nth-child(4){animation-delay:.24s}.vox-wave i:nth-child(5){animation-delay:.32s}.vox-wave i:nth-child(6){animation-delay:.40s}.vox-wave i:nth-child(7){animation-delay:.48s}.inc-enemy.selected .vox-wave i{background:#c65b50}.inc-enemy.selected .vox-state{color:#c65b50}.inc-enemy.enemy-v1 .vox-wave i{background:#c7a662}.inc-enemy.enemy-v2 .vox-wave i{background:#c65b50}.inc-enemy.enemy-v3 .vox-wave i{background:#a985c1}@keyframes incvox{0%,100%{height:3px;opacity:.35}20%{height:9px;opacity:.7}40%{height:15px;opacity:1}60%{height:7px;opacity:.75}80%{height:12px;opacity:.9}}
 .inc-wrath-spend{border:1px solid #604d28;background:linear-gradient(180deg,#1d170d,#0e0b07);padding:5px;text-align:center;min-height:44px}.inc-wrath-spend span{display:block;font:8px monospace;letter-spacing:.12em;color:#8b7650}.inc-wrath-spend b{font:700 1.15rem Cinzel,serif;color:#e7c66c}.inc-wrath-spend small{font:8px monospace;color:#756044;margin-left:5px}.inc-wrath-spend+*{}
     @media (max-width:900px){.inc-hud{grid-template-columns:repeat(4,1fr)}.inc-track{grid-template-columns:repeat(4,1fr)}}@media (max-width:600px){.inc-hud{grid-template-columns:repeat(2,1fr)}.inc-track{display:flex;overflow-x:auto}.inc-stage{flex:0 0 120px}.inc-banner{font-size:1.35rem;letter-spacing:.13em}.inc-command-line{font-size:8px}}
     
@@ -6605,9 +6605,9 @@ def _inc_resolve_player_attack(ch, run, node, target_uids, weapon, bonus_die=0, 
             # Exalted Icons can be shifted into ED while retaining enough Icons to hit.
             sixes = rolls.count(6)
             shiftable = min(sixes, max(0, (icons - target["defence"]) // 2))
-            total_ed = int(weapon.get("ed", 0) or 0) + (shiftable if six_mode == "ED" else 0)
-            if six_mode == "Wrath":
-                wrath_gained += shiftable
+            # Exalted Icons (6s) are always converted to extra ED when available.
+            # A Critical (Wrath Die = 6 on a successful attack) always grants 1 Wrath.
+            total_ed = int(weapon.get("ed", 0) or 0) + shiftable
             total_damage, damage_rolls = _inc_roll_damage(weapon["damage"], total_ed)
             if critical:
                 # Simple Critical option: +3 ED and a narrative critical effect.
@@ -6634,7 +6634,7 @@ def _inc_resolve_player_attack(ch, run, node, target_uids, weapon, bonus_die=0, 
 
 def _inc_resolve_player_heal(ch, run, node, spend_wrath=0):
     if run["heal_charges"] <= 0: raise ValueError("no_heal_charges")
-    spend_wrath=max(0,int(spend_wrath or 0))
+    spend_wrath=max(0,min(1,int(spend_wrath or 0)))
     if spend_wrath>int(run.get("wrath_current",0) or 0): raise ValueError("no_wrath")
     merged=_inc_merge_character(ch,run); player_traits=derived_traits(merged)
     heal_amount=max(1,round(run["wounds_max"]*0.3)); new_wounds=min(run["wounds_max"],run["wounds_current"]+heal_amount)
@@ -6897,9 +6897,7 @@ def _inc_pvp_apply_attack(match, side, spend_wrath=0, six_mode="ED"):
     wrath_gained = 1 if hit and wrath_die_6 else 0
     if hit:
         shifted = min(rolls.count(6), max(0, (icons - int(target["defence"])) // 2))
-        total_damage, _ = _inc_roll_damage(weapon["damage"], int(weapon.get("ed", 0)) + (shifted if six_mode == "ED" else 0))
-        if six_mode == "Wrath":
-            wrath_gained += shifted
+        total_damage, _ = _inc_roll_damage(weapon["damage"], int(weapon.get("ed", 0)) + shifted)
         if wrath_die_6:
             crit_total, _ = _inc_roll_damage(0, 3); total_damage += crit_total
         shock, wounds, _ = _inc_damage_result(total_damage, int(target["resilience"]), int(weapon.get("ap", 0)))
@@ -6909,7 +6907,7 @@ def _inc_pvp_apply_attack(match, side, spend_wrath=0, six_mode="ED"):
     entry = {"side": side, "actor": actor["name"], "target": target["name"], "action": "attack", "skill": skill_name,
              "pool": pool, "rolls": rolls, "icons": icons, "weapon": weapon["name"], "hit": hit,
              "damage": total_damage if hit else 0, "shock": shock, "wounds": wounds, "wrath_spent": spend_wrath,
-             "wrath_gained": wrath_gained, "shifted": shifted, "six_mode": six_mode}
+             "wrath_gained": wrath_gained, "shifted": shifted}
     state["log"].append(entry)
     if target["wounds"] <= 0:
         state["winner"] = side
@@ -6926,7 +6924,7 @@ def _inc_pvp_apply_attack(match, side, spend_wrath=0, six_mode="ED"):
 def _inc_pvp_recover_shock(match, side, spend_wrath=0):
     state = copy.deepcopy(match["state"]); actor = state[side]
     if state.get("winner") or state.get("turn") != side: raise ValueError("not_your_turn")
-    spend_wrath=max(0,int(spend_wrath or 0))
+    spend_wrath=max(0,min(1,int(spend_wrath or 0)))
     if spend_wrath > int(actor.get("wrath",0)): raise ValueError("no_wrath")
     snap=actor["snapshot"]; rank=int(snap.get("rank",1) or 1); tier=int(snap.get("tier",1) or 1)
     recovered=min(int(actor["shock_max"])-int(actor["shock"]), spend_wrath*(rank+tier))
@@ -7252,6 +7250,8 @@ def _inc_render_combat(run, ch, node):
     merged=_inc_merge_character(ch,run); traits=derived_traits(merged); live=[e for e in node["enemies"] if e["alive"]]
     target_key=f"inc_targets_{run['id']}"
     selected_targets=[uid for uid in st.session_state.get(target_key,[]) if any(e["uid"]==uid and e["alive"] for e in live)]
+    if live and not selected_targets:
+        selected_targets=[live[0]["uid"]]
     st.session_state[target_key]=selected_targets
     st.markdown(f"<div class='inc-combat-header'><div class='inc-kicker'>THREAT CONTACT</div><div class='inc-title'>{diff_label}</div><div class='inc-flavor'>Select targets directly. One strike can hit every locked contact.</div></div>",unsafe_allow_html=True)
     if node.get("resolved"):
@@ -7261,6 +7261,11 @@ def _inc_render_combat(run, ch, node):
     for i,e in enumerate(node["enemies"]):
         with cols[i%len(cols)]:
             bleed=int((e.get("statuses") or {}).get("Bleeding",0) or 0)
+            wounds_max=max(1,int(e.get("wounds_max",1) or 1)); wounds_cur=max(0,min(wounds_max,int(e.get("wounds_current",0) or 0)))
+            shock_max=max(1,int(e.get("shock_max",1) or 1)); shock_cur=max(0,min(shock_max,int(e.get("shock_current",0) or 0)))
+            wounds_pct=100.0*wounds_cur/wounds_max; shock_pct=100.0*shock_cur/shock_max
+            shock_light=38.0 + (28.0 * shock_pct / 100.0)
+            wounds_hue=max(0.0,min(120.0,wounds_pct*1.2))
             state="TARGET LOCK" if e["uid"] in selected_targets else ("NEUTRALIZED" if not e["alive"] else "AVAILABLE")
             state_cls="selected" if e["uid"] in selected_targets else ("dead" if not e["alive"] else "")
             threat_cls=f"tier-{max(1,min(4,int(e.get('tier',1) or 1)))}"
@@ -7271,7 +7276,7 @@ def _inc_render_combat(run, ch, node):
                 f"<div class='inc-enemy-strip'><span>THREAT {i+1:02d}</span><span>{state}</span></div>"
                 f"<div class='en'>{html.escape(e['name'])}</div>"
                 f"<div class='et'>TIER {e['tier']} · {html.escape(e['weapon_name'])}</div>"
-                f"<div class='inc-npc-vitals'><span><b>{e['wounds_current']}/{e['wounds_max']}</b>WOUNDS</span><span><b>{e['shock_current']}/{e['shock_max']}</b>SHOCK</span><span><b>{e.get('wrath_current',0)}</b>WRATH</span></div>"
+                f"<div class='inc-npc-vitals'><span class='inc-vital wounds' style='--vital-pct:{wounds_pct:.1f}%;--vital-pct-num:{wounds_pct/100:.3f};--vital-color:hsl({wounds_hue:.1f},72%,42%)'><b>{wounds_cur}/{wounds_max}</b><span class='inc-vital-label'>WOUNDS · LIFE</span></span><span class='inc-vital shock' style='--vital-pct:{shock_pct:.1f}%;--vital-pct-num:{shock_pct/100:.3f};--vital-color:hsl(270,55%,{shock_light:.1f}%)'><b>{shock_cur}/{shock_max}</b><span class='inc-vital-label'>SHOCK</span></span><span><b>{e.get('wrath_current',0)}</b>WRATH</span></div>"
                 f"<div class='inc-npc-def'>DEF {e['defence']} · RES {e['resilience']} · SPD {e.get('speed',1)}</div>"
                 f"<div class='inc-vox'><span class='vox-label'>VOX LINK</span><span class='vox-wave'><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class='vox-state'>{('LOCKED' if e['uid'] in selected_targets else 'ACTIVE')}</span></div>"
                 f"<div class='inc-enemy-status'>{bleed_html}</div></div>", unsafe_allow_html=True)
@@ -7303,11 +7308,10 @@ def _inc_render_combat(run, ch, node):
             c1,c2=st.columns([2,1]); c1.selectbox("Weapon",keys,key=wk,format_func=wl); c2.markdown(f"<div class='inc-mini-readout'><b>{len(selected_targets)}</b><span>LOCKED</span></div>",unsafe_allow_html=True)
             if int(run.get("wrath_current",0))>0:
                 spend=_inc_wrath_spend_control(run['id'],int(run.get('wrath_current',0)),"inc_attack_wrath","WRATH TO DICE")
-                six_mode=st.radio("6s",["ED","Wrath"],format_func=lambda x:"EXTRA DAMAGE" if x=="ED" else "GAIN WRATH",horizontal=True,key=f"inc_attack_six_{run['id']}")
             else:
-                spend=0; six_mode="ED"
+                spend=0
             if st.button("STRIKE",key="inc_attack",use_container_width=True,disabled=not selected_targets):
-                try: _inc_combat_attack(run,ch,selected_targets,st.session_state.get(wk),bonus_die=int(spend),six_mode=six_mode)
+                try: _inc_combat_attack(run,ch,selected_targets,st.session_state.get(wk),bonus_die=int(spend))
                 except ValueError as exc: st.error(str(exc).replace('_',' ').title())
                 st.session_state[target_key]=[]; st.rerun()
         elif action=="FLEE":
@@ -7321,7 +7325,7 @@ def _inc_render_combat(run, ch, node):
                 st.rerun()
         else:
             if int(run.get("wrath_current",0))>0:
-                spend=_inc_wrath_spend_control(run['id'],int(run.get('wrath_current',0)),"inc_heal_wrath","WRATH TO SHOCK")
+                spend=_inc_wrath_spend_control(run['id'],min(1,int(run.get('wrath_current',0))),"inc_heal_wrath","WRATH TO SHOCK")
             else: spend=0
             st.caption(f"Medicae charges {run['heal_charges']} · Restore Wounds and Shock")
             if st.button("MEDICAE",key="inc_heal",disabled=run['heal_charges']<1,use_container_width=True):
@@ -7377,10 +7381,9 @@ def _inc_render_pvp_match(run, ch, node):
         st.selectbox("Weapon",keys,key=wk,format_func=lambda k: next(w['name'] for w in weapons if w['key']==k))
         if me["wrath"]>0:
             spend=_inc_wrath_spend_control(match['id'],int(me["wrath"]),"inc_pvp_wrath","WRATH TO DICE")
-            mode=st.radio("6s",["ED","Wrath"],format_func=lambda x:"EXTRA DAMAGE" if x=="ED" else "GAIN WRATH",horizontal=True,key=f"inc_pvp_six_{match['id']}")
-        else: spend=0; mode="ED"
+        else: spend=0
         if st.button("STRIKE",key=f"inc_pvp_strike_{match['id']}",use_container_width=True):
-            _inc_pvp_apply_attack(match,side,int(spend),mode); st.rerun()
+            _inc_pvp_apply_attack(match,side,int(spend)); st.rerun()
         if me["wrath"]>0:
             if st.button("RECOVER SHOCK",key=f"inc_pvp_recover_{match['id']}",use_container_width=True):
                 _inc_pvp_recover_shock(match,side,int(me["wrath"])); st.rerun()

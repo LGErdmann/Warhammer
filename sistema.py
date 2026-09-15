@@ -1235,6 +1235,12 @@ def init_db():
         id INTEGER PRIMARY KEY AUTOINCREMENT, run_id INTEGER NOT NULL, character_id INTEGER NOT NULL,
         checkpoint TEXT NOT NULL, snapshot TEXT NOT NULL, status TEXT DEFAULT 'waiting',
         result TEXT, created_at TEXT)""")
+    c.execute("""CREATE TABLE IF NOT EXISTS incursion_pvp_match(
+        id INTEGER PRIMARY KEY AUTOINCREMENT, checkpoint TEXT NOT NULL,
+        run_a INTEGER NOT NULL, run_b INTEGER NOT NULL,
+        char_a INTEGER NOT NULL, char_b INTEGER NOT NULL,
+        state TEXT NOT NULL, status TEXT DEFAULT 'active',
+        created_at TEXT, updated_at TEXT)""")
     # A run that ends in death leaves behind a mob built from that
     # character's final stats/weapon - future Incursions (anyone's) can run
     # into it. Saved only here, never added to the game's own Bestiary.
@@ -3192,7 +3198,7 @@ def ascend_archetype(cid, new_archetype):
         history.append({"archetype": ch["archetype"], "tier": int(ch["tier"]), "retained": True})
     # Core Rulebook 2e p.155: "add all of the Archetype benefits (Archetype
     # Abilities, Wargear, Influence, etc.)... and retain all of the benefits
-    # from your previous Archetype" — so the new Archetype's starting Wargear
+    # from your previous Archetype" · so the new Archetype's starting Wargear
     # is merged into (not swapped for) whatever the character already has.
     current_gear = normalize_wargear(ch.get("wargear", []))
     package_gear = archetype_starting_wargear(new_archetype)
@@ -3848,7 +3854,7 @@ def inject_theme():
     .mode-card.incursion .mt{ color:#e8a0a0; }
 
     /* ============================================================
-       WRATH INCURSION — solo roguelike, deliberately a different visual
+       WRATH INCURSION · solo roguelike, deliberately a different visual
        register from the Cogitador (colder, redder, more feral) so the two
        "terminals" never feel like the same screen.
        ============================================================ */
@@ -3886,7 +3892,8 @@ def inject_theme():
     .inc-talent-card{border-left:2px solid #77633c;background:#14100b;padding:9px 12px;margin:6px 0;border-radius:0}.inc-talent-card.active{border-left-color:#b23a35}.inc-talent-card.passive{border-left-color:#3e7f5a}.inc-talent-card.manual{border-left-color:#6d5a39;opacity:.7}.inc-talent-card span{display:block;font-size:.72rem;opacity:.72;margin-top:3px;line-height:1.45}.inc-chip small{display:block;font-size:.49rem;letter-spacing:.14em;opacity:.72;margin-top:3px}.inc-enemy{transition:transform .15s ease,border-color .15s ease}.inc-enemy:hover{transform:translateY(-2px);border-color:#80602c}
     @media (max-width:900px){.inc-hud{grid-template-columns:repeat(4,1fr)}.inc-track{grid-template-columns:repeat(4,1fr)}}@media (max-width:600px){.inc-hud{grid-template-columns:repeat(2,1fr)}.inc-track{display:flex;overflow-x:auto}.inc-stage{flex:0 0 120px}.inc-banner{font-size:1.35rem;letter-spacing:.13em}.inc-command-line{font-size:8px}}
     
-    SPECTATOR VOX-FEED — deliberately the most theatrical page in the
+    .inc-mini-readout{height:100%;min-height:42px;border:1px solid #3c2d1a;background:#0e0b08;text-align:center;padding:6px}.inc-mini-readout b{display:block;font:700 1.05rem Cinzel,serif;color:#d8c18a}.inc-mini-readout span{font:9px monospace;color:#7f6d50;letter-spacing:.12em}.inc-live-panel{border:1px solid #72582c;background:linear-gradient(180deg,#17120d,#0c0907);padding:18px;text-align:center;margin:10px 0}.inc-duel-stat{display:grid;grid-template-columns:1fr 1fr 1fr;gap:5px;border:1px solid #493821;padding:9px;background:#100c08}.inc-duel-stat b{font:700 1.05rem Cinzel,serif;color:#dfc278;text-align:center}.inc-duel-stat span{font:9px monospace;color:#77654a;text-align:center}.inc-duel-stat.enemy{border-color:#63302b}.inc-wait-turn{text-align:center;border:1px solid #493821;padding:14px;color:#9c8760;font:10px monospace;letter-spacing:.12em;margin:10px 0}.inc-rank-panel{border:1px solid #493821;background:#0d0a07;margin-top:10px}.inc-rank-head,.inc-rank-row{display:grid;grid-template-columns:55px 1fr 90px;align-items:center;gap:10px;padding:9px 12px}.inc-rank-head{font:9px monospace;letter-spacing:.14em;color:#786648;border-bottom:1px solid #302418}.inc-rank-row{border-bottom:1px solid #241b11}.inc-rank-row:last-child{border-bottom:0}.inc-rank-pos{font:700 .8rem Cinzel,serif;color:#b99b5a}.inc-rank-name{font:700 .78rem Cinzel,serif;color:#d8c18a;text-transform:uppercase}.inc-rank-name small{display:block;font:9px monospace;color:#75664e;margin-top:2px;text-transform:none}.inc-rank-xp{text-align:right;font:700 .82rem Cinzel,serif;color:#dfc278}.inc-rank-empty{text-align:center;padding:18px;font:10px monospace;color:#75664e;letter-spacing:.1em}.inc-rank-panel + *{margin-top:8px}
+    /*     SPECTATOR VOX-FEED · deliberately the most theatrical page in the
        app: it shows almost nothing (only current Shock, gated by the
        Magister), so the presentation is what carries it.
        ============================================================ */
@@ -3982,7 +3989,7 @@ def inject_theme():
         .stMarkdown p, .stCaption, [data-testid="stCaptionContainer"]{ font-size:.82rem !important; }
         /* Compact metric + stacked -/+ widgets (Wounds/Shock/Wrath/Ammo/Ruin)
            are already a single self-contained "block" (a bordered stMetric
-           plus two small buttons) — the blanket column-stacking rule above
+           plus two small buttons) · the blanket column-stacking rule above
            was blowing each one up into three separate full-width rows
            instead of keeping it as one tight card, so it's exempted here
            and kept as a compact horizontal block like the desktop layout. */
@@ -5742,7 +5749,7 @@ def _login_hologram_globe():
 
 
 # ============================================================
-#  WRATH INCURSION — solo roguelike mini-game
+#  WRATH INCURSION · solo roguelike mini-game
 #  Lives entirely inside sistema.py (one deployment, one login system per
 #  terminal - see mode_chooser_page()) but is fully isolated data-wise: a
 #  run only ever READS a character's attributes/skills/wargear/talents/
@@ -6806,6 +6813,40 @@ def _inc_simulate_fight(attacker, defender, hp_a_start, hp_b_start):
     return {"log": log, "hp_a": hp_a, "hp_b": hp_b, "winner": winner}
 
 
+def _inc_match_state_from_snapshots(a, b):
+    def player(snap):
+        traits = derived_traits(snap)
+        return {
+            "name": snap.get("name", "Operative"),
+            "snapshot": snap,
+            "wounds": int(snap.get("wounds_current", traits["Max Wounds"]) or 0),
+            "wounds_max": int(snap.get("wounds_max", traits["Max Wounds"]) or traits["Max Wounds"]),
+            "shock": int(snap.get("shock_current", traits["Max Shock"]) or 0),
+            "shock_max": int(snap.get("shock_max", traits["Max Shock"]) or traits["Max Shock"]),
+            "wrath": 2,
+            "defence": int(traits["Defence"]),
+            "resilience": int(traits["Resilience"]),
+            "speed": int(traits["Speed"]),
+        }
+    return {"a": player(a), "b": player(b), "turn": "a", "log": [], "winner": None}
+
+
+def _inc_create_pvp_match(waiting, current):
+    a_snap = _inc_json_field(waiting["snapshot"], {})
+    b_snap = _inc_json_field(current["snapshot"], {})
+    state = _inc_match_state_from_snapshots(a_snap, b_snap)
+    conn = get_conn()
+    cur = conn.execute(
+        "INSERT INTO incursion_pvp_match(checkpoint,run_a,run_b,char_a,char_b,state,status,created_at,updated_at) VALUES(?,?,?,?,?,?,'active',?,?)",
+        (waiting["checkpoint"], waiting["run_id"], current["run_id"], waiting["character_id"], current["character_id"],
+         json.dumps(state), now_iso(), now_iso()))
+    match_id = cur.lastrowid
+    conn.execute("UPDATE incursion_pvp_queue SET status='matched', result=? WHERE id=?", (json.dumps({"match_id": match_id, "side": "a"}), waiting["id"]))
+    conn.execute("UPDATE incursion_pvp_queue SET status='matched', result=? WHERE id=?", (json.dumps({"match_id": match_id, "side": "b"}), current["id"]))
+    conn.commit(); conn.close()
+    return match_id
+
+
 def _inc_queue_or_match(run, ch, checkpoint):
     my_snapshot = _inc_build_snapshot(ch, run)
     conn = get_conn()
@@ -6813,82 +6854,134 @@ def _inc_queue_or_match(run, ch, checkpoint):
         "SELECT * FROM incursion_pvp_queue WHERE checkpoint=? AND status='waiting' AND character_id<>? "
         "ORDER BY created_at LIMIT 1", (checkpoint, ch["id"])
     ).fetchone()
-    if waiting:
-        opp = dict(waiting)
-        opp_snapshot = _inc_json_field(opp["snapshot"], {})
-        result = _inc_simulate_fight(my_snapshot, opp_snapshot, my_snapshot["wounds_current"], opp_snapshot["wounds_current"])
-        i_won, opp_won = result["winner"] == "attacker", result["winner"] == "defender"
-        conn.execute(
-            "UPDATE incursion_pvp_queue SET status='resolved', result=? WHERE id=?",
-            (json.dumps({"won": opp_won, "hp": result["hp_b"],
-                         "xp_gained": INC_PVP_XP_REWARD[checkpoint] if opp_won else 0,
-                         "log": result["log"], "opponent_name": my_snapshot["name"]}), opp["id"]))
-        conn.commit(); conn.close()
-        return {"matched": True, "won": i_won, "hp": result["hp_a"],
-                "xp_gained": INC_PVP_XP_REWARD[checkpoint] if i_won else 0,
-                "log": result["log"], "opponent_name": opp_snapshot["name"]}
-    cur = conn.execute(
-        "INSERT INTO incursion_pvp_queue(run_id,character_id,checkpoint,snapshot,status,created_at) "
-        "VALUES (?,?,?,?,'waiting',?)",
-        (run["id"], ch["id"], checkpoint, json.dumps(my_snapshot), now_iso()))
-    conn.commit()
-    queue_id = cur.lastrowid
     conn.close()
+    if waiting:
+        match_id = _inc_create_pvp_match(dict(waiting), {"run_id": run["id"], "character_id": ch["id"], "checkpoint": checkpoint, "snapshot": json.dumps(my_snapshot)})
+        opponent_run = _inc_get_run(int(waiting["run_id"]))
+        if opponent_run:
+            _inc_persist(opponent_run["id"], node={"type": "pvp_match", "checkpoint": checkpoint, "match_id": match_id, "side": "a"})
+        return {"matched": True, "match_id": match_id, "side": "b"}
+    conn = get_conn()
+    cur = conn.execute(
+        "INSERT INTO incursion_pvp_queue(run_id,character_id,checkpoint,snapshot,status,created_at) VALUES (?,?,?,?,'waiting',?)",
+        (run["id"], ch["id"], checkpoint, json.dumps(my_snapshot), now_iso()))
+    conn.commit(); queue_id = cur.lastrowid; conn.close()
     return {"matched": False, "queue_id": queue_id}
 
 
-def _inc_check_resolved(queue_id):
+def _inc_get_pvp_match(match_id):
+    conn = get_conn(); row = conn.execute("SELECT * FROM incursion_pvp_match WHERE id=?", (match_id,)).fetchone(); conn.close()
+    if not row: return None
+    r = dict(row); r["state"] = _inc_json_field(r.get("state"), {}); return r
+
+
+def _inc_pvp_apply_attack(match, side, spend_wrath=0, six_mode="ED"):
+    state = copy.deepcopy(match["state"])
+    other = "b" if side == "a" else "a"
+    actor = state[side]; target = state[other]
+    if state.get("winner") or state.get("turn") != side:
+        raise ValueError("not_your_turn")
+    spend_wrath = max(0, int(spend_wrath or 0))
+    if spend_wrath > int(actor.get("wrath", 0)):
+        raise ValueError("no_wrath")
+    snap = actor["snapshot"]
+    weapon = _inc_best_weapon(snap)
+    skill_name, base_pool = _inc_best_attack_pool(snap)
+    pool = max(1, int(base_pool) + spend_wrath)
+    actor["wrath"] -= spend_wrath
+    rolls, icons, wrath_die_6 = _inc_roll_pool(pool)
+    hit = icons >= int(target["defence"])
+    damage = shock = wounds = 0
+    shifted = 0
+    wrath_gained = 1 if hit and wrath_die_6 else 0
+    if hit:
+        shifted = min(rolls.count(6), max(0, (icons - int(target["defence"])) // 2))
+        total_damage, _ = _inc_roll_damage(weapon["damage"], int(weapon.get("ed", 0)) + (shifted if six_mode == "ED" else 0))
+        if six_mode == "Wrath":
+            wrath_gained += shifted
+        if wrath_die_6:
+            crit_total, _ = _inc_roll_damage(0, 3); total_damage += crit_total
+        shock, wounds, _ = _inc_damage_result(total_damage, int(target["resilience"]), int(weapon.get("ap", 0)))
+        target["shock"] = max(0, int(target["shock"]) - shock)
+        target["wounds"] = max(0, int(target["wounds"]) - wounds)
+    actor["wrath"] += wrath_gained
+    entry = {"side": side, "actor": actor["name"], "target": target["name"], "action": "attack", "skill": skill_name,
+             "pool": pool, "rolls": rolls, "icons": icons, "weapon": weapon["name"], "hit": hit,
+             "damage": total_damage if hit else 0, "shock": shock, "wounds": wounds, "wrath_spent": spend_wrath,
+             "wrath_gained": wrath_gained, "shifted": shifted, "six_mode": six_mode}
+    state["log"].append(entry)
+    if target["wounds"] <= 0:
+        state["winner"] = side
+        state["turn"] = None
+    else:
+        state["turn"] = other
     conn = get_conn()
-    row = conn.execute("SELECT * FROM incursion_pvp_queue WHERE id=?", (queue_id,)).fetchone()
-    conn.close()
-    if not row or row["status"] != "resolved":
-        return None
-    return _inc_json_field(row["result"], None)
+    conn.execute("UPDATE incursion_pvp_match SET state=?,status=?,updated_at=? WHERE id=?",
+                 (json.dumps(state), "resolved" if state.get("winner") else "active", now_iso(), match["id"]))
+    conn.commit(); conn.close()
+    return state
+
+
+def _inc_pvp_recover_shock(match, side, spend_wrath=0):
+    state = copy.deepcopy(match["state"]); actor = state[side]
+    if state.get("winner") or state.get("turn") != side: raise ValueError("not_your_turn")
+    spend_wrath=max(0,int(spend_wrath or 0))
+    if spend_wrath > int(actor.get("wrath",0)): raise ValueError("no_wrath")
+    snap=actor["snapshot"]; rank=int(snap.get("rank",1) or 1); tier=int(snap.get("tier",1) or 1)
+    recovered=min(int(actor["shock_max"])-int(actor["shock"]), spend_wrath*(rank+tier))
+    actor["wrath"] -= spend_wrath; actor["shock"] += recovered
+    other="b" if side=="a" else "a"
+    state["log"].append({"side":side,"actor":actor["name"],"action":"recover_shock","shock":recovered,"wrath_spent":spend_wrath})
+    state["turn"]=other
+    conn=get_conn(); conn.execute("UPDATE incursion_pvp_match SET state=?,updated_at=? WHERE id=?",(json.dumps(state),now_iso(),match["id"])); conn.commit(); conn.close()
+    return state
+
+
+def _inc_pvp_finalize_run(run, ch, match, side):
+    state=match["state"]; winner=state.get("winner"); actor=state[side]; opponent=state["b" if side=="a" else "a"]
+    if not winner: return run
+    won = winner == side
+    xp = INC_PVP_XP_REWARD[match["checkpoint"]] if won else 0
+    wounds=max(0,int(actor["wounds"]))
+    node={"type":"pvp_result","won":won,"opponent_name":opponent["name"],"xp_gained":xp,"log":state.get("log",[])}
+    updated=_inc_persist(run["id"],wounds_current=wounds,xp=run["xp"]+xp,xp_earned=run.get("xp_earned",0)+xp,node=node)
+    if wounds<=0:
+        updated=_inc_mark_dead(updated,ch,"Defeated in a duel against another player")
+    return updated
 
 
 def _inc_pvp_queue(run, ch):
-    if not run.get("node") or run["node"].get("type") != "pvp_choice":
-        raise ValueError("wrong_node")
-    checkpoint = run["node"]["checkpoint"]
-    outcome = _inc_queue_or_match(run, ch, checkpoint)
+    if not run.get("node") or run["node"].get("type") != "pvp_choice": raise ValueError("wrong_node")
+    checkpoint=run["node"]["checkpoint"]; outcome=_inc_queue_or_match(run,ch,checkpoint)
     if not outcome["matched"]:
-        return _inc_persist(run["id"], node={"type": "pvp_waiting", "checkpoint": checkpoint, "queue_id": outcome["queue_id"]})
-    new_wounds = outcome["hp"]
-    updated = _inc_persist(
-        run["id"], wounds_current=new_wounds, xp=run["xp"] + outcome.get("xp_gained", 0), xp_earned=run.get("xp_earned", 0) + outcome.get("xp_gained", 0),
-        node={"type": "pvp_result", "won": outcome["won"], "opponent_name": outcome["opponent_name"],
-              "log": outcome["log"], "xp_gained": outcome.get("xp_gained", 0)})
-    if new_wounds <= 0:
-        return _inc_mark_dead({**updated, "wounds_current": 0}, ch, "Defeated in a duel against another player")
-    return updated
+        return _inc_persist(run["id"],node={"type":"pvp_waiting","checkpoint":checkpoint,"queue_id":outcome["queue_id"]})
+    return _inc_persist(run["id"],node={"type":"pvp_match","checkpoint":checkpoint,"match_id":outcome["match_id"],"side":outcome["side"]})
 
 
 def _inc_pvp_skip(run, ch):
-    if not run.get("node") or run["node"].get("type") != "pvp_choice":
-        raise ValueError("wrong_node")
-    return _inc_advance(run, ch)
+    if not run.get("node") or run["node"].get("type") != "pvp_choice": raise ValueError("wrong_node")
+    return _inc_advance(run,ch)
 
 
-def _inc_pvp_result_continue(run, ch):
-    if not run.get("node") or run["node"].get("type") != "pvp_result":
-        raise ValueError("wrong_node")
-    return _inc_advance(run, ch)
+def _inc_pvp_result_continue(run,ch):
+    if not run.get("node") or run["node"].get("type") != "pvp_result": raise ValueError("wrong_node")
+    return _inc_advance(run,ch)
 
 
-def _inc_resolve_waiting_pvp(run, ch):
-    if not run.get("node") or run["node"].get("type") != "pvp_waiting":
-        return run
-    result = _inc_check_resolved(run["node"]["queue_id"])
-    if not result:
-        return run
-    new_wounds = result["hp"]
-    updated = _inc_persist(
-        run["id"], wounds_current=new_wounds, xp=run["xp"] + result.get("xp_gained", 0), xp_earned=run.get("xp_earned", 0) + result.get("xp_gained", 0),
-        node={"type": "pvp_result", "won": result["won"], "opponent_name": result["opponent_name"],
-              "log": result["log"], "xp_gained": result.get("xp_gained", 0)})
-    if new_wounds <= 0:
-        updated = _inc_mark_dead(updated, ch, "Defeated in a duel against another player")
-    return updated
+def _inc_resolve_waiting_pvp(run,ch):
+    if not run.get("node") or run["node"].get("type") != "pvp_waiting": return run
+    result=_inc_check_resolved(run["node"]["queue_id"])
+    if not result: return run
+    match=_inc_get_pvp_match(result.get("match_id")) if result.get("match_id") else None
+    if not match: return run
+    return _inc_persist(run["id"],node={"type":"pvp_match","checkpoint":match["checkpoint"],"match_id":match["id"],"side":result.get("side","a")})
+
+
+def _inc_check_resolved(queue_id):
+    conn=get_conn(); row=conn.execute("SELECT * FROM incursion_pvp_queue WHERE id=?",(queue_id,)).fetchone(); conn.close()
+    if not row or row["status"] not in ("matched","resolved"): return None
+    result=_inc_json_field(row["result"],None)
+    return result
 
 
 def _inc_leaderboard(limit=10):
@@ -6920,29 +7013,15 @@ def _inc_leaderboard(limit=10):
 
 
 def _inc_render_login_leaderboard():
-    ranking = _inc_leaderboard(10)
-    st.markdown(
-        "<div class='inc-card' style='margin-top:2rem'>"
-        "<div class='inc-title'>✠ HALL OF ASCENSION ✠</div>"
-        "<div class='inc-flavor'>The greatest single-run XP hauls recorded in the Incursion.</div>"
-        "</div>", unsafe_allow_html=True)
+    ranking=_inc_leaderboard(10)
+    st.markdown("<div class='inc-rank-panel'><div class='inc-rank-head'><span>RANK</span><span>OPERATIVE</span><span>RUN XP</span></div>",unsafe_allow_html=True)
     if not ranking:
-        st.caption("No Incursion runs have earned XP yet. Be the first to descend.")
-        return
-
-    rows = []
+        st.markdown("<div class='inc-rank-empty'>NO ASCENSIONS RECORDED</div></div>",unsafe_allow_html=True); return
+    rows=[]
     for r in ranking:
-        medal = {1: "I", 2: "II", 3: "III"}.get(r["rank"], str(r["rank"]))
-        name = r.get("character_name") or r.get("username") or "Unknown"
-        rows.append(
-            f"<div class='inc-rank-row'>"
-            f"<span class='inc-rank-pos'>{medal}</span>"
-            f"<span class='inc-rank-name'>{html.escape(str(name))}</span>"
-            f"<span class='inc-rank-user'>{html.escape(str(r.get('username') or ''))}</span>"
-            f"<span class='inc-rank-xp'>{int(r['xp_earned'])} XP</span>"
-            f"</div>"
-        )
-    st.markdown("<div class='inc-ranking'>" + "".join(rows) + "</div>", unsafe_allow_html=True)
+        name=r.get('character_name') or r.get('username') or 'Unknown'; pos=int(r['rank'])
+        rows.append(f"<div class='inc-rank-row'><span class='inc-rank-pos'>{pos:02d}</span><span class='inc-rank-name'>{html.escape(str(name))}<small>{html.escape(str(r.get('username') or ''))}</small></span><span class='inc-rank-xp'>{int(r['xp_earned']):,}</span></div>")
+    st.markdown(''.join(rows)+"</div>",unsafe_allow_html=True)
 
 
 # ---- UI ------------------------------------------------------------------
@@ -6952,7 +7031,7 @@ def _inc_render_hud(ch, run):
     st.markdown(f"<div class='inc-hud'><div class='inc-chip wound'><b>{run['wounds_current']}/{run['wounds_max']}</b><small>WOUNDS</small></div><div class='inc-chip shock'><b>{run['shock_current']}/{run['shock_max']}</b><small>SHOCK</small></div><div class='inc-chip wrath'><b>{run['wrath_current']} ∞</b><small>WRATH</small></div><div class='inc-chip'><b>{run['xp']}</b><small>RUN XP</small></div><div class='inc-chip'><b>{run['loop_no']}</b><small>LOOP</small></div><div class='inc-chip'><b>{run['bosses_cleared']}</b><small>CHAMPIONS</small></div><div class='inc-chip'><b>{run['heal_charges']}</b><small>MEDICAE</small></div><div class='inc-chip'><b>{traits['Defence']}/{traits['Resilience']}</b><small>DEF / RES</small></div></div>",unsafe_allow_html=True)
     track=''.join(f"<div class='inc-stage {'now' if s==run['stage'] else ''}'><span>{'✠' if s==run['stage'] else '·'}</span>{INC_STAGE_LABELS[s]}</div>" for s in INC_SEQUENCE)
     st.markdown(f"<div class='inc-track'>{track}</div>",unsafe_allow_html=True)
-    with st.expander(f"✠ TALENT CODEX · {len(adapters)}",expanded=False):
+    with st.expander(f"TALENT CODEX · {len(adapters)}",expanded=False):
         for t in adapters: st.markdown(f"<div class='inc-talent-card {t.get('status','manual')}'><b>{html.escape(t['name'])}</b><span>{html.escape(t['rule'])}</span></div>",unsafe_allow_html=True)
 
 
@@ -6971,8 +7050,8 @@ def _inc_render_log(log):
             lines.append(f"<div class='inc-log-line player'><b>Blood Must Die</b> marks {html.escape(str(e.get('target_name','the target')))} with <b>Bleeding [{int(e.get('amount',0))}]</b>.</div>")
             continue
         if e.get("action") == "flee":
-            result="ESCAPED" if e.get("success") else "FAILED — enemy turn"
-            lines.append(f"<div class='inc-log-line player'><b>You</b> contest Speed against {html.escape(str(e.get('target_name','the target')))} — {e.get('icons',0)} vs {e.get('target_icons',0)} Icons · <b>{result}</b></div>")
+            result="ESCAPED" if e.get("success") else "FAILED · enemy turn"
+            lines.append(f"<div class='inc-log-line player'><b>You</b> contest Speed against {html.escape(str(e.get('target_name','the target')))} · {e.get('icons',0)} vs {e.get('target_icons',0)} Icons · <b>{result}</b></div>")
             continue
         who = "You" if e["actor"] == "player" else e.get("actor_name", "Enemy")
         cls = "player" if e["actor"] == "player" else "enemy"
@@ -6980,9 +7059,9 @@ def _inc_render_log(log):
         wrath_tag = " <span class='dice'>(Wrath Die critical, +1 Wrath)</span>" if e.get("wrath_crit") else ""
         if not e["hit"]:
             lines.append(f"<div class='inc-log-line {cls}'><b>{html.escape(who)}</b> attacks{target} with "
-                         f"{html.escape(e['weapon'])} — <i>misses</i> ({e['pool']}d6, {e['icons']} icons){wrath_tag}</div>")
+                         f"{html.escape(e['weapon'])} · <i>misses</i> ({e['pool']}d6, {e['icons']} icons){wrath_tag}</div>")
         else:
-            defeated = " — <b>defeated!</b>" if e.get("target_defeated") else ""
+            defeated = " · <b>defeated!</b>" if e.get("target_defeated") else ""
             lines.append(f"<div class='inc-log-line {cls}'><b>{html.escape(who)}</b> hits{target} with "
                          f"{html.escape(e['weapon'])}: <b>{e['damage']}</b> damage"
                          f"{(' → ' + str(e.get('wounds', 0)) + ' Wounds') if e.get('wounds', 0) else ((' → ' + str(e.get('shock', 0)) + ' Shock') if e.get('shock', 0) else '')}"
@@ -6999,7 +7078,7 @@ def _inc_render_duel_log(log):
         cls = "player" if e["side"] == "attacker" else "enemy"
         if not e["hit"]:
             lines.append(f"<div class='inc-log-line {cls}'><b>{label}</b> attacks with {html.escape(e['weapon'])} "
-                         f"— <i>misses</i> ({e['pool']}d6, {e['icons']} icons)</div>")
+                         f"· <i>misses</i> ({e['pool']}d6, {e['icons']} icons)</div>")
         else:
             lines.append(f"<div class='inc-log-line {cls}'><b>{label}</b> hits with {html.escape(e['weapon'])}: "
                          f"<b>{e['damage']}</b> damage ({e['pool']}d6, {e['icons']} icons)</div>")
@@ -7012,7 +7091,7 @@ def _inc_render_intro(ch):
     st.markdown(
         "<div class='inc-card'><div class='inc-title'>Begin the Incursion</div>"
         "<div class='inc-flavor'>Your character sheet and equipment are the base for this descent. XP earned "
-        "here buys Attributes, Wargear, Talents and Psychic Powers only for the duration of the run — nothing "
+        "here buys Attributes, Wargear, Talents and Psychic Powers only for the duration of the run · nothing "
         "is written back to your real sheet. Every third Champion slain may open a Duel of Glory against "
         "another player who reached the same gate. The Incursion continues until you fall.</div></div>",
         unsafe_allow_html=True)
@@ -7149,74 +7228,69 @@ def _inc_render_combat(run, ch, node):
     diff_label={"easy":"PATROL","medium":"AMBUSH","hard":"FRONT LINE","boss":"ENEMY CHAMPION"}[node["difficulty"]]
     merged=_inc_merge_character(ch,run); traits=derived_traits(merged); live=[e for e in node["enemies"] if e["alive"]]
     target_key=f"inc_targets_{run['id']}"
-    selected_targets=[uid for uid in st.session_state.get(target_key, []) if any(e["uid"]==uid and e["alive"] for e in live)]
+    selected_targets=[uid for uid in st.session_state.get(target_key,[]) if any(e["uid"]==uid and e["alive"] for e in live)]
     st.session_state[target_key]=selected_targets
-
-    st.markdown(f"<div class='inc-combat-header'><div class='inc-kicker'>THREAT CONTACT</div><div class='inc-title'>{diff_label}</div><div class='inc-flavor'>Select one or more hostile contacts. Resolve the entire attack as one action.</div></div>",unsafe_allow_html=True)
+    st.markdown(f"<div class='inc-combat-header'><div class='inc-kicker'>THREAT CONTACT</div><div class='inc-title'>{diff_label}</div><div class='inc-flavor'>Select targets directly. One strike can hit every locked contact.</div></div>",unsafe_allow_html=True)
     if node.get("resolved"):
-        msg="ESCAPED INTO THE DARK — NO XP AWARDED" if node.get("fled") else f"VICTORY — +{node['reward_xp']} XP"
+        msg="ESCAPED INTO THE DARK · NO XP AWARDED" if node.get("fled") else f"VICTORY · +{node['reward_xp']} XP"
         st.markdown(f"<div class='inc-banner-win'>{msg}</div>",unsafe_allow_html=True)
     cols=st.columns(min(3,max(1,len(node["enemies"]))))
     for i,e in enumerate(node["enemies"]):
         with cols[i%len(cols)]:
-            bleed=int((e.get("statuses") or {}).get("Bleeding",0) or 0)
-            b=f" · <span class='inc-status-blood'>Bleeding {bleed}</span>" if bleed else ""
-            ew=e.get("wrath_current",0)
-            state="SELECTED" if e["uid"] in selected_targets else ("NEUTRALIZED" if not e["alive"] else "AVAILABLE")
+            bleed=int((e.get("statuses") or {}).get("Bleeding",0) or 0); b=f" · <span class='inc-status-blood'>Bleeding {bleed}</span>" if bleed else ""
+            ew=e.get("wrath_current",0); state="TARGET LOCK" if e["uid"] in selected_targets else ("NEUTRALIZED" if not e["alive"] else "AVAILABLE")
             state_cls="selected" if e["uid"] in selected_targets else ("dead" if not e["alive"] else "")
-            st.markdown(f"<div class='inc-enemy {state_cls}'><div class='en'>{html.escape(e['name'])}</div><div class='et'>Tier {e['tier']} · {html.escape(e['weapon_name'])}</div><div class='inc-npc-vitals'><span><b>{e['wounds_current']}/{e['wounds_max']}</b> W</span><span><b>{e['shock_current']}/{e['shock_max']}</b> S</span><span><b>{ew} ∞</b> WRATH</span></div><div class='inc-npc-def'>DEF {e['defence']} · RES {e['resilience']} · SPD {e.get('speed',1)}{b}</div><div class='et'>{state}</div></div>",unsafe_allow_html=True)
+            st.markdown(f"<div class='inc-enemy {state_cls}'><div class='en'>{html.escape(e['name'])}</div><div class='et'>Tier {e['tier']} · {html.escape(e['weapon_name'])}</div><div class='inc-npc-vitals'><span><b>{e['wounds_current']}/{e['wounds_max']}</b> W</span><span><b>{e['shock_current']}/{e['shock_max']}</b> S</span><span><b>{ew}</b> WRATH</span></div><div class='inc-npc-def'>DEF {e['defence']} · RES {e['resilience']} · SPD {e.get('speed',1)}{b}</div><div class='et'>{state}</div></div>",unsafe_allow_html=True)
             if e["alive"] and not node.get("resolved"):
-                label="DESELECT TARGET" if e["uid"] in selected_targets else "SELECT TARGET"
+                label="REMOVE TARGET" if e["uid"] in selected_targets else "LOCK TARGET"
                 if st.button(label,key=f"inc_target_{run['id']}_{e['uid']}",use_container_width=True):
-                    current=list(st.session_state.get(target_key, []))
-                    if e["uid"] in current: current.remove(e["uid"])
-                    else: current.append(e["uid"])
-                    st.session_state[target_key]=current
-                    st.rerun()
-
+                    current=list(st.session_state.get(target_key,[])); current.remove(e["uid"]) if e["uid"] in current else current.append(e["uid"]); st.session_state[target_key]=current; st.rerun()
     if node.get("resolved"):
-        if st.button("CONTINUE THE DESCENT",key="inc_combat_continue",use_container_width=True): _inc_combat_continue(run,ch); st.rerun()
+        if st.button("CONTINUE",key="inc_combat_continue",use_container_width=True): _inc_combat_continue(run,ch); st.rerun()
         _inc_render_log(node.get("log")); return
-
     pending=node.get("pending_talent_triggers") or []
     if pending:
-        tr=pending[0]; choices=[int(i) for i in tr.get("dice_indices",[])]; labels=[f"Die {i+1} · 6" for i in choices]
-        st.markdown(f"<div class='inc-talent-reaction'><div class='inc-kicker'>TALENT TRIGGER</div><div class='inc-title'>Blood Must Die</div><div class='inc-flavor'>Choose the 6s to convert into Bleeding on {html.escape(str(tr.get('target_name','the target')))}.</div></div>",unsafe_allow_html=True)
-        picked=st.multiselect("Exalted Icons",labels,key=f"inc_bmd_{run['id']}" ); selected=[choices[labels.index(x)] for x in picked]
-        if st.button("APPLY BLOOD — END TURN",key=f"inc_bmd_apply_{run['id']}",use_container_width=True): _inc_resolve_pending_talent(run,ch,selected); st.rerun()
+        tr=pending[0]; choices=[int(i) for i in tr.get("dice_indices",[])]
+        st.markdown(f"<div class='inc-talent-reaction'><div class='inc-kicker'>TALENT TRIGGER</div><div class='inc-title'>Blood Must Die</div><div class='inc-flavor'>Choose 6s to apply Bleeding to {html.escape(str(tr.get('target_name','the target')))}.</div></div>",unsafe_allow_html=True)
+        picked=st.session_state.get(f"inc_bmd_{run['id']}",[])
+        for i in choices:
+            key=f"inc_bmd_btn_{run['id']}_{i}"; active=i in picked
+            if st.button(("SELECTED" if active else "SELECT")+f" · DIE {i+1}",key=key,use_container_width=True):
+                picked=list(picked); picked.remove(i) if i in picked else picked.append(i); st.session_state[f"inc_bmd_{run['id']}"]=picked; st.rerun()
+        if st.button("APPLY BLOOD",key=f"inc_bmd_apply_{run['id']}",disabled=not picked,use_container_width=True): _inc_resolve_pending_talent(run,ch,picked); st.rerun()
         _inc_render_log(node.get("log")); return
-
-    action=st.radio("COMBAT POSTURE",["ATTACK","FLEE","HEAL"],key=f"inc_action_{run['id']}",horizontal=True)
+    action=st.radio("",["ATTACK","FLEE","HEAL"],key=f"inc_action_{run['id']}",horizontal=True,label_visibility="collapsed")
     with st.container(border=True):
-        st.markdown("<div class='inc-action-title'>COMBAT ACTION</div>",unsafe_allow_html=True)
         if action=="ATTACK":
             weapons=_inc_usable_weapons(ch,run); keys=[w["key"] for w in weapons]; wk=f"inc_weapon_{run['id']}"
             if st.session_state.get(wk) not in keys: st.session_state[wk]=keys[0]
             def wl(k):
-                w=next(w for w in weapons if w["key"]==k); return f"{w['name']} · Dmg {w['damage']} +{int(w.get('ed',0) or 0)} ED · AP {int(w.get('ap',0) or 0)}"
-            c1,c2=st.columns([2.1,1])
-            c1.selectbox("Weapon",keys,key=wk,format_func=wl)
-            c2.markdown(f"<div class='inc-card'><div class='inc-kicker'>TARGETING SOLUTION</div><div class='inc-title'>{len(selected_targets)} CONTACT{'S' if len(selected_targets)!=1 else ''}</div><div class='inc-flavor'>Select contacts above. Multiple targets are resolved in the same strike.</div></div>",unsafe_allow_html=True)
-            spend=st.number_input("Wrath to spend — +1 attack die each",min_value=0,max_value=max(0,int(run.get("wrath_current",0))),value=0,step=1,key=f"inc_attack_wrath_{run['id']}")
-            six_mode=st.radio("Exalted 6s",["ED","Wrath"],format_func=lambda x:"Convert eligible 6s → Extra Damage Dice" if x=="ED" else "Convert eligible 6s → Wrath",horizontal=True,key=f"inc_attack_six_{run['id']}")
-            if st.button("EXECUTE STRIKE",key="inc_attack",use_container_width=True,disabled=not selected_targets):
+                w=next(w for w in weapons if w["key"]==k); return f"{w['name']} · {w['damage']} DMG · +{int(w.get('ed',0) or 0)} ED · AP {int(w.get('ap',0) or 0)}"
+            c1,c2=st.columns([2,1]); c1.selectbox("Weapon",keys,key=wk,format_func=wl); c2.markdown(f"<div class='inc-mini-readout'><b>{len(selected_targets)}</b><span>LOCKED</span></div>",unsafe_allow_html=True)
+            if int(run.get("wrath_current",0))>0:
+                spend=st.number_input("WRATH",min_value=0,max_value=int(run["wrath_current"]),value=0,step=1,key=f"inc_attack_wrath_{run['id']}")
+                six_mode=st.radio("6s",["ED","Wrath"],format_func=lambda x:"EXTRA DAMAGE" if x=="ED" else "GAIN WRATH",horizontal=True,key=f"inc_attack_six_{run['id']}")
+            else:
+                spend=0; six_mode="ED"
+            if st.button("STRIKE",key="inc_attack",use_container_width=True,disabled=not selected_targets):
                 try: _inc_combat_attack(run,ch,selected_targets,st.session_state.get(wk),bonus_die=int(spend),six_mode=six_mode)
                 except ValueError as exc: st.error(str(exc).replace('_',' ').title())
-                st.session_state[target_key]=[]
-                st.rerun()
-            if not selected_targets: st.caption("No hostile contact selected.")
+                st.session_state[target_key]=[]; st.rerun()
         elif action=="FLEE":
-            target=st.selectbox("Break contact with",[e["uid"] for e in live],key=f"inc_fl_{run['id']}",format_func=lambda uid:next(e['name'] for e in live if e['uid']==uid))
-            spend=st.number_input("Wrath to spend — +1 escape die each",min_value=0,max_value=max(0,int(run.get("wrath_current",0))),value=0,step=1,key=f"inc_flee_wrath_{run['id']}")
-            enemy_speed=next(e['speed'] for e in live if e['uid']==target); st.caption(f"Speed contest · You {traits['Speed']}d6 vs target {enemy_speed}d6 · more Icons escapes.")
+            target=st.selectbox("Target",[e["uid"] for e in live],key=f"inc_fl_{run['id']}",format_func=lambda uid:next(e['name'] for e in live if e['uid']==uid))
+            if int(run.get("wrath_current",0))>0:
+                spend=st.number_input("WRATH",min_value=0,max_value=int(run["wrath_current"]),value=0,step=1,key=f"inc_flee_wrath_{run['id']}")
+            else: spend=0
             if st.button("BREAK CONTACT",key="inc_flee",use_container_width=True):
                 try: _inc_combat_flee(run,ch,target,bonus_die=int(spend))
                 except ValueError as exc: st.error(str(exc).replace('_',' ').title())
                 st.rerun()
         else:
-            spend=st.number_input("Wrath to spend — recover Rank + Tier Shock each",min_value=0,max_value=max(0,int(run.get("wrath_current",0))),value=0,step=1,key=f"inc_heal_wrath_{run['id']}")
-            st.caption(f"Medicae charges: {run['heal_charges']} · Restore 30% max Wounds.")
-            if st.button("ADMINISTER MEDICAE",key="inc_heal",disabled=run['heal_charges']<1,use_container_width=True):
+            if int(run.get("wrath_current",0))>0:
+                spend=st.number_input("WRATH",min_value=0,max_value=int(run["wrath_current"]),value=0,step=1,key=f"inc_heal_wrath_{run['id']}")
+            else: spend=0
+            st.caption(f"Medicae charges {run['heal_charges']} · Restore Wounds and Shock")
+            if st.button("MEDICAE",key="inc_heal",disabled=run['heal_charges']<1,use_container_width=True):
                 try: _inc_combat_heal(run,ch,spend_wrath=int(spend))
                 except ValueError as exc: st.error(str(exc).replace('_',' ').title())
                 st.rerun()
@@ -7232,48 +7306,64 @@ def _inc_render_reward(run, ch, node):
 
 
 def _inc_render_pvp_choice(run, ch, node):
-    label = "Duel of Glory" if node["checkpoint"] == "boss3" else "Challenge From Another Player"
-    st.markdown(
-        f"<div class='inc-card'><div class='inc-title'>{label}</div>"
-        "<div class='inc-flavor'>Challenge another player who has also reached this point. The wait lasts "
-        "until someone else picks the same challenge. Winning grants substantial XP.</div></div>",
-        unsafe_allow_html=True)
-    c1, c2 = st.columns(2)
+    label="DUEL OF GLORY" if node["checkpoint"]=="boss3" else "PLAYER CONTACT"
+    st.markdown(f"<div class='inc-card'><div class='inc-title'>{label}</div><div class='inc-flavor'>Enter a live duel with another player at this checkpoint. Both operatives take turns from the same battlefield.</div></div>",unsafe_allow_html=True)
+    c1,c2=st.columns(2)
     with c1:
-        if st.button("Seek Duel", key="inc_pvp_queue", use_container_width=True):
-            _inc_pvp_queue(run, ch); st.rerun()
+        if st.button("ENTER DUEL",key="inc_pvp_queue",use_container_width=True): _inc_pvp_queue(run,ch); st.rerun()
     with c2:
-        if st.button("Press On", key="inc_pvp_skip", use_container_width=True):
-            _inc_pvp_skip(run, ch); st.rerun()
+        if st.button("CONTINUE",key="inc_pvp_skip",use_container_width=True): _inc_pvp_skip(run,ch); st.rerun()
 
 
-@st.fragment(run_every=5)
+@st.fragment(run_every=2)
 def _inc_render_pvp_waiting(run, ch):
-    st.markdown(
-        "<div class='inc-card' style='text-align:center'><div class='inc-title'>Awaiting an Opponent</div>"
-        "<div class='inc-flavor'>The duel resolves automatically once another player queues for the same "
-        "challenge.</div></div>", unsafe_allow_html=True)
-    fresh = _inc_get_run(run["id"])
-    if fresh and (fresh.get("node") or {}).get("type") == "pvp_waiting":
-        fresh = _inc_resolve_waiting_pvp(fresh, ch)
-    if fresh and (fresh.get("node") or {}).get("type") != "pvp_waiting":
-        st.rerun()
+    fresh=_inc_get_run(run["id"]); node=(fresh or run).get("node") or {}
+    if fresh and node.get("type")=="pvp_waiting":
+        _inc_resolve_waiting_pvp(fresh,ch); fresh=_inc_get_run(run["id"]); node=(fresh or run).get("node") or {}
+    if node.get("type")=="pvp_match": st.rerun(); return
+    st.markdown("<div class='inc-live-panel'><div class='inc-kicker'>LIVE MATCHMAKING</div><div class='inc-title'>SEARCHING FOR OPPONENT</div><div class='inc-flavor'>This screen updates automatically. Stay here until another player enters the same gate.</div></div>",unsafe_allow_html=True)
+
+
+@st.fragment(run_every=2)
+def _inc_render_pvp_match(run, ch, node):
+    match=_inc_get_pvp_match(node.get("match_id"))
+    if not match:
+        st.error("Battlefield unavailable."); return
+    side=node.get("side"); state=match["state"]; me=state[side]; opp=state["b" if side=="a" else "a"]
+    if state.get("winner"):
+        fresh=_inc_pvp_finalize_run(run,ch,match,side); st.rerun(); return
+    my_turn=state.get("turn")==side
+    st.markdown(f"<div class='inc-combat-header'><div class='inc-kicker'>LIVE VOX COMBAT</div><div class='inc-title'>{html.escape(me['name'])} VS {html.escape(opp['name'])}</div><div class='inc-flavor'>{'YOUR TURN' if my_turn else 'OPPONENT TURN · LIVE FEED'}</div></div>",unsafe_allow_html=True)
+    c1,c2=st.columns(2)
+    with c1: st.markdown(f"<div class='inc-duel-stat'><b>{me['wounds']}/{me['wounds_max']}</b><span>WOUNDS</span><b>{me['shock']}/{me['shock_max']}</b><span>SHOCK</span><b>{me['wrath']}</b><span>WRATH</span></div>",unsafe_allow_html=True)
+    with c2: st.markdown(f"<div class='inc-duel-stat enemy'><b>{opp['wounds']}/{opp['wounds_max']}</b><span>WOUNDS</span><b>{opp['shock']}/{opp['shock_max']}</b><span>SHOCK</span><b>{opp['wrath']}</b><span>WRATH</span></div>",unsafe_allow_html=True)
+    if my_turn:
+        weapons=_inc_usable_weapons(ch,run); keys=[w['key'] for w in weapons]; wk=f"inc_pvp_weapon_{match['id']}"
+        if st.session_state.get(wk) not in keys: st.session_state[wk]=keys[0]
+        st.selectbox("Weapon",keys,key=wk,format_func=lambda k: next(w['name'] for w in weapons if w['key']==k))
+        if me["wrath"]>0:
+            spend=st.number_input("WRATH",0,int(me["wrath"]),0,1,key=f"inc_pvp_wrath_{match['id']}")
+            mode=st.radio("6s",["ED","Wrath"],format_func=lambda x:"EXTRA DAMAGE" if x=="ED" else "GAIN WRATH",horizontal=True,key=f"inc_pvp_six_{match['id']}")
+        else: spend=0; mode="ED"
+        if st.button("STRIKE",key=f"inc_pvp_strike_{match['id']}",use_container_width=True):
+            _inc_pvp_apply_attack(match,side,int(spend),mode); st.rerun()
+        if me["wrath"]>0:
+            if st.button("RECOVER SHOCK",key=f"inc_pvp_recover_{match['id']}",use_container_width=True):
+                _inc_pvp_recover_shock(match,side,int(me["wrath"])); st.rerun()
+    else:
+        st.markdown("<div class='inc-wait-turn'>WAITING FOR THE OPPONENT · LIVE FEED</div>",unsafe_allow_html=True)
+    _inc_render_duel_log(state.get("log"))
 
 
 def _inc_render_pvp_result(run, ch, node):
-    if node["won"]:
-        st.markdown(f"<div class='inc-banner-win'>Victory over {html.escape(node['opponent_name'])} "
-                    f"— +{node['xp_gained']} XP</div>", unsafe_allow_html=True)
-    else:
-        st.markdown(f"<div class='inc-banner-lose'>Defeat to {html.escape(node['opponent_name'])}</div>",
-                    unsafe_allow_html=True)
+    title="VICTORY" if node["won"] else "DEFEAT"
+    st.markdown(f"<div class='inc-banner-win'>{title} · {html.escape(node['opponent_name'])} · +{node['xp_gained']} XP</div>" if node["won"] else f"<div class='inc-banner-lose'>{title} · {html.escape(node['opponent_name'])}</div>",unsafe_allow_html=True)
     _inc_render_duel_log(node.get("log"))
-    if st.button("Continue", key="inc_pvp_result_continue", use_container_width=True):
-        _inc_pvp_result_continue(run, ch); st.rerun()
+    if st.button("CONTINUE",key="inc_pvp_result_continue",use_container_width=True): _inc_pvp_result_continue(run,ch); st.rerun()
 
 
 def mode_chooser_page():
-    st.markdown("<div class='banner'>✠ IMPERIAL COGITATOR ✠<span class='sub'>Choose Your Terminal</span></div>",
+    st.markdown("<div class='banner'>IMPERIAL COGITATOR<span class='sub'>Choose Your Terminal</span></div>",
                 unsafe_allow_html=True)
     cols = st.columns(2)
     with cols[0]:
@@ -7286,7 +7376,7 @@ def mode_chooser_page():
     with cols[1]:
         st.markdown(
             "<div class='mode-card incursion'><div class='mt'>Wrath Incursion</div>"
-            "<div class='ms'>A solo roguelike descent. Your character and equipment are the starting point — "
+            "<div class='ms'>A solo roguelike descent. Your character and equipment are the starting point · "
             "nothing you do here touches your real sheet.</div></div>", unsafe_allow_html=True)
         if st.button("ENTER THE INCURSION", key="mode_incursion", use_container_width=True):
             st.session_state.app_mode = "incursion"; st.rerun()
@@ -7361,6 +7451,8 @@ def incursion_view():
         _inc_render_pvp_choice(run, ch, node)
     elif ntype == "pvp_waiting":
         _inc_render_pvp_waiting(run, ch)
+    elif ntype == "pvp_match":
+        _inc_render_pvp_match(run, ch, node)
     elif ntype == "pvp_result":
         _inc_render_pvp_result(run, ch, node)
 
@@ -7368,7 +7460,7 @@ def incursion_view():
 def login_page():
     if st.button("ENTER THE INCURSION", key="system_login_incursion"):
         st.session_state.app_mode = "incursion"; st.rerun()
-    st.markdown("<div class='banner'>✠ IMPERIAL COGITATOR ✠"
+    st.markdown("<div class='banner'>IMPERIAL COGITATOR"
                 "<span class='sub'>Adeptus Administratum · Campaign Record</span></div>", unsafe_allow_html=True)
     _login_hologram_globe()
     col = st.columns([1, 1.3, 1])[1]
@@ -7648,7 +7740,7 @@ def _wargear_trait_bonus_preview(details):
 
 def _safe_int(val, default=0):
     """Parse a number that may come from free-form catalog JSON (e.g. a
-    placeholder like '—' or 'N/A' for a field that doesn't apply to that
+    placeholder like '·' or 'N/A' for a field that doesn't apply to that
     item) without crashing the editor that displays it."""
     try:
         return int(val)
@@ -8686,7 +8778,7 @@ def _gm_tab_campaign():
                 st.button("+", key="ruinplus", on_click=adjust_ruin, args=(+1,), use_container_width=True)
                 st.button("−", key="ruinminus", on_click=adjust_ruin, args=(-1,), use_container_width=True)
     with _section("Spectator Feed", "A public, read-only Vox-feed page for people watching the table (streamers, "
-                  "absent players, etc.) that only ever shows current Shock — nothing else. They join by typing "
+                  "absent players, etc.) that only ever shows current Shock · nothing else. They join by typing "
                   "the code below on the login screen (hidden there so it isn't stumbled on by accident)."):
         code = str(camp.get("spectator_code", "") or "")
         cc2 = st.columns([2, 1])
@@ -8730,7 +8822,7 @@ def _gm_tab_requisitions():
     pending = list_requisitions(status="pending")
     with _section(f"Pending Requisitions · {len(pending)}",
                   "Wargear Players have asked for, waiting on your approval. Wealth/Influence are shown "
-                  "only as context for your decision — nothing here is enforced automatically.",
+                  "only as context for your decision · nothing here is enforced automatically.",
                   expanded=bool(pending)):
         if not pending:
             st.caption("No open Requisitions.")
@@ -8945,7 +9037,7 @@ def spectator_view():
     can ever see: each side's current Shock, and only for whichever side the
     Magister has toggled visible in Campaign > Spectator Feed. No names beyond
     what's needed to tell combatants apart, no Wounds, no Wrath, no Tier, no
-    Notes, nothing else — deliberately superficial."""
+    Notes, nothing else · deliberately superficial."""
     camp = get_campaign()
     st.markdown(
         "<div class='spectator-banner'>✠ VOX-AUSPEX FEED ✠"

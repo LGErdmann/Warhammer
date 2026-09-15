@@ -7141,8 +7141,8 @@ def mode_chooser_page():
 
 
 def incursion_login_page():
-    if st.button("← Back to Terminal Select", key="incursion_login_back"):
-        st.session_state.app_mode = None; st.rerun()
+    if st.button("← Imperial Cogitator", key="incursion_login_back"):
+        st.session_state.app_mode = "system"; st.rerun()
     st.markdown("<div class='inc-banner'>WRATH INCURSION<span class='sub'>A Solo Descent Into Ruin</span></div>",
                 unsafe_allow_html=True)
     col = st.columns([1, 1.3, 1])[1]
@@ -7168,8 +7168,8 @@ def incursion_view():
         st.divider()
         if st.button("Sign Out", key="incursion_signout"):
             st.session_state.user = None; st.rerun()
-        if st.button("← Terminal Select", key="incursion_to_chooser"):
-            st.session_state.user = None; st.session_state.app_mode = None; st.rerun()
+        if st.button("← Imperial Cogitator", key="incursion_to_cogitator"):
+            st.session_state.app_mode = "system"; st.rerun()
 
     st.markdown("<div class='inc-banner'>WRATH INCURSION<span class='sub'>A Solo Descent Into Ruin</span></div>",
                 unsafe_allow_html=True)
@@ -7215,8 +7215,8 @@ def incursion_view():
 
 
 def login_page():
-    if st.button("← Back to Terminal Select", key="system_login_back"):
-        st.session_state.app_mode = None; st.rerun()
+    if st.button("ENTER THE INCURSION", key="system_login_incursion"):
+        st.session_state.app_mode = "incursion"; st.rerun()
     st.markdown("<div class='banner'>✠ IMPERIAL COGITATOR ✠"
                 "<span class='sub'>Adeptus Administratum · Campaign Record</span></div>", unsafe_allow_html=True)
     _login_hologram_globe()
@@ -8946,7 +8946,7 @@ def main():
     inject_theme(); init_db()
     st.session_state.setdefault("user", None)
     st.session_state.setdefault("editing", None)
-    st.session_state["app_mode"] = "system"
+    st.session_state.setdefault("app_mode", "system")
 
     if st.session_state.app_mode == "incursion":
         if st.session_state.user is None:
@@ -8974,11 +8974,13 @@ def main():
                     st.button("+", key="sidebar_ruin_plus", on_click=adjust_ruin, args=(+1,), use_container_width=True)
                     st.button("−", key="sidebar_ruin_minus", on_click=adjust_ruin, args=(-1,), use_container_width=True)
         st.divider()
+        if st.button("ENTER WRATH INCURSION", key="system_to_incursion", use_container_width=True):
+            st.session_state.app_mode = "incursion"; st.rerun()
         if st.button("Sign Out"):
             st.session_state.user = None; st.session_state.editing = None; st.rerun()
-        if st.button("← Terminal Select", key="system_to_chooser"):
+        if st.button("← Imperial Cogitator Login", key="system_to_chooser"):
             st.session_state.user = None; st.session_state.editing = None
-            st.session_state.app_mode = None; st.rerun()
+            st.session_state.app_mode = "system"; st.rerun()
 
         if role == "player" and camp.get("owlbear_enabled"):
             sidebar_cid = char_id_for_user(st.session_state.user["id"])

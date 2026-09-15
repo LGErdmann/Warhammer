@@ -3865,42 +3865,28 @@ def inject_theme():
         text-transform:uppercase; background:var(--panel2); border:1px solid #3a2e18; color:var(--bone); opacity:.55; white-space:nowrap; }
     .inc-stage.now{ border-color:var(--blood2); opacity:1; color:#fff; background:linear-gradient(var(--blood),var(--blood2)); }
     
-.inc-ranking { margin-top: .4rem; border: 1px solid rgba(170, 20, 20, .35); }
-.inc-rank-row { display:grid; grid-template-columns: 48px 1fr 1fr auto; gap:12px; align-items:center; padding:10px 14px; border-bottom:1px solid rgba(170,20,20,.18); background:rgba(20,15,12,.55); }
-.inc-rank-row:last-child { border-bottom:0; }
-.inc-rank-pos { font-weight:800; color:#b99a70; text-align:center; }
-.inc-rank-name { font-weight:700; letter-spacing:.04em; }
-.inc-rank-user { opacity:.62; font-size:.82rem; }
-.inc-rank-xp { font-weight:800; color:#d2b06f; white-space:nowrap; }
-@media (max-width: 700px) { .inc-rank-row { grid-template-columns: 36px 1fr auto; } .inc-rank-user { display:none; } }
-.inc-card{ border:1px solid #4a3a20; border-radius:6px; background:var(--panel); padding:20px; margin-bottom:14px; }
-    .inc-title{ font-family:'Cinzel',serif; color:#e8a0a0; text-transform:uppercase; letter-spacing:.08em; font-size:1rem; margin:0 0 6px; }
-    .inc-flavor{ color:var(--bone); opacity:.7; font-size:.82rem; font-style:italic; margin-bottom:14px; }
-    .inc-enemy{ border:1px solid #3a2e18; border-radius:4px; padding:10px; background:var(--panel2); }
-    .inc-enemy.dead{ opacity:.35; filter:grayscale(1); }
-    .inc-enemy .en{ font-weight:700; font-size:.86rem; color:var(--bone); }
-    .inc-enemy .et{ font-size:.68rem; color:var(--bone); opacity:.65; text-transform:uppercase; margin:2px 0 6px; }
-    .inc-hpbar{ height:8px; background:#0c0a09; border:1px solid #3a2e18; border-radius:4px; overflow:hidden; }
-    .inc-hpbar-fill{ height:100%; background:linear-gradient(90deg,#7a1414,#c62828); }
-    .inc-hptext{ font-size:.64rem; color:var(--bone); opacity:.6; text-align:right; margin-top:2px; }
-    .inc-offer{ border:1px solid #3a2e18; border-radius:4px; padding:12px; background:var(--panel2); height:100%; }
-    .inc-offer .ot{ font-size:.6rem; letter-spacing:.1em; text-transform:uppercase; color:var(--gold); }
-    .inc-offer .on{ font-weight:700; font-size:.88rem; margin:2px 0; }
-    .inc-offer .od{ font-size:.72rem; opacity:.7; min-height:2.4em; }
-    .inc-offer .oc{ color:#e8a0a0; font-weight:700; font-size:.78rem; margin-top:4px; }
-    .inc-log{ max-height:280px; overflow-y:auto; background:#0c0a09; border:1px solid #3a2e18; border-radius:4px;
-        padding:10px; margin-bottom:14px; display:flex; flex-direction:column-reverse; gap:5px; }
-    .inc-log-line{ font-size:.78rem; padding:5px 8px; border-radius:3px; border-left:3px solid transparent; }
-    .inc-log-line.player{ background:rgba(46,138,176,.10); border-left-color:#2e8ab0; }
-    .inc-log-line.enemy{ background:rgba(198,40,40,.10); border-left-color:var(--blood2); }
-    .inc-log-line.system{ text-align:center; font-style:italic; color:var(--gold); border-left:none; }
-    .inc-banner-win{ text-align:center; padding:12px; border-radius:4px; margin-bottom:14px; font-family:'Cinzel',serif;
-        letter-spacing:.08em; text-transform:uppercase; background:rgba(201,162,39,.12); border:1px solid var(--gold); color:var(--gold2); }
-    .inc-banner-lose{ text-align:center; padding:12px; border-radius:4px; margin-bottom:14px; font-family:'Cinzel',serif;
-        letter-spacing:.08em; text-transform:uppercase; background:rgba(198,40,40,.15); border:1px solid var(--blood2); color:#e8a0a0; }
-
-    /* ============================================================
-       SPECTATOR VOX-FEED — deliberately the most theatrical page in the
+/* INCURSION THEATRE */
+    .incursion-frame{position:relative;margin:0 0 18px;padding:18px 18px 14px;background:radial-gradient(circle at 50% 0%,rgba(122,20,20,.18),transparent 48%),linear-gradient(180deg,rgba(20,14,10,.98),rgba(8,7,6,.98));border:1px solid #5d4828;border-top:2px solid #8f6b32;box-shadow:inset 0 0 35px rgba(0,0,0,.65),0 8px 28px rgba(0,0,0,.32)}
+    .incursion-frame:before,.incursion-frame:after{content:"";display:block;height:1px;background:linear-gradient(90deg,transparent,#76582b,transparent);margin:0 12% 12px}
+    .inc-banner{position:relative;text-align:center;font-family:Cinzel,serif;font-weight:900;font-size:2rem;color:#e8d7ad;letter-spacing:.22em;padding:7px 0 10px;border:0;text-shadow:0 0 18px rgba(200,150,60,.18)}
+    .inc-banner:after{content:"IMPERIAL ASSAULT PROTOCOL // LIVE DEPLOYMENT";display:block;font-family:monospace;font-size:.53rem;letter-spacing:.25em;color:#8d7650;margin-top:9px;opacity:.8}
+    .inc-banner .sub{display:block;font-size:.62rem;letter-spacing:.32em;color:#a99672;text-transform:uppercase;margin-top:6px}
+    .inc-command-line{display:flex;justify-content:space-between;gap:12px;align-items:center;border-top:1px solid #342719;border-bottom:1px solid #342719;padding:7px 3px;margin:5px 0 14px;color:#806b4b;font:10px/1.2 monospace;letter-spacing:.12em;text-transform:uppercase}
+    .inc-command-line b{color:#c9ad70;font-weight:700}.inc-command-line .live{color:#b84b42}
+    .inc-hud{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:6px;margin:10px 0 15px}
+    .inc-chip{position:relative;background:linear-gradient(180deg,#17120d,#0f0c09);border:1px solid #493a25;border-radius:0;border-top:2px solid #5f4725;padding:8px 9px;font-size:.61rem;color:#8f8065;opacity:1;text-transform:uppercase;letter-spacing:.08em}
+    .inc-chip:after{content:"";position:absolute;left:0;bottom:0;width:25%;height:1px;background:#8a2d27}.inc-chip b{display:block;color:#ded0ad;font-family:Cinzel,serif;font-size:1.02rem;letter-spacing:.02em;line-height:1.15}.inc-chip.wound b{color:#c95a50}.inc-chip.shock b{color:#c6a45c}.inc-chip.wrath b{color:#dfc278}
+    .inc-track{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;overflow:hidden;margin:0 0 17px;padding:0}.inc-stage{position:relative;text-align:center;padding:7px 5px;border-radius:0;font-size:.57rem;letter-spacing:.1em;text-transform:uppercase;background:#100d09;border:1px solid #322719;color:#665941;white-space:nowrap;opacity:.72}.inc-stage.now{border-color:#8c642a;opacity:1;color:#ead7a8;background:linear-gradient(180deg,#322317,#17110b);box-shadow:inset 0 -2px 0 #9b2d27}.inc-stage.now span{display:none}.inc-stage.now:before{content:"CURRENT";display:block;font-size:.43rem;color:#b64a40;letter-spacing:.16em;margin-bottom:2px}
+    .inc-card{position:relative;border:1px solid #473822;border-radius:0;background:linear-gradient(180deg,rgba(22,17,12,.97),rgba(12,10,8,.97));padding:20px;margin-bottom:14px;box-shadow:inset 0 0 25px rgba(0,0,0,.32)}.inc-card:before{content:"";position:absolute;top:-1px;left:12px;right:12px;height:1px;background:linear-gradient(90deg,transparent,#74552a,transparent)}
+    .inc-title{font-family:Cinzel,serif;color:#d8c18a;text-transform:uppercase;letter-spacing:.15em;font-size:1rem;margin:0 0 7px}.inc-flavor{color:#b4a78d;opacity:.78;font-size:.78rem;line-height:1.6;margin-bottom:14px}
+    .inc-enemy{position:relative;border:1px solid #3a2e18;border-radius:0;padding:13px;background:linear-gradient(180deg,#17120d,#0e0b08);min-height:145px}.inc-enemy.selected{border-color:#a33c32;box-shadow:inset 0 0 0 1px rgba(163,60,50,.22),0 0 18px rgba(120,20,15,.12)}.inc-enemy.selected:before{content:"TARGET LOCK";position:absolute;right:8px;top:7px;font:9px monospace;letter-spacing:.13em;color:#c9574c}.inc-enemy.dead{opacity:.3;filter:grayscale(1)}.inc-enemy .en{font-family:Cinzel,serif;font-weight:700;font-size:.9rem;color:#ded0ad;letter-spacing:.06em;text-transform:uppercase}.inc-enemy .et{font-size:.61rem;color:#89785d;opacity:.9;text-transform:uppercase;margin:3px 0 8px;letter-spacing:.08em}.inc-npc-vitals{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin:8px 0}.inc-npc-vitals span{border:1px solid #2e2418;padding:5px;text-align:center;font-size:.56rem;color:#766750;text-transform:uppercase}.inc-npc-vitals b{display:block;color:#c9b98f;font:700 .82rem Cinzel,serif}.inc-npc-def{font:10px monospace;color:#827157;letter-spacing:.05em;border-top:1px solid #292016;padding-top:7px}
+    .inc-log{max-height:280px;overflow-y:auto;background:#090807;border:1px solid #332719;border-radius:0;padding:10px;margin-bottom:14px;display:flex;flex-direction:column-reverse;gap:4px}.inc-log-line{font-size:.7rem;padding:6px 8px;border-radius:0;border-left:2px solid transparent;font-family:monospace}.inc-log-line.player{background:rgba(70,82,72,.1);border-left-color:#8c7546}.inc-log-line.enemy{background:rgba(120,20,20,.09);border-left-color:#87322c}.inc-log-line.system{text-align:center;font-style:italic;color:#9b8455;border-left:none}
+    .inc-banner-win{font-family:Cinzel,serif;text-align:center;padding:14px;border-radius:0;margin-bottom:14px;letter-spacing:.15em;text-transform:uppercase;background:linear-gradient(90deg,rgba(80,60,20,.08),rgba(201,162,39,.16),rgba(80,60,20,.08));border:1px solid #8a6b32;color:#ddc581}.inc-banner-lose{font-family:Cinzel,serif;text-align:center;padding:14px;border-radius:0;margin-bottom:14px;letter-spacing:.15em;text-transform:uppercase;background:rgba(100,15,15,.13);border:1px solid #7d302b;color:#d87870}
+    .inc-action-title{font-family:Cinzel,serif;color:#cdb77f;letter-spacing:.2em;font-size:.72rem;text-align:center;margin-bottom:8px;text-transform:uppercase}.inc-status-blood{color:#d65a52;font-weight:700;text-transform:uppercase;letter-spacing:.05em}.inc-talent-reaction{border:1px solid #6f2d28;background:linear-gradient(135deg,#190b0b,#0d0808);padding:16px;margin:12px 0;box-shadow:0 0 22px rgba(120,0,0,.18)}
+    .inc-talent-card{border-left:2px solid #77633c;background:#14100b;padding:9px 12px;margin:6px 0;border-radius:0}.inc-talent-card.active{border-left-color:#b23a35}.inc-talent-card.passive{border-left-color:#3e7f5a}.inc-talent-card.manual{border-left-color:#6d5a39;opacity:.7}.inc-talent-card span{display:block;font-size:.72rem;opacity:.72;margin-top:3px;line-height:1.45}.inc-chip small{display:block;font-size:.49rem;letter-spacing:.14em;opacity:.72;margin-top:3px}.inc-enemy{transition:transform .15s ease,border-color .15s ease}.inc-enemy:hover{transform:translateY(-2px);border-color:#80602c}
+    @media (max-width:900px){.inc-hud{grid-template-columns:repeat(4,1fr)}.inc-track{grid-template-columns:repeat(4,1fr)}}@media (max-width:600px){.inc-hud{grid-template-columns:repeat(2,1fr)}.inc-track{display:flex;overflow-x:auto}.inc-stage{flex:0 0 120px}.inc-banner{font-size:1.35rem;letter-spacing:.13em}.inc-command-line{font-size:8px}}
+    
+    SPECTATOR VOX-FEED — deliberately the most theatrical page in the
        app: it shows almost nothing (only current Shock, gated by the
        Magister), so the presentation is what carries it.
        ============================================================ */
@@ -5902,7 +5888,7 @@ def _inc_hydrate_run_pools(run):
     updates["wrath_max"] = final_wrath_max
     updates["wounds_current"] = min(final_wounds_max, max(0, int(updates["wounds_current"])))
     updates["shock_current"] = min(final_shock_max, max(0, int(updates["shock_current"])))
-    updates["wrath_current"] = min(final_wrath_max, max(0, int(updates["wrath_current"])))
+    updates["wrath_current"] = max(0, int(updates["wrath_current"]))
 
     conn = get_conn()
     conn.execute(
@@ -6196,6 +6182,7 @@ def _inc_build_enemy_from_bestiary(entry, loop_no, idx):
         "speed": int(traits["Speed"]), "statuses": {},
         "wounds_max": int(traits["Max Wounds"]), "wounds_current": int(traits["Max Wounds"]),
         "shock_max": int(traits["Max Shock"]), "shock_current": int(traits["Max Shock"]),
+        "wrath_current": 2, "wrath_max": 2,
         "weapon_name": weapon["name"] if weapon else (wargear[0] if wargear else "Melee Attack"),
         "weapon_damage": int(round((weapon["damage"] if weapon else 3) * scale)),
         "weapon_ed": int(weapon.get("ed", 1) if weapon else 1),
@@ -6232,6 +6219,7 @@ def _inc_build_enemy_from_fallen(row, loop_no, idx):
         "speed": int(traits["Speed"]), "statuses": {},
         "wounds_max": int(traits["Max Wounds"]), "wounds_current": int(traits["Max Wounds"]),
         "shock_max": int(traits["Max Shock"]), "shock_current": int(traits["Max Shock"]),
+        "wrath_current": 2, "wrath_max": 2,
         "weapon_name": row["weapon_name"], "weapon_damage": round(int(row["weapon_damage"]) * scale),
         "weapon_ed": int(row.get("weapon_ed", 0) or 0), "weapon_ap": int(row.get("weapon_ap", 0) or 0),
         "alive": True, "fallen": True,
@@ -6548,31 +6536,23 @@ def _inc_reward_continue(run, ch):
 
 # ---- combat --------------------------------------------------------------
 def _inc_enemy_turn(enemies, player_traits):
-    log = []
+    log=[]
     for enemy in enemies:
-        if not enemy["alive"]:
-            continue
-        rolls, icons, wrath_die_6 = _inc_roll_pool(enemy["attack_pool"])
-        hit = icons >= player_traits["Defence"]
-        total_damage = 0
-        shock = 0
-        wounds = 0
-        damage_rolls = []
-        critical = bool(hit and wrath_die_6)
+        if not enemy["alive"]: continue
+        wrath=max(0,int(enemy.get("wrath_current",0) or 0)); max_shock=max(1,int(enemy.get("shock_max",1) or 1)); current_shock=max(0,int(enemy.get("shock_current",0) or 0))
+        if wrath>0 and current_shock<max_shock//2:
+            recovered=min(max_shock-current_shock,wrath); enemy["shock_current"]=current_shock+recovered; enemy["wrath_current"]=wrath-recovered
+            log.append({"actor":"enemy","action":"recover_shock","actor_name":enemy["name"],"shock":recovered,"wrath_spent":recovered}); continue
+        base_pool=max(1,int(enemy.get("attack_pool",1) or 1)); expected_icons=base_pool//2
+        wrath_spent=min(wrath,max(0,int(player_traits["Defence"])-expected_icons)); attack_pool=base_pool+wrath_spent; enemy["wrath_current"]=wrath-wrath_spent
+        rolls,icons,wrath_die_6=_inc_roll_pool(attack_pool); hit=icons>=player_traits["Defence"]; total_damage=0; shock=0; wounds=0; damage_rolls=[]; critical=bool(hit and wrath_die_6)
+        if critical: enemy["wrath_current"]+=1
         if hit:
-            # Enemies use the same ED/AP rules as player weapons.
-            total_damage, damage_rolls = _inc_roll_damage(enemy.get("weapon_damage", 0), enemy.get("weapon_ed", 0))
-            shock, wounds, effective_res = _inc_damage_result(total_damage, player_traits["Resilience"], enemy.get("weapon_ap", 0))
+            total_damage,damage_rolls=_inc_roll_damage(enemy.get("weapon_damage",0),enemy.get("weapon_ed",0))
             if critical:
-                # Incursion uses the simple critical option instead of a d66 table.
-                crit_total, crit_rolls = _inc_roll_damage(0, 3)
-                total_damage += crit_total
-                damage_rolls.extend(crit_rolls)
-                shock, wounds, effective_res = _inc_damage_result(total_damage, player_traits["Resilience"], enemy.get("weapon_ap", 0))
-        log.append({"actor": "enemy", "action": "attack", "actor_name": enemy["name"], "skill": enemy["attack_skill"],
-                    "pool": enemy["attack_pool"], "rolls": rolls, "icons": icons, "weapon": enemy["weapon_name"],
-                    "hit": hit, "damage": total_damage, "shock": shock, "wounds": wounds,
-                    "damage_rolls": damage_rolls, "critical": critical})
+                crit_total,crit_rolls=_inc_roll_damage(0,3); total_damage+=crit_total; damage_rolls.extend(crit_rolls)
+            shock,wounds,_=_inc_damage_result(total_damage,player_traits["Resilience"],enemy.get("weapon_ap",0))
+        log.append({"actor":"enemy","action":"attack","actor_name":enemy["name"],"skill":enemy["attack_skill"],"pool":attack_pool,"rolls":rolls,"icons":icons,"weapon":enemy["weapon_name"],"hit":hit,"damage":total_damage,"shock":shock,"wounds":wounds,"damage_rolls":damage_rolls,"critical":critical,"wrath_spent":wrath_spent,"wrath_gained":1 if critical else 0,"wrath_current":enemy["wrath_current"]})
     return log
 
 
@@ -6593,14 +6573,14 @@ def _inc_apply_talent_trigger(node, trigger, selected_indices):
     target["statuses"] = statuses
     return len(selected)
 
-def _inc_resolve_player_attack(ch, run, node, target_uids, weapon, bonus_die=False):
+def _inc_resolve_player_attack(ch, run, node, target_uids, weapon, bonus_die=0, six_mode="ED"):
     merged = _inc_merge_character(ch, run)
     skill_name, pool = _inc_best_attack_pool(merged)
     player_traits = derived_traits(merged)
     targets = [e for e in node["enemies"] if e["alive"] and e["uid"] in target_uids]
     if not targets:
         raise ValueError("no_valid_targets")
-    per_target_pool = max(1, pool - (len(targets) - 1) + (1 if bonus_die else 0))
+    per_target_pool = max(1, pool - (len(targets) - 1) + int(bonus_die or 0))
     log = []
     wrath_gained = 0
     for target in targets:
@@ -6617,7 +6597,9 @@ def _inc_resolve_player_attack(ch, run, node, target_uids, weapon, bonus_die=Fal
             # Exalted Icons can be shifted into ED while retaining enough Icons to hit.
             sixes = rolls.count(6)
             shiftable = min(sixes, max(0, (icons - target["defence"]) // 2))
-            total_ed = int(weapon.get("ed", 0) or 0) + shiftable
+            total_ed = int(weapon.get("ed", 0) or 0) + (shiftable if six_mode == "ED" else 0)
+            if six_mode == "Wrath":
+                wrath_gained += shiftable
             total_damage, damage_rolls = _inc_roll_damage(weapon["damage"], total_ed)
             if critical:
                 # Simple Critical option: +3 ED and a narrative critical effect.
@@ -6642,38 +6624,28 @@ def _inc_resolve_player_attack(ch, run, node, target_uids, weapon, bonus_die=Fal
     return log + _inc_enemy_turn(node["enemies"], player_traits), wrath_gained
 
 
-def _inc_resolve_player_heal(ch, run, node, spend_wrath=False):
-    """Heal Wounds; optionally spend 1 Wrath to recover Shock in the same turn."""
-    if run["heal_charges"] <= 0:
-        raise ValueError("no_heal_charges")
-    if spend_wrath and run["wrath_current"] <= 0:
-        raise ValueError("no_wrath")
-    merged = _inc_merge_character(ch, run)
-    player_traits = derived_traits(merged)
-    heal_amount = max(1, round(run["wounds_max"] * 0.3))
-    new_wounds = min(run["wounds_max"], run["wounds_current"] + heal_amount)
-    shock_recovered = 0
-    new_shock = run["shock_current"]
-    if spend_wrath:
-        shock_recovered = max(1, int(merged.get("rank", 1) or 1) + int(merged.get("tier", 1) or 1))
-        new_shock = min(run["shock_max"], run["shock_current"] + shock_recovered)
-    log = [{"actor": "player", "action": "heal", "amount": new_wounds - run["wounds_current"],
-            "shock_recovered": shock_recovered, "wrath_spent": bool(spend_wrath)}]
-    return (log + _inc_enemy_turn(node["enemies"], player_traits), new_wounds, new_shock,
-            run["heal_charges"] - 1, run["wrath_current"] - (1 if spend_wrath else 0))
+def _inc_resolve_player_heal(ch, run, node, spend_wrath=0):
+    if run["heal_charges"] <= 0: raise ValueError("no_heal_charges")
+    spend_wrath=max(0,int(spend_wrath or 0))
+    if spend_wrath>int(run.get("wrath_current",0) or 0): raise ValueError("no_wrath")
+    merged=_inc_merge_character(ch,run); player_traits=derived_traits(merged)
+    heal_amount=max(1,round(run["wounds_max"]*0.3)); new_wounds=min(run["wounds_max"],run["wounds_current"]+heal_amount)
+    per_wrath=max(1,int(merged.get("rank",1) or 1)+int(merged.get("tier",1) or 1))
+    shock_recovered=min(run["shock_max"]-run["shock_current"],spend_wrath*per_wrath); new_shock=run["shock_current"]+shock_recovered
+    log=[{"actor":"player","action":"heal","amount":new_wounds-run["wounds_current"],"shock_recovered":shock_recovered,"wrath_spent":spend_wrath}]
+    return log+_inc_enemy_turn(node["enemies"],player_traits),new_wounds,new_shock,run["heal_charges"]-1,int(run["wrath_current"])-spend_wrath
 
 
-
-def _inc_resolve_player_flee(ch, run, node, target_uid, bonus_die=False):
+def _inc_resolve_player_flee(ch, run, node, target_uid, bonus_die=0):
     """Contest Speed pools; success requires strictly more Icons than the target."""
-    if bonus_die and run["wrath_current"] <= 0:
-        raise ValueError("no_wrath")
+    bonus_die=max(0,int(bonus_die or 0))
+    if bonus_die>int(run.get("wrath_current",0) or 0): raise ValueError("no_wrath")
     merged = _inc_merge_character(ch, run)
     player_traits = derived_traits(merged)
     target = next((e for e in node["enemies"] if e["alive"] and e["uid"] == target_uid), None)
     if target is None:
         raise ValueError("no_valid_target")
-    player_speed = max(1, int(player_traits.get("Speed", 1))) + (1 if bonus_die else 0)
+    player_speed = max(1,int(player_traits.get("Speed",1))) + bonus_die
     target_speed = max(1, int(target.get("speed", 1)))
     p_rolls, p_icons = _inc_roll_icons(player_speed)
     t_rolls, t_icons = _inc_roll_icons(target_speed)
@@ -6681,13 +6653,13 @@ def _inc_resolve_player_flee(ch, run, node, target_uid, bonus_die=False):
     log = [{"actor": "player", "action": "flee", "target_name": target["name"],
             "pool": player_speed, "rolls": p_rolls, "icons": p_icons,
             "target_pool": target_speed, "target_rolls": t_rolls, "target_icons": t_icons,
-            "success": success, "wrath_spent": bool(bonus_die)}]
+            "success": success, "wrath_spent": int(bonus_die)}]
     if success:
         node["resolved"] = True
         node["fled"] = True
         node["victory"] = False
-        return log, run["wrath_current"] - (1 if bonus_die else 0), True
-    return log + _inc_enemy_turn(node["enemies"], player_traits), run["wrath_current"] - (1 if bonus_die else 0), False
+        return log, run["wrath_current"] - bonus_die, True
+    return log + _inc_enemy_turn(node["enemies"], player_traits), run["wrath_current"] - bonus_die, False
 
 
 
@@ -6697,7 +6669,7 @@ def _inc_finish_combat_round(run, ch, node, round_log, wrath_gained=0):
     enemy_wounds = sum(int(e.get("wounds", 0) or 0) for e in round_log if e.get("actor") == "enemy")
     new_shock = max(0, int(run.get("shock_current", 0) or 0) - enemy_shock)
     new_wounds = max(0, int(run.get("wounds_current", 0) or 0) - enemy_wounds)
-    new_wrath = min(run["wrath_max"], run["wrath_current"] + wrath_gained)
+    new_wrath = max(0, int(run.get("wrath_current",0) or 0)) + int(wrath_gained or 0)
     all_dead = all(not e["alive"] for e in node["enemies"])
 
     if new_wounds <= 0:
@@ -6728,39 +6700,29 @@ def _inc_resolve_pending_talent(run, ch, selected_indices):
     log += _inc_enemy_turn(node.get("enemies", []), derived_traits(_inc_merge_character(ch, run)))
     return _inc_finish_combat_round(run, ch, node, log)
 
-def _inc_combat_attack(run, ch, target_uids, weapon_key, bonus_die=False):
-    if not run.get("node") or run["node"].get("type") != "combat":
-        raise ValueError("wrong_node")
-    if bonus_die and run["wrath_current"] <= 0:
-        raise ValueError("no_wrath")
-    node = copy.deepcopy(run["node"])
-    weapon = _inc_weapon_by_key(ch, run, weapon_key)
-    round_log, wrath_gained = _inc_resolve_player_attack(ch, run, node, target_uids, weapon, bonus_die=bonus_die)
-    if weapon.get("consumable"):
-        charges = dict(run.get("consumable_charges") or {})
-        charges[weapon["key"]] = max(0, int(weapon["remaining"]) - 1)
-        run = _inc_persist(run["id"], consumable_charges=charges)
+def _inc_combat_attack(run, ch, target_uids, weapon_key, bonus_die=0, six_mode="ED"):
+    if not run.get("node") or run["node"].get("type")!="combat": raise ValueError("wrong_node")
+    bonus_die=max(0,int(bonus_die or 0))
+    if bonus_die>int(run.get("wrath_current",0) or 0): raise ValueError("no_wrath")
+    node=copy.deepcopy(run["node"]); weapon=_inc_weapon_by_key(ch,run,weapon_key)
     if bonus_die:
-        run = _inc_persist(run["id"], wrath_current=max(0, int(run["wrath_current"]) - 1))
+        run=_inc_persist(run["id"],wrath_current=int(run["wrath_current"])-bonus_die); run=dict(run); run["wrath_current"]-=bonus_die
+    round_log,wrath_gained=_inc_resolve_player_attack(ch,run,node,target_uids,weapon,bonus_die=bonus_die,six_mode=six_mode)
+    if weapon.get("consumable"):
+        charges=dict(run.get("consumable_charges") or {}); charges[weapon["key"]]=max(0,int(weapon["remaining"])-1); run=_inc_persist(run["id"],consumable_charges=charges)
     if node.get("pending_talent_triggers"):
-        node["log"] = (node.get("log") or []) + round_log
-        return _inc_persist(run["id"], node=node, wrath_current=min(run["wrath_max"], run["wrath_current"] + wrath_gained))
-    return _inc_finish_combat_round(run, ch, node, round_log, wrath_gained)
+        node["log"]=(node.get("log") or [])+round_log; return _inc_persist(run["id"],node=node,wrath_current=int(run.get("wrath_current",0))+wrath_gained)
+    return _inc_finish_combat_round(run,ch,node,round_log,wrath_gained)
 
 
-def _inc_combat_heal(run, ch, spend_wrath=False):
-    if not run.get("node") or run["node"].get("type") != "combat":
-        raise ValueError("wrong_node")
-    node = copy.deepcopy(run["node"])
-    round_log, new_wounds, new_shock, charges_left, wrath_left = _inc_resolve_player_heal(
-        ch, run, node, spend_wrath=spend_wrath
-    )
-    run = _inc_persist(run["id"], heal_charges=charges_left, wounds_current=new_wounds,
-                       shock_current=new_shock, wrath_current=wrath_left)
-    return _inc_finish_combat_round(run, ch, node, round_log)
+def _inc_combat_heal(run, ch, spend_wrath=0):
+    if not run.get("node") or run["node"].get("type")!="combat": raise ValueError("wrong_node")
+    node=copy.deepcopy(run["node"]); round_log,new_wounds,new_shock,charges_left,wrath_left=_inc_resolve_player_heal(ch,run,node,spend_wrath=spend_wrath)
+    run=_inc_persist(run["id"],heal_charges=charges_left,wounds_current=new_wounds,shock_current=new_shock,wrath_current=wrath_left)
+    return _inc_finish_combat_round(run,ch,node,round_log)
 
 
-def _inc_combat_flee(run, ch, target_uid, bonus_die=False):
+def _inc_combat_flee(run, ch, target_uid, bonus_die=0):
     if not run.get("node") or run["node"].get("type") != "combat":
         raise ValueError("wrong_node")
     node = copy.deepcopy(run["node"])
@@ -6986,8 +6948,8 @@ def _inc_render_login_leaderboard():
 # ---- UI ------------------------------------------------------------------
 def _inc_render_hud(ch, run):
     merged=_inc_merge_character(ch,run); traits=derived_traits(merged); adapters=_inc_talent_adapters(ch,run)
-    st.markdown(f"<div class='inc-identity'><div class='inc-kicker'>ADEPTUS DOSSIER</div><div class='inc-hero-name'>{html.escape(str(ch.get('name') or 'Unnamed'))}</div><div class='inc-hero-sub'>{html.escape(str(ch.get('archetype') or ch.get('species') or 'Operative'))} · Tier {int(ch.get('tier',1) or 1)} · Rank {int(ch.get('rank',1) or 1)}</div></div>",unsafe_allow_html=True)
-    st.markdown(f"<div class='inc-hud'><div class='inc-chip wound'><b>{run['wounds_current']}/{run['wounds_max']}</b><small>WOUNDS</small></div><div class='inc-chip shock'><b>{run['shock_current']}/{run['shock_max']}</b><small>SHOCK</small></div><div class='inc-chip wrath'><b>{run['wrath_current']}/{run['wrath_max']}</b><small>WRATH</small></div><div class='inc-chip'><b>{run['xp']}</b><small>RUN XP</small></div><div class='inc-chip'><b>{run['loop_no']}</b><small>LOOP</small></div><div class='inc-chip'><b>{run['bosses_cleared']}</b><small>CHAMPIONS</small></div><div class='inc-chip'><b>{run['heal_charges']}</b><small>MEDICAE</small></div><div class='inc-chip'><b>{traits['Defence']}/{traits['Resilience']}</b><small>DEF / RES</small></div></div>",unsafe_allow_html=True)
+    st.markdown(f"<div class='inc-identity'><div class='inc-kicker'>OPERATIVE RECORD // ACTIVE DEPLOYMENT</div><div class='inc-hero-name'>{html.escape(str(ch.get('name') or 'Unnamed'))}</div><div class='inc-hero-sub'>{html.escape(str(ch.get('archetype') or ch.get('species') or 'Operative'))} · TIER {int(ch.get('tier',1) or 1)} · RANK {int(ch.get('rank',1) or 1)} · STATUS: DEPLOYED</div></div>",unsafe_allow_html=True)
+    st.markdown(f"<div class='inc-hud'><div class='inc-chip wound'><b>{run['wounds_current']}/{run['wounds_max']}</b><small>WOUNDS</small></div><div class='inc-chip shock'><b>{run['shock_current']}/{run['shock_max']}</b><small>SHOCK</small></div><div class='inc-chip wrath'><b>{run['wrath_current']} ∞</b><small>WRATH</small></div><div class='inc-chip'><b>{run['xp']}</b><small>RUN XP</small></div><div class='inc-chip'><b>{run['loop_no']}</b><small>LOOP</small></div><div class='inc-chip'><b>{run['bosses_cleared']}</b><small>CHAMPIONS</small></div><div class='inc-chip'><b>{run['heal_charges']}</b><small>MEDICAE</small></div><div class='inc-chip'><b>{traits['Defence']}/{traits['Resilience']}</b><small>DEF / RES</small></div></div>",unsafe_allow_html=True)
     track=''.join(f"<div class='inc-stage {'now' if s==run['stage'] else ''}'><span>{'✠' if s==run['stage'] else '·'}</span>{INC_STAGE_LABELS[s]}</div>" for s in INC_SEQUENCE)
     st.markdown(f"<div class='inc-track'>{track}</div>",unsafe_allow_html=True)
     with st.expander(f"✠ TALENT CODEX · {len(adapters)}",expanded=False):
@@ -7184,59 +7146,79 @@ def _inc_render_shop(run, ch, node):
 
 
 def _inc_render_combat(run, ch, node):
-    diff_label = {"easy":"PATROL","medium":"AMBUSH","hard":"FRONT LINE","boss":"ENEMY CHAMPION"}[node["difficulty"]]
-    merged = _inc_merge_character(ch, run); traits = derived_traits(merged)
-    live = [e for e in node["enemies"] if e["alive"]]
-    st.markdown(f"<div class='inc-combat-header'><div class='inc-kicker'>THREAT CONTACT</div><div class='inc-title'>{diff_label}</div><div class='inc-flavor'>One action. One decision. Survive the turn.</div></div>",unsafe_allow_html=True)
+    diff_label={"easy":"PATROL","medium":"AMBUSH","hard":"FRONT LINE","boss":"ENEMY CHAMPION"}[node["difficulty"]]
+    merged=_inc_merge_character(ch,run); traits=derived_traits(merged); live=[e for e in node["enemies"] if e["alive"]]
+    target_key=f"inc_targets_{run['id']}"
+    selected_targets=[uid for uid in st.session_state.get(target_key, []) if any(e["uid"]==uid and e["alive"] for e in live)]
+    st.session_state[target_key]=selected_targets
+
+    st.markdown(f"<div class='inc-combat-header'><div class='inc-kicker'>THREAT CONTACT</div><div class='inc-title'>{diff_label}</div><div class='inc-flavor'>Select one or more hostile contacts. Resolve the entire attack as one action.</div></div>",unsafe_allow_html=True)
     if node.get("resolved"):
-        msg = "✠ ESCAPED INTO THE DARK — NO XP AWARDED" if node.get("fled") else f"✠ VICTORY — +{node['reward_xp']} XP"
+        msg="ESCAPED INTO THE DARK — NO XP AWARDED" if node.get("fled") else f"VICTORY — +{node['reward_xp']} XP"
         st.markdown(f"<div class='inc-banner-win'>{msg}</div>",unsafe_allow_html=True)
     cols=st.columns(min(3,max(1,len(node["enemies"]))))
     for i,e in enumerate(node["enemies"]):
         with cols[i%len(cols)]:
             bleed=int((e.get("statuses") or {}).get("Bleeding",0) or 0)
             b=f" · <span class='inc-status-blood'>Bleeding {bleed}</span>" if bleed else ""
-            st.markdown(f"<div class='inc-enemy {'dead' if not e['alive'] else ''}'><div class='en'>{html.escape(e['name'])}</div><div class='et'>Tier {e['tier']} · {html.escape(e['weapon_name'])}</div><div class='inc-npc-vitals'><span><b>{e['wounds_current']}/{e['wounds_max']}</b> W</span><span><b>{e['shock_current']}/{e['shock_max']}</b> S</span></div><div class='inc-npc-def'>DEF {e['defence']} · RES {e['resilience']} · SPD {e.get('speed',1)}{b}</div></div>",unsafe_allow_html=True)
+            ew=e.get("wrath_current",0)
+            state="SELECTED" if e["uid"] in selected_targets else ("NEUTRALIZED" if not e["alive"] else "AVAILABLE")
+            state_cls="selected" if e["uid"] in selected_targets else ("dead" if not e["alive"] else "")
+            st.markdown(f"<div class='inc-enemy {state_cls}'><div class='en'>{html.escape(e['name'])}</div><div class='et'>Tier {e['tier']} · {html.escape(e['weapon_name'])}</div><div class='inc-npc-vitals'><span><b>{e['wounds_current']}/{e['wounds_max']}</b> W</span><span><b>{e['shock_current']}/{e['shock_max']}</b> S</span><span><b>{ew} ∞</b> WRATH</span></div><div class='inc-npc-def'>DEF {e['defence']} · RES {e['resilience']} · SPD {e.get('speed',1)}{b}</div><div class='et'>{state}</div></div>",unsafe_allow_html=True)
+            if e["alive"] and not node.get("resolved"):
+                label="DESELECT TARGET" if e["uid"] in selected_targets else "SELECT TARGET"
+                if st.button(label,key=f"inc_target_{run['id']}_{e['uid']}",use_container_width=True):
+                    current=list(st.session_state.get(target_key, []))
+                    if e["uid"] in current: current.remove(e["uid"])
+                    else: current.append(e["uid"])
+                    st.session_state[target_key]=current
+                    st.rerun()
+
     if node.get("resolved"):
-        if st.button("CONTINUE THE DESCENT  ✠",key="inc_combat_continue",use_container_width=True): _inc_combat_continue(run,ch); st.rerun()
+        if st.button("CONTINUE THE DESCENT",key="inc_combat_continue",use_container_width=True): _inc_combat_continue(run,ch); st.rerun()
         _inc_render_log(node.get("log")); return
+
     pending=node.get("pending_talent_triggers") or []
     if pending:
         tr=pending[0]; choices=[int(i) for i in tr.get("dice_indices",[])]; labels=[f"Die {i+1} · 6" for i in choices]
         st.markdown(f"<div class='inc-talent-reaction'><div class='inc-kicker'>TALENT TRIGGER</div><div class='inc-title'>Blood Must Die</div><div class='inc-flavor'>Choose the 6s to convert into Bleeding on {html.escape(str(tr.get('target_name','the target')))}.</div></div>",unsafe_allow_html=True)
-        picked=st.multiselect("Exalted Icons",labels,key=f"inc_bmd_{run['id']}")
-        selected=[choices[labels.index(x)] for x in picked]
-        if st.button("APPLY BLOOD  ✠  END TURN",key=f"inc_bmd_apply_{run['id']}",use_container_width=True): _inc_resolve_pending_talent(run,ch,selected); st.rerun()
+        picked=st.multiselect("Exalted Icons",labels,key=f"inc_bmd_{run['id']}" ); selected=[choices[labels.index(x)] for x in picked]
+        if st.button("APPLY BLOOD — END TURN",key=f"inc_bmd_apply_{run['id']}",use_container_width=True): _inc_resolve_pending_talent(run,ch,selected); st.rerun()
         _inc_render_log(node.get("log")); return
-    action=st.radio("",["⚔ ATTACK","☠ FLEE","✚ HEAL"],key=f"inc_action_{run['id']}",horizontal=True)
+
+    action=st.radio("COMBAT POSTURE",["ATTACK","FLEE","HEAL"],key=f"inc_action_{run['id']}",horizontal=True)
     with st.container(border=True):
         st.markdown("<div class='inc-action-title'>COMBAT ACTION</div>",unsafe_allow_html=True)
-        opts=[e["uid"] for e in live]
-        if action=="⚔ ATTACK":
+        if action=="ATTACK":
             weapons=_inc_usable_weapons(ch,run); keys=[w["key"] for w in weapons]; wk=f"inc_weapon_{run['id']}"
             if st.session_state.get(wk) not in keys: st.session_state[wk]=keys[0]
             def wl(k):
                 w=next(w for w in weapons if w["key"]==k); return f"{w['name']} · Dmg {w['damage']} +{int(w.get('ed',0) or 0)} ED · AP {int(w.get('ap',0) or 0)}"
-            c1,c2=st.columns([2.1,1]); c1.selectbox("Weapon",keys,key=wk,format_func=wl); target=c2.selectbox("Target",opts,key=f"inc_at_{run['id']}",format_func=lambda uid:next(e['name'] for e in live if e['uid']==uid))
-            spend=st.checkbox("Spend 1 Wrath · +1 die",key=f"inc_attack_wrath_{run['id']}",disabled=run['wrath_current']<1)
-            if st.button("STRIKE  ✠",key="inc_attack",use_container_width=True):
-                try:_inc_combat_attack(run,ch,[target],st.session_state.get(wk),bonus_die=spend)
-                except ValueError as exc:st.error(str(exc).replace('_',' ').title())
+            c1,c2=st.columns([2.1,1])
+            c1.selectbox("Weapon",keys,key=wk,format_func=wl)
+            c2.markdown(f"<div class='inc-card'><div class='inc-kicker'>TARGETING SOLUTION</div><div class='inc-title'>{len(selected_targets)} CONTACT{'S' if len(selected_targets)!=1 else ''}</div><div class='inc-flavor'>Select contacts above. Multiple targets are resolved in the same strike.</div></div>",unsafe_allow_html=True)
+            spend=st.number_input("Wrath to spend — +1 attack die each",min_value=0,max_value=max(0,int(run.get("wrath_current",0))),value=0,step=1,key=f"inc_attack_wrath_{run['id']}")
+            six_mode=st.radio("Exalted 6s",["ED","Wrath"],format_func=lambda x:"Convert eligible 6s → Extra Damage Dice" if x=="ED" else "Convert eligible 6s → Wrath",horizontal=True,key=f"inc_attack_six_{run['id']}")
+            if st.button("EXECUTE STRIKE",key="inc_attack",use_container_width=True,disabled=not selected_targets):
+                try: _inc_combat_attack(run,ch,selected_targets,st.session_state.get(wk),bonus_die=int(spend),six_mode=six_mode)
+                except ValueError as exc: st.error(str(exc).replace('_',' ').title())
+                st.session_state[target_key]=[]
                 st.rerun()
-        elif action=="☠ FLEE":
-            target=st.selectbox("Break contact with",opts,key=f"inc_fl_{run['id']}",format_func=lambda uid:next(e['name'] for e in live if e['uid']==uid))
-            spend=st.checkbox("Spend 1 Wrath · +1 die",key=f"inc_flee_wrath_{run['id']}",disabled=run['wrath_current']<1)
+            if not selected_targets: st.caption("No hostile contact selected.")
+        elif action=="FLEE":
+            target=st.selectbox("Break contact with",[e["uid"] for e in live],key=f"inc_fl_{run['id']}",format_func=lambda uid:next(e['name'] for e in live if e['uid']==uid))
+            spend=st.number_input("Wrath to spend — +1 escape die each",min_value=0,max_value=max(0,int(run.get("wrath_current",0))),value=0,step=1,key=f"inc_flee_wrath_{run['id']}")
             enemy_speed=next(e['speed'] for e in live if e['uid']==target); st.caption(f"Speed contest · You {traits['Speed']}d6 vs target {enemy_speed}d6 · more Icons escapes.")
-            if st.button("BREAK CONTACT  ✠",key="inc_flee",use_container_width=True):
-                try:_inc_combat_flee(run,ch,target,bonus_die=spend)
-                except ValueError as exc:st.error(str(exc).replace('_',' ').title())
+            if st.button("BREAK CONTACT",key="inc_flee",use_container_width=True):
+                try: _inc_combat_flee(run,ch,target,bonus_die=int(spend))
+                except ValueError as exc: st.error(str(exc).replace('_',' ').title())
                 st.rerun()
         else:
-            spend=st.checkbox("Spend 1 Wrath · recover Rank + Tier Shock",key=f"inc_heal_wrath_{run['id']}",disabled=run['wrath_current']<1)
+            spend=st.number_input("Wrath to spend — recover Rank + Tier Shock each",min_value=0,max_value=max(0,int(run.get("wrath_current",0))),value=0,step=1,key=f"inc_heal_wrath_{run['id']}")
             st.caption(f"Medicae charges: {run['heal_charges']} · Restore 30% max Wounds.")
-            if st.button("ADMINISTER MEDICAE  ✠",key="inc_heal",disabled=run['heal_charges']<1,use_container_width=True):
-                try:_inc_combat_heal(run,ch,spend_wrath=spend)
-                except ValueError as exc:st.error(str(exc).replace('_',' ').title())
+            if st.button("ADMINISTER MEDICAE",key="inc_heal",disabled=run['heal_charges']<1,use_container_width=True):
+                try: _inc_combat_heal(run,ch,spend_wrath=int(spend))
+                except ValueError as exc: st.error(str(exc).replace('_',' ').title())
                 st.rerun()
     _inc_render_log(node.get("log"))
 
@@ -7314,8 +7296,7 @@ def mode_chooser_page():
 def incursion_login_page():
     if st.button("← Imperial Cogitator", key="incursion_login_back"):
         st.session_state.app_mode = "system"; st.rerun()
-    st.markdown("<div class='inc-banner'>WRATH INCURSION<span class='sub'>A Solo Descent Into Ruin</span></div>",
-                unsafe_allow_html=True)
+    st.markdown("<div class='incursion-frame'><div class='inc-banner'>WRATH INCURSION<span class='sub'>A Solo Descent Into Ruin</span></div><div class='inc-command-line'><span>ORDO MILITARIS // DESCENT TERMINAL</span><b class='live'>LIVE FEED</b><span>AUTHORITY: MAGISTER</span></div></div>", unsafe_allow_html=True)
     col = st.columns([1, 1.3, 1])[1]
     with col:
         with st.form("incursion_login"):
@@ -7342,8 +7323,7 @@ def incursion_view():
         if st.button("← Imperial Cogitator", key="incursion_to_cogitator"):
             st.session_state.app_mode = "system"; st.rerun()
 
-    st.markdown("<div class='inc-banner'>WRATH INCURSION<span class='sub'>A Solo Descent Into Ruin</span></div>",
-                unsafe_allow_html=True)
+    st.markdown("<div class='incursion-frame'><div class='inc-banner'>WRATH INCURSION<span class='sub'>A Solo Descent Into Ruin</span></div><div class='inc-command-line'><span>ORDO MILITARIS // DESCENT TERMINAL</span><b class='live'>LIVE FEED</b><span>AUTHORITY: MAGISTER</span></div></div>", unsafe_allow_html=True)
 
     uid = st.session_state.user["id"]
     cid = char_id_for_user(uid)

@@ -6067,30 +6067,41 @@ def _inc_scale_factor(loop_no):
     return 1 + (loop_no - 1) * 0.18
 
 
+def _inc_enemy_sheet(name, tier, species, faction, attrs, skill_pools, wargear, abilities=""):
+    """Build an Incursion enemy through the same sheet math as normal NPCs."""
+    skill_map = {sk: max(0, int(pool) - int(attrs.get(SKILLS[sk], 1))) for sk, pool in skill_pools.items()}
+    sheet = {
+        "name": name, "kind": "npc", "species": species, "faction": faction,
+        "archetype": f"{name} (Bestiary)", "tier": int(tier), "rank": 1,
+        "creation_mode": "archetype", "attributes": dict(attrs), "skills": skill_map,
+        "wargear": normalize_wargear(list(wargear or [])),
+        "talents": ([{"name": f"{name}, Bestiary Abilities", "effect": abilities, "cost": 0}] if abilities else []),
+        "powers": [], "keywords": [],
+    }
+    gear = equipped_wargear_modifiers(sheet)
+    traits = derived_traits(sheet, gear)
+    weapon = _inc_best_weapon(sheet)
+    atk_skill, atk_pool = _inc_best_attack_pool(sheet)
+    return sheet, traits, weapon, atk_skill, atk_pool
+
 def _inc_build_enemy_from_bestiary(entry, loop_no, idx):
     name, tier, species, faction, attrs_list, skill_pools, wargear, abilities = entry
     scale = _inc_scale_factor(loop_no)
     attrs = {a: max(1, round(v + (loop_no - 1) * 0.6)) for a, v in zip(ATTRS, attrs_list)}
-    T, I = attrs.get("Toughness", 3), attrs.get("Initiative", 3)
-    max_wounds = max(6, round((T + 2 * tier) * (2.5 * scale)))
-    if "Weapon Skill" in skill_pools:
-        atk_skill, atk_pool = "Weapon Skill", skill_pools["Weapon Skill"]
-    elif "Ballistic Skill" in skill_pools:
-        atk_skill, atk_pool = "Ballistic Skill", skill_pools["Ballistic Skill"]
-    elif skill_pools:
-        atk_skill, atk_pool = max(skill_pools.items(), key=lambda x: x[1])
-    else:
-        atk_skill, atk_pool = "Attack", 2 + tier
-    weapon_dmg = round((4 + tier * 2) * scale)
+    sheet, traits, weapon, atk_skill, atk_pool = _inc_enemy_sheet(
+        name, tier, species, faction, attrs, skill_pools, wargear, abilities
+    )
     return {
-        "uid": f"b-{name}-{idx}-{random.randint(0, 999999)}", "name": name, "tier": tier, "species": species,
-        "faction": faction, "attributes": attrs, "attack_skill": atk_skill,
-        "attack_pool": max(1, round(atk_pool * (1 + (loop_no - 1) * 0.12))),
-        "defence": max(0, I - 1), "resilience": T + 1, "hp_max": max_wounds, "hp_current": max_wounds,
-        "weapon_name": wargear[0] if wargear else "Melee Attack", "weapon_damage": weapon_dmg,
+        "uid": f"b-{name}-{idx}-{random.randint(0, 999999)}", "name": name, "tier": int(tier),
+        "species": species, "faction": faction, "attributes": attrs,
+        "attack_skill": atk_skill, "attack_pool": max(1, round(atk_pool * (1 + (loop_no - 1) * 0.12))),
+        "defence": int(traits["Defence"]), "resilience": int(traits["Resilience"]),
+        "wounds_max": int(traits["Max Wounds"]), "wounds_current": int(traits["Max Wounds"]),
+        "shock_max": int(traits["Max Shock"]), "shock_current": int(traits["Max Shock"]),
+        "weapon_name": weapon["name"] if weapon else (wargear[0] if wargear else "Melee Attack"),
+        "weapon_damage": int(round((weapon["damage"] if weapon else 3) * scale)),
         "alive": True, "fallen": False,
     }
-
 
 def _inc_fetch_fallen_pool(tier, limit=20):
     conn = get_conn()
@@ -6105,19 +6116,24 @@ def _inc_build_enemy_from_fallen(row, loop_no, idx):
     scale = _inc_scale_factor(loop_no)
     base_attrs = _inc_json_field(row.get("attributes"), {})
     attrs = {k: max(1, round(v + (loop_no - 1) * 0.6)) for k, v in base_attrs.items()}
-    T, I = attrs.get("Toughness", 3), attrs.get("Initiative", 3)
     tier = int(row["tier"])
-    max_wounds = max(6, round((T + 2 * tier) * (2.5 * scale)))
+    sheet = {
+        "name": row["name"], "kind": "npc", "species": row.get("species", "Human"),
+        "faction": "Fallen", "tier": tier, "rank": 1, "creation_mode": "advanced",
+        "attributes": attrs, "skills": {}, "wargear": [], "talents": [], "powers": [], "keywords": [],
+    }
+    traits = derived_traits(sheet)
     return {
         "uid": f"f-{row['id']}-{idx}-{random.randint(0, 999999)}", "name": row["name"], "tier": tier,
         "species": row.get("species", ""), "faction": "Fallen", "attributes": attrs,
         "attack_skill": row["attack_skill"],
         "attack_pool": max(1, round(int(row["attack_pool"]) * (1 + (loop_no - 1) * 0.12))),
-        "defence": max(0, I - 1), "resilience": T + 1, "hp_max": max_wounds, "hp_current": max_wounds,
+        "defence": int(traits["Defence"]), "resilience": int(traits["Resilience"]),
+        "wounds_max": int(traits["Max Wounds"]), "wounds_current": int(traits["Max Wounds"]),
+        "shock_max": int(traits["Max Shock"]), "shock_current": int(traits["Max Shock"]),
         "weapon_name": row["weapon_name"], "weapon_damage": round(int(row["weapon_damage"]) * scale),
         "alive": True, "fallen": True,
     }
-
 
 def _inc_spawn_group(difficulty, loop_no):
     tier = INC_DIFFICULTY_TIER[difficulty]
@@ -6325,7 +6341,7 @@ def _inc_mark_dead(run, ch, reason):
     except Exception:
         pass
     conn = get_conn()
-    conn.execute("UPDATE incursion_run SET status='dead', ended_at=?, death_reason=?, hp_current=0 WHERE id=?",
+    conn.execute("UPDATE incursion_run SET status='dead', ended_at=?, death_reason=?, wounds_current=0 WHERE id=?",
                  (now_iso(), reason, run["id"]))
     conn.commit(); conn.close()
     return _inc_get_run(run["id"])
@@ -6461,8 +6477,10 @@ def _inc_resolve_player_attack(ch, run, node, target_uids, weapon):
         if hit:
             bonus = max(0, icons - target["defence"])
             damage = max(0, weapon["damage"] + bonus - target["resilience"])
-            target["hp_current"] = max(0, target["hp_current"] - damage)
-            if target["hp_current"] <= 0:
+            shock_absorbed = min(int(target.get("shock_current", 0) or 0), damage)
+            target["shock_current"] = int(target.get("shock_current", 0) or 0) - shock_absorbed
+            target["wounds_current"] = max(0, int(target.get("wounds_current", 0) or 0) - (damage - shock_absorbed))
+            if target["wounds_current"] <= 0:
                 target["alive"] = False
         log.append({"actor": "player", "action": "attack", "target_name": target["name"], "target_uid": target["uid"],
                     "skill": skill_name, "pool": per_target_pool, "rolls": rolls, "icons": icons,
@@ -6733,7 +6751,8 @@ def _inc_render_hud(ch, run):
         f"<div class='inc-chip'><b>{run['loop_no']}</b>Loop</div>"
         f"<div class='inc-chip'><b>{run['bosses_cleared']}</b>Champions Slain</div>"
         f"<div class='inc-chip'><b>{run['heal_charges']}</b>Heals</div>"
-        f"<div class='inc-chip'><b>{html.escape(weapon['name'])}</b>Dmg {weapon['damage']} · Def {traits['Defence']}</div>"
+        f"<div class='inc-chip'><b>{html.escape(weapon['name'])}</b>Dmg {weapon['damage']}</div>"
+        f"<div class='inc-chip'><b>{traits['Defence']}</b>Def · <b>{traits['Resilience']}</b>Res</div>"
         "</div>", unsafe_allow_html=True)
     track = "".join(
         f"<div class='inc-stage {'now' if s == run['stage'] else ''}'>{INC_STAGE_LABELS[s]}</div>" for s in INC_SEQUENCE
@@ -6953,14 +6972,17 @@ def _inc_render_combat(run, ch, node):
     cols = st.columns(n_cols)
     for i, enemy in enumerate(node["enemies"]):
         with cols[i % n_cols]:
-            pct = max(0, enemy["hp_current"] / enemy["hp_max"] * 100) if enemy["hp_max"] else 0
+            status = "dead" if not enemy["alive"] else ""
             st.markdown(
-                f"<div class='inc-enemy {'dead' if not enemy['alive'] else ''}'>"
+                f"<div class='inc-enemy {status}'>"
                 f"<div class='en'>{html.escape(enemy['name'])}</div>"
                 f"<div class='et'>Tier {enemy['tier']} · {html.escape(enemy['weapon_name'])}</div>"
-                f"<div class='inc-hpbar'><div class='inc-hpbar-fill' style='width:{pct}%'></div></div>"
-                f"<div class='inc-hptext'>{enemy['hp_current']}/{enemy['hp_max']}</div></div>",
-                unsafe_allow_html=True)
+                f"<div class='inc-npc-vitals'>"
+                f"<span><b>{enemy['wounds_current']}/{enemy['wounds_max']}</b> Wounds</span>"
+                f"<span><b>{enemy['shock_current']}/{enemy['shock_max']}</b> Shock</span>"
+                f"</div>"
+                f"<div class='inc-npc-def'>Def {enemy['defence']} · Res {enemy['resilience']}</div>"
+                f"</div>", unsafe_allow_html=True)
             if enemy["alive"] and not node.get("resolved"):
                 checked = st.checkbox("Target", key=f"inc_tgt_{run['id']}_{enemy['uid']}", value=enemy["uid"] in selected)
                 if checked:
@@ -8880,7 +8902,7 @@ def main():
     inject_theme(); init_db()
     st.session_state.setdefault("user", None)
     st.session_state.setdefault("editing", None)
-    st.session_state.setdefault("app_mode", "system")
+    st.session_state["app_mode"] = "system"
 
     if st.session_state.app_mode == "incursion":
         if st.session_state.user is None:

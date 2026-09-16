@@ -6612,9 +6612,12 @@ def _inc_life_pools(ch):
     # once Shock became the actual first line of defence. +1 Wounds per
     # point of Toughness above baseline is unchanged, so attribute
     # purchases and Origin bonuses still grow it exactly as before.
+    # Shock base raised to 15 (at baseline Willpower 3) - with Shock now
+    # both a damage buffer and a source of bonus hit dice, a base of 4 ran
+    # out (and stopped helping either role) almost immediately.
     attrs={a:int((ch.get("attributes") or {}).get(a,1) or 1) for a in ATTRS}
     return {"wounds_max": int(attrs.get("Toughness",1))+22,
-            "shock_max": int(attrs.get("Willpower",1))+1,
+            "shock_max": int(attrs.get("Willpower",1))+12,
             "wrath_max": 2}
 
 
@@ -7639,7 +7642,11 @@ def _inc_resolve_player_attack(ch, run, node, target_uids, weapon, bonus_die=0, 
     extra_pool += int(status.get("next_attack_bonus_dice", 0) or 0)
     status["next_attack_bonus_dice"] = 0
     run = _inc_talent_persist_status(run, status) if extra_pool or _inc_talent_has(ch, run, "Relentless Assault") else run
-    per_target_pool = max(1, pool - (len(targets) - 1) + int(bonus_die or 0) + extra_pool)
+    # Every point of Shock still standing adds a hit die - Shock is now the
+    # buffer that eats damage before Wounds do, so keeping it topped up is
+    # both defence AND offence, and losing it in a fight costs you both.
+    shock_bonus = max(0, int(run.get("shock_current", 0) or 0))
+    per_target_pool = max(1, pool - (len(targets) - 1) + int(bonus_die or 0) + extra_pool + shock_bonus)
     log = []
     wrath_gained = 0
     for target in targets:
@@ -8649,6 +8656,8 @@ def _inc_render_combat(run, ch, node):
                         f"</div>", unsafe_allow_html=True)
                     if st.button("IN USE" if active else "USE",key=f"inc_wtile_{run['id']}_{w['key']}",use_container_width=True,disabled=active):
                         st.session_state[wk]=w["key"]; st.rerun()
+            _base_skill,_base_pool=_inc_best_attack_pool(merged); _shock_bonus=max(0,int(run.get("shock_current",0) or 0))
+            st.caption(f"Attack pool: {_base_pool+_shock_bonus} dice ({_base_pool} from {_base_skill} + {_shock_bonus} from Shock standing)")
             wrath_avail=int(run.get("wrath_current",0) or 0)
             shock_full=int(run.get("shock_current",0) or 0)>=int(run.get("shock_max",0) or 0)
             guaranteed_hit=False; restore_shock=False

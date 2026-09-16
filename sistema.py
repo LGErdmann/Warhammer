@@ -6605,27 +6605,37 @@ def _inc_player_traits(ch, run):
 
 
 def _inc_life_pools(ch):
-    # Incursion life pools are derived only from the character's starting Attributes.
+    # Incursion life pools are derived only from the character's starting
+    # Attributes. Wounds now defaults to 25 at the baseline Toughness (3)
+    # rather than a bare 5 - Shock absorbs damage before Wounds do (see
+    # _inc_damage_result), so a small Wounds pool read as far too fragile
+    # once Shock became the actual first line of defence. +1 Wounds per
+    # point of Toughness above baseline is unchanged, so attribute
+    # purchases and Origin bonuses still grow it exactly as before.
     attrs={a:int((ch.get("attributes") or {}).get(a,1) or 1) for a in ATTRS}
-    return {"wounds_max": int(attrs.get("Toughness",1))+2,
+    return {"wounds_max": int(attrs.get("Toughness",1))+22,
             "shock_max": int(attrs.get("Willpower",1))+1,
             "wrath_max": 2}
 
 
-def _inc_damage_result(total_damage, resilience, ap=0):
-    """Resolve a W&G 2e damage roll against Resilience.
-
-    Damage below Resilience has no effect; equal damage inflicts 1d3 Shock;
-    damage above Resilience inflicts the difference as Wounds. Armour
-    Penetration reduces the target's effective Resilience.
+def _inc_damage_result(total_damage, resilience, ap=0, shock_current=None):
+    """Resolve a hit: Resilience (adjusted by Armour Penetration) soaks
+    damage like armour, same as before. What gets through no longer checks
+    for an exact Resilience match to decide "a little Shock or nothing" -
+    it drains the target's current Shock first, and only once Shock is
+    fully spent does the remainder become Wounds. shock_current=None (no
+    Shock pool to reference, e.g. the compressed offline duel simulation)
+    falls back to sending all net damage straight to Wounds.
     """
     total_damage = max(0, int(total_damage or 0))
     effective_resilience = max(0, int(resilience or 0) + int(ap or 0))
-    if total_damage < effective_resilience:
-        return 0, 0, effective_resilience
-    if total_damage == effective_resilience:
-        return random.randint(1, 3), 0, effective_resilience
-    return 0, total_damage - effective_resilience, effective_resilience
+    net = max(0, total_damage - effective_resilience)
+    if shock_current is None:
+        return 0, net, effective_resilience
+    shock_avail = max(0, int(shock_current or 0))
+    shock_dealt = min(net, shock_avail)
+    wounds_dealt = net - shock_dealt
+    return shock_dealt, wounds_dealt, effective_resilience
 
 
 def _inc_roll_damage(base_damage, ed):
@@ -7568,8 +7578,14 @@ def _inc_apply_player_talent_attack_effects(ch, run, target, entry):
         run = _inc_talent_persist_status(run, statuses)
     return run
 
-def _inc_enemy_turn(enemies, player_traits):
+def _inc_enemy_turn(enemies, player_traits, player_shock_current=0):
     log=[]
+    # Tracked locally so a second (or third) enemy hitting in the same
+    # round correctly sees the Shock the first enemy already drained -
+    # _inc_finish_combat_round then re-derives the real totals by summing
+    # this log's shock/wounds fields against the actual run state, so
+    # nothing here needs to touch the run directly.
+    player_shock_left=max(0,int(player_shock_current or 0))
     for enemy in enemies:
         if not enemy["alive"]: continue
         wrath=max(0,int(enemy.get("wrath_current",0) or 0)); max_shock=max(1,int(enemy.get("shock_max",1) or 1)); current_shock=max(0,int(enemy.get("shock_current",0) or 0))
@@ -7586,7 +7602,8 @@ def _inc_enemy_turn(enemies, player_traits):
             total_damage,damage_rolls=_inc_roll_damage(enemy.get("weapon_damage",0),enemy.get("weapon_ed",0))
             if critical:
                 crit_total,crit_rolls=_inc_roll_damage(0,3); total_damage+=crit_total; damage_rolls.extend(crit_rolls)
-            shock,wounds,_=_inc_damage_result(total_damage,player_traits["Resilience"],enemy.get("weapon_ap",0))
+            shock,wounds,_=_inc_damage_result(total_damage,player_traits["Resilience"],enemy.get("weapon_ap",0),player_shock_left)
+            player_shock_left=max(0,player_shock_left-shock)
         log.append({"actor":"enemy","action":"attack","actor_name":enemy["name"],"skill":enemy["attack_skill"],"pool":attack_pool,"rolls":rolls,"icons":icons,"weapon":enemy["weapon_name"],"hit":hit,"damage":total_damage,"shock":shock,"wounds":wounds,"damage_rolls":damage_rolls,"critical":critical,"wrath_spent":wrath_spent,"wrath_gained":1 if critical else 0,"wrath_current":enemy["wrath_current"]})
     return log
 
@@ -7608,7 +7625,7 @@ def _inc_apply_talent_trigger(node, trigger, selected_indices):
     target["statuses"] = statuses
     return len(selected)
 
-def _inc_resolve_player_attack(ch, run, node, target_uids, weapon, bonus_die=0, six_mode="ED"):
+def _inc_resolve_player_attack(ch, run, node, target_uids, weapon, bonus_die=0, six_mode="ED", guaranteed_hit=False):
     merged = _inc_merge_character(ch, run)
     skill_name, pool = _inc_best_attack_pool(merged)
     player_traits = _inc_player_traits(ch, run)
@@ -7627,7 +7644,7 @@ def _inc_resolve_player_attack(ch, run, node, target_uids, weapon, bonus_die=0, 
     wrath_gained = 0
     for target in targets:
         rolls, icons, wrath_die_6 = _inc_roll_pool(per_target_pool)
-        hit = icons >= target["defence"]
+        hit = bool(guaranteed_hit) or icons >= target["defence"]
         critical = bool(hit and wrath_die_6)
         if critical:
             wrath_gained += 1
@@ -7654,7 +7671,7 @@ def _inc_resolve_player_attack(ch, run, node, target_uids, weapon, bonus_die=0, 
                 crit_total, crit_rolls = _inc_roll_damage(0, 3)
                 total_damage += crit_total
                 damage_rolls.extend(crit_rolls)
-            shock, wounds, _effective_res = _inc_damage_result(total_damage, target["resilience"], weapon.get("ap", 0))
+            shock, wounds, _effective_res = _inc_damage_result(total_damage, target["resilience"], weapon.get("ap", 0), target.get("shock_current", 0))
             bonus_wounds = int(preview_entry.get("talent_bonus_wounds", 0) or 0)
             wounds += bonus_wounds
             target["shock_current"] = max(0, int(target.get("shock_current", 0) or 0) - shock)
@@ -7697,7 +7714,7 @@ def _inc_resolve_player_attack(ch, run, node, target_uids, weapon, bonus_die=0, 
             if triggers: node["pending_talent_triggers"] = triggers
     if node.get("pending_talent_triggers"):
         return log, wrath_gained
-    return log + _inc_enemy_turn(node["enemies"], player_traits), wrath_gained
+    return log + _inc_enemy_turn(node["enemies"], player_traits, run.get("shock_current", 0)), wrath_gained
 
 
 def _inc_resolve_player_heal(ch, run, node, spend_wrath=0):
@@ -7709,7 +7726,7 @@ def _inc_resolve_player_heal(ch, run, node, spend_wrath=0):
     per_wrath=max(1,int(merged.get("rank",1) or 1)+int(merged.get("tier",1) or 1))
     shock_recovered=min(run["shock_max"]-run["shock_current"],spend_wrath*per_wrath); new_shock=run["shock_current"]+shock_recovered
     log=[{"actor":"player","action":"heal","amount":new_wounds-run["wounds_current"],"shock_recovered":shock_recovered,"wrath_spent":spend_wrath}]
-    return log+_inc_enemy_turn(node["enemies"],player_traits),new_wounds,new_shock,run["heal_charges"]-1,int(run["wrath_current"])-spend_wrath
+    return log+_inc_enemy_turn(node["enemies"],player_traits,new_shock),new_wounds,new_shock,run["heal_charges"]-1,int(run["wrath_current"])-spend_wrath
 
 
 def _inc_resolve_player_flee(ch, run, node, target_uid, bonus_die=0):
@@ -7736,7 +7753,7 @@ def _inc_resolve_player_flee(ch, run, node, target_uid, bonus_die=0):
         node["fled"] = True
         node["victory"] = False
         return log, run["wrath_current"] - bonus_die, True
-    return log + _inc_enemy_turn(node["enemies"], player_traits), run["wrath_current"] - bonus_die, False
+    return log + _inc_enemy_turn(node["enemies"], player_traits, run.get("shock_current", 0)), run["wrath_current"] - bonus_die, False
 
 
 
@@ -7803,17 +7820,19 @@ def _inc_resolve_pending_talent(run, ch, selected_indices):
     applied = sum(_inc_apply_talent_trigger(node, t, selected_indices) for t in triggers)
     node.pop("pending_talent_triggers", None)
     log = [{"actor":"player","action":"talent_trigger","talent":"Blood Must Die","amount":applied,"target_name":triggers[0].get("target_name","Target")}]
-    log += _inc_enemy_turn(node.get("enemies", []), _inc_player_traits(ch, run))
+    log += _inc_enemy_turn(node.get("enemies", []), _inc_player_traits(ch, run), run.get("shock_current", 0))
     return _inc_finish_combat_round(run, ch, node, log)
 
-def _inc_combat_attack(run, ch, target_uids, weapon_key, bonus_die=0, six_mode="ED", restore_shock=False):
+def _inc_combat_attack(run, ch, target_uids, weapon_key, bonus_die=0, six_mode="ED", restore_shock=False, guaranteed_hit=False):
     if not run.get("node") or run["node"].get("type")!="combat": raise ValueError("wrong_node")
     bonus_die=max(0,int(bonus_die or 0))
     restore_shock=bool(restore_shock)
-    if restore_shock and bonus_die:
-        raise ValueError("choose_wrath_dice_or_shock")
+    guaranteed_hit=bool(guaranteed_hit)
+    if sum([restore_shock, guaranteed_hit, bool(bonus_die)]) > 1:
+        raise ValueError("choose_one_wrath_effect")
     if bonus_die>int(run.get("wrath_current",0) or 0): raise ValueError("no_wrath")
     if restore_shock and int(run.get("wrath_current",0) or 0)<1: raise ValueError("no_wrath")
+    if guaranteed_hit and int(run.get("wrath_current",0) or 0)<1: raise ValueError("no_wrath")
     node=copy.deepcopy(run["node"]); weapon=_inc_weapon_by_key(ch,run,weapon_key)
     if weapon.get("key") != "__unarmed__" and int(weapon.get("durability_current", 0)) <= 0:
         raise ValueError("weapon_broken")
@@ -7826,10 +7845,16 @@ def _inc_combat_attack(run, ch, target_uids, weapon_key, bonus_die=0, six_mode="
         run=_inc_persist(run["id"],shock_current=current_shock+recovered,wrath_current=int(run["wrath_current"])-1)
         run=_inc_record_wrath_spend(run, ch, 1)
         bonus_die=0
+    elif guaranteed_hit:
+        # Spends exactly 1 Wrath - one guaranteed hit per turn, not a
+        # dice-pool bonus. Rolled dice/icons still show for flavour and can
+        # still crit on the Wrath Die, but the hit/miss check is skipped.
+        run=_inc_persist(run["id"],wrath_current=int(run["wrath_current"])-1)
+        run=_inc_record_wrath_spend(run, ch, 1)
     elif bonus_die:
         run=_inc_persist(run["id"],wrath_current=int(run["wrath_current"])-bonus_die)
         run=_inc_record_wrath_spend(run, ch, bonus_die)
-    round_log,wrath_gained=_inc_resolve_player_attack(ch,run,node,target_uids,weapon,bonus_die=bonus_die,six_mode=six_mode)
+    round_log,wrath_gained=_inc_resolve_player_attack(ch,run,node,target_uids,weapon,bonus_die=bonus_die,six_mode=six_mode,guaranteed_hit=guaranteed_hit)
     weapon_ones = sum(1 for entry in round_log if entry.get("actor") == "player" and entry.get("rolls") and int(entry["rolls"][-1]) == 1)
     if weapon_ones and weapon.get("key") != "__unarmed__":
         run, lost, weapon_cur, weapon_max = _inc_damage_weapon_from_wrath_one(run, ch, weapon["key"])
@@ -7857,7 +7882,7 @@ def _inc_resolve_restore_shock(ch, run, node):
     new_shock = current_shock + recovered
     log = [{"actor": "player", "action": "restore_shock", "shock_recovered": recovered, "wrath_spent": 1}]
     player_traits = _inc_player_traits(ch, run)
-    return log + _inc_enemy_turn(node.get("enemies", []), player_traits), new_shock, current_wrath - 1
+    return log + _inc_enemy_turn(node.get("enemies", []), player_traits, new_shock), new_shock, current_wrath - 1
 
 
 def _inc_combat_restore_shock(run, ch):
@@ -8059,7 +8084,7 @@ def _inc_pvp_apply_attack(match, side, spend_wrath=0, six_mode="ED"):
         total_damage, _ = _inc_roll_damage(weapon["damage"], int(weapon.get("ed", 0)) + shifted)
         if wrath_die_6:
             crit_total, _ = _inc_roll_damage(0, 3); total_damage += crit_total
-        shock, wounds, _ = _inc_damage_result(total_damage, int(target["resilience"]), int(weapon.get("ap", 0)))
+        shock, wounds, _ = _inc_damage_result(total_damage, int(target["resilience"]), int(weapon.get("ap", 0)), int(target.get("shock", 0)))
         target["shock"] = max(0, int(target["shock"]) - shock)
         target["wounds"] = max(0, int(target["wounds"]) - wounds)
     actor["wrath"] += wrath_gained
@@ -8626,22 +8651,20 @@ def _inc_render_combat(run, ch, node):
                         st.session_state[wk]=w["key"]; st.rerun()
             wrath_avail=int(run.get("wrath_current",0) or 0)
             shock_full=int(run.get("shock_current",0) or 0)>=int(run.get("shock_max",0) or 0)
-            bonus_die=0; restore_shock=False
+            guaranteed_hit=False; restore_shock=False
             if wrath_avail>0:
-                # One clear choice for what Wrath does this turn, instead of
-                # a stepper that was always visible PLUS a second, separate
-                # "+SHOCK" strike button doing something different with the
-                # same resource - only one of those two effects can ever
-                # apply to a single attack, so only one control should ask.
-                mode_opts=["No Wrath","Bonus Attack Dice"]+([] if shock_full else ["Recover Shock Instead"])
+                # Wrath buys a guaranteed hit, not more dice in the pool -
+                # exactly 1 Wrath, at most once per turn, no stacking.
+                mode_opts=["No Wrath","Guaranteed Hit (1 Wrath)"]+([] if shock_full else ["Recover Shock Instead"])
                 mode=st.radio(f"Wrath ({wrath_avail} available)",mode_opts,key=f"inc_wrath_mode_{run['id']}",horizontal=True)
-                if mode=="Bonus Attack Dice":
-                    bonus_die=_inc_wrath_spend_control(run['id'],wrath_avail,"inc_attack_wrath","+DICE THIS STRIKE")
+                if mode=="Guaranteed Hit (1 Wrath)":
+                    st.caption("Spends exactly 1 Wrath - this Strike hits automatically, no roll needed to land it.")
+                    guaranteed_hit=True
                 elif mode=="Recover Shock Instead":
                     st.caption("Spends exactly 1 Wrath, still attacks, no bonus die - recovers Rank + Tier Shock.")
                     restore_shock=True
             if st.button("⚔ STRIKE",key="inc_attack",use_container_width=True,disabled=not selected_targets):
-                try: _inc_combat_attack(run,ch,selected_targets,st.session_state.get(wk),bonus_die=bonus_die,restore_shock=restore_shock)
+                try: _inc_combat_attack(run,ch,selected_targets,st.session_state.get(wk),restore_shock=restore_shock,guaranteed_hit=guaranteed_hit)
                 except ValueError as exc: st.error(str(exc).replace('_',' ').title())
                 st.session_state[target_key]=[]; st.rerun()
         elif action=="FLEE":

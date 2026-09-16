@@ -6704,6 +6704,18 @@ def _inc_apex_tyranid_wounds_bonus(minions):
     return round(int(apex.get("wounds_max", 0) or 0) * 0.10)
 
 
+def _inc_human_shock_from_dreadnought(minions):
+    """20% of the Dreadnought's own CURRENT Wounds, folded into the Human
+    player's Shock ceiling (see _inc_life_pools/_inc_sync_human_shock) -
+    the mirror of Tyranid-Pattern's Wounds-from-Apex formula, except tied
+    to the Dreadnought's CURRENT (not max) Wounds: a beaten-down
+    Dreadnought means less Shock for its pilot too."""
+    dread = next((m for m in (minions or []) if m.get("name") == "Dreadnought"), None)
+    if not dread:
+        return 0
+    return round(max(0, int(dread.get("wounds_current", 0) or 0)) * 0.20)
+
+
 def _inc_life_pools(ch, origin=None, minions=None):
     # Incursion life pools are derived only from the character's starting
     # Attributes. Wounds now defaults to 25 at the baseline Toughness (3)
@@ -6720,14 +6732,47 @@ def _inc_life_pools(ch, origin=None, minions=None):
     # Hive Mind terminal, not a warrior - a fixed 5 Wounds, plus 10% of
     # whatever Apex Tyranid (its starting Minion) has grown to, instead of
     # the normal Toughness-scaled formula.
+    #
+    # Human is the mirror case for Shock instead of Wounds: its Shock
+    # ceiling is 20% of the Dreadnought's own CURRENT Wounds, not a
+    # Willpower-scaled formula. Only used here for the INITIAL value at
+    # run creation - every later change goes through
+    # _inc_sync_human_shock's delta so a stacked Talent's flat Shock bonus
+    # is never wiped by a from-scratch recompute.
     attrs={a:int((ch.get("attributes") or {}).get(a,1) or 1) for a in ATTRS}
     if origin == "Tyranid-Pattern":
         wounds_max = 5 + _inc_apex_tyranid_wounds_bonus(minions)
     else:
         wounds_max = int(attrs.get("Toughness",1))+22
+    if origin == "Human":
+        shock_max = _inc_human_shock_from_dreadnought(minions)
+    else:
+        shock_max = int(attrs.get("Willpower",1))+12
     return {"wounds_max": wounds_max,
-            "shock_max": int(attrs.get("Willpower",1))+12,
+            "shock_max": shock_max,
             "wrath_max": 2}
+
+
+def _inc_sync_human_shock(run, minions):
+    """Keep the Human player's Shock ceiling tracking 20% of the
+    Dreadnought's CURRENT Wounds (see _inc_human_shock_from_dreadnought),
+    every time that changes mid-run - tanking damage, per-turn regen,
+    Wrath-spend healing, Loop growth. Tracked as a delta against the last
+    known contribution (human_shock_baseline) rather than a from-scratch
+    replace, so a stacked Talent's flat Shock bonus is never wiped.
+    Returns {} (no-op) for any other Origin or when nothing changed."""
+    if run.get("origin") != "Human":
+        return {}
+    new_baseline = _inc_human_shock_from_dreadnought(minions)
+    statuses = dict(run.get("incursion_statuses") or {})
+    old_baseline = int(statuses.get("human_shock_baseline", 0) or 0)
+    if new_baseline == old_baseline:
+        return {}
+    delta = new_baseline - old_baseline
+    statuses["human_shock_baseline"] = new_baseline
+    new_shock_max = max(1, int(run.get("shock_max", 0) or 0) + delta)
+    new_shock_current = max(0, min(new_shock_max, int(run.get("shock_current", 0) or 0) + delta))
+    return {"incursion_statuses": statuses, "shock_max": new_shock_max, "shock_current": new_shock_current}
 
 
 def _inc_damage_result(total_damage, resilience, ap=0, shock_current=None, defence=0):
@@ -7152,6 +7197,7 @@ def _inc_generate_offers(ch, run):
     attrs = effective_attributes(merged)
     origin = run.get("origin")
     is_tyranid = (origin == "Tyranid-Pattern")
+    is_human = (origin == "Human")
     is_minion_origin = origin in INC_MINION_ORIGINS
     candidates=[]
     for attr in ATTRS:
@@ -7173,7 +7219,15 @@ def _inc_generate_offers(ch, run):
             for row in random.sample(rows,min(n,len(rows))):
                 d=craft_details(row); rarity=d.get("rarity","Common")
                 candidates.append({"type":"wargear","craft_id":int(row["id"]),"name":row["name"],"effect":row.get("effect",""),"cost":max(10,int(row.get("cost",20) or 20)),"label":row["name"],"detail":f"{rarity} · {row.get('effect','')}","rarity":rarity})
-        add_random(weapons,2)
+        if is_human:
+            # "as armas dos humanos servem para aprimorar o dreadnought" -
+            # a Human's WEAPON offers are always bespoke gear supporting
+            # the Dreadnought (see INC_HUMAN_WARGEAR), same pattern as
+            # Tyranid wargear; Armour/Consumables stay the generic pool.
+            for _ in range(2):
+                candidates.append(_inc_generate_human_wargear_offer())
+        else:
+            add_random(weapons,2)
         add_random(armour,1)
         add_random(consumables,1)
     # Talent offers: a Tyranid-Pattern run's Talents are ALWAYS Minion
@@ -7237,6 +7291,41 @@ def _inc_generate_first_encampment_offers(ch, run):
             candidates.append({"type": "talent_minion", "name": mt["name"], "effect": mt["effect"], "cost": 0,
                                 "label": mt["name"], "detail": f"{mt['rarity']} · {mt['effect']}",
                                 "rarity": mt["rarity"], "first_encampment_free": True})
+        return [{**o, "offer_id": i} for i, o in enumerate(candidates)]
+    if run.get("origin") == "Human":
+        # "as armas dos humanos servem para aprimorar o dreadnought" applies
+        # from the very first choice too - the weapon slot is always a
+        # bespoke Dreadnought-supporting one, never the generic catalog.
+        weapon = INC_HUMAN_WARGEAR["Common"][0]
+        pool = [r for r in list_craft_items("wargear", active_only=True) if craft_details(r).get("incursion_only")]
+        armour_rows = [r for r in pool if _inc_is_armour_item({"details": craft_details(r)})]
+        candidates = [
+            {"type": "human_wargear", "rarity": "Common", "name": weapon["name"], "icon": weapon["icon"],
+             "melee": weapon["melee"], "damage": weapon["damage"], "ed": weapon["ed"], "ap": weapon["ap"],
+             "effect": weapon["effect"], "minion_support": weapon["minion_support"], "support_value": weapon["support_value"],
+             "cost": 0, "label": weapon["name"],
+             "detail": f"Common · {weapon['damage']} DMG +{weapon['ed']} ED · {weapon['effect']}",
+             "first_encampment_free": True},
+        ]
+        if armour_rows:
+            row = random.choice(armour_rows)
+            d = craft_details(row); rarity = d.get("rarity", "Common")
+            candidates.append({"type": "wargear", "craft_id": int(row["id"]), "name": row["name"],
+                                "effect": row.get("effect", ""), "cost": 0,
+                                "label": row["name"], "detail": f"{rarity} · {row.get('effect', '')}",
+                                "rarity": rarity, "first_encampment_free": True})
+        talent_catalog = {int(r["id"]): r for r in list_craft_items("talent", active_only=False)}
+        available_talents = []
+        for pr in _inc_talent_pool_rows():
+            row = next((r for r in talent_catalog.values() if str(r["name"]).lower() == str(pr["name"]).lower()), None)
+            if row and craft_details(row).get("incursion_only"):
+                available_talents.append((row, pr))
+        if available_talents:
+            row, pr = random.choice(available_talents)
+            candidates.append({"type": "talent", "craft_id": int(row["id"]), "name": row["name"],
+                                "effect": row.get("effect", ""), "cost": 0, "label": row["name"],
+                                "detail": f"{pr['rarity']} · {row.get('effect', '')}", "rarity": pr['rarity'],
+                                "first_encampment_free": True})
         return [{**o, "offer_id": i} for i, o in enumerate(candidates)]
     merged = _inc_merge_character(ch, run)
     pool = [r for r in list_craft_items("wargear", active_only=True) if craft_details(r).get("incursion_only")]
@@ -7441,6 +7530,27 @@ def _inc_apply_purchase(run, ch, offer):
                               "rarity":offer["rarity"],"incursion_only":True,"stackable":False,
                               "minion_support":offer.get("minion_support"),"support_value":int(offer.get("support_value",0) or 0)}}
             extra_wargear.append(entry)
+    elif offer["type"]=="human_wargear":
+        # Ordinary carried gear (unlike Tyranid's grown bio-weapons) - up to
+        # 3 at once, with normal durability, levelling up in place the same
+        # way the generic wargear catalog's weapons do.
+        same=next((w for w in starting_wargear+extra_wargear if _inc_is_weapon_item(w) and w.get("name")==offer["name"]),None)
+        if same:
+            d=_gear_details_dict(same.get("details",{})); level=min(5,int(d.get("incursion_level",1) or 1)+1); d["incursion_level"]=level
+            d["upgrade_bonus"]=int(d.get("upgrade_bonus",0) or 0)+2
+            base=int(d.get("damage_base",_weapon_base_damage(d,effective_attributes(_inc_merge_character(ch,run)))) or offer["damage"])
+            d["damage_base"]=base+2
+            if level%2==0: d["ed"]=int(d.get("ed",0) or 0)+1
+            same["details"]=d
+        else:
+            if sum(1 for w in starting_wargear+extra_wargear if _inc_is_weapon_item(w))>=3: raise ValueError("weapon_limit")
+            entry={"name":offer["name"],"effect":offer.get("effect",""),"equipped":True,"quantity":1,
+                   "details":{"category":"melee weapon" if offer.get("melee") else "firearm",
+                              "damage":str(offer["damage"]),"damage_base":int(offer["damage"]),"incursion_level":1,
+                              "ed":int(offer.get("ed",0) or 0),"ap":int(offer.get("ap",0) or 0),
+                              "rarity":offer["rarity"],"incursion_only":True,"stackable":False,
+                              "minion_support":offer.get("minion_support"),"support_value":int(offer.get("support_value",0) or 0)}}
+            extra_wargear.append(entry)
     elif offer["type"]=="tyranid_armour":
         entry={"name":offer["name"],"effect":offer.get("effect","Tyranid bio-armour."),"equipped":True,"quantity":1,
                "details":{"category":"armour","armour_rating":int(offer["armour_rating"]),"rarity":offer["rarity"],
@@ -7457,7 +7567,7 @@ def _inc_apply_purchase(run, ch, offer):
         added=next((w for w in allgear if int(w.get("craft_id",-1) or -1)==int(offer.get("craft_id",-2))),None)
         if added and _inc_is_weapon_item(added):
             vals=_inc_weapon_durability_map(updated); key=_inc_weapon_key(added); vals.setdefault(key,_inc_wargear_durability_max(added)); updated=_inc_persist(updated["id"],weapon_durabilities=vals)
-    elif offer["type"]=="tyranid_wargear":
+    elif offer["type"] in ("tyranid_wargear","human_wargear"):
         allgear=updated.get("starting_wargear",[])+updated.get("extra_wargear",[])
         added=next((w for w in allgear if w.get("name")==offer["name"]),None)
         if added:
@@ -7764,6 +7874,11 @@ def _inc_advance(run, ch):
             delta = max(0, new_max - int(run.get("wounds_max", 0) or 0))
             updates["wounds_max"] = new_max
             updates["wounds_current"] = min(new_max, int(run.get("wounds_current", 0) or 0) + delta)
+        if run.get("origin") == "Human":
+            # The Dreadnought just grew (or was fully healed, see above) -
+            # the Human player's own Shock ceiling tracks 20% of its
+            # CURRENT Wounds, so it must be resynced the moment those move.
+            updates.update(_inc_sync_human_shock({**run, "minions": new_minions}, new_minions))
     if nxt == "start":
         updates.update(_inc_apply_origin_scaling(run, ch))
     return _inc_persist(run["id"], **updates)
@@ -7825,7 +7940,15 @@ def _inc_start_run(ch, origin=None):
         dread = _inc_minion_stats("Dreadnought", "", "Human", "Unique", 1, fellowship)
         dread["wounds_max"] = pools["wounds_max"] * 20
         dread["wounds_current"] = dread["wounds_max"]
+        # Damage order is reversed for the Dreadnought only - Wounds absorb
+        # first, then Shock (see _inc_enemy_turn), the opposite of the
+        # player's own Shock-then-Wounds rule.
+        dread["wounds_first"] = True
         starting_minions = [dread]
+        # Refresh pools now that the Dreadnought actually exists - Human's
+        # Shock ceiling is 20% of ITS current Wounds (see _inc_life_pools),
+        # which was necessarily still 0 on the first call above.
+        pools = _inc_life_pools(run_ch, origin, starting_minions)
     elif origin in INC_ORIGIN_HELPER_MINION:
         # Every other Origin gets ONE starting helper Minion too, so
         # everyone has something to help them scale - but only Human and
@@ -7853,6 +7976,13 @@ def _inc_start_run(ch, origin=None):
                                             "damage_base": tw["damage"], "incursion_level": 1,
                                             "ed": tw["ed"], "ap": tw["ap"], "rarity": "Common", "incursion_only": True, "stackable": False,
                                             "minion_support": tw["minion_support"], "support_value": tw["support_value"]}}]
+        elif origin == "Human":
+            hw = INC_HUMAN_WARGEAR["Common"][0]
+            _start_weapons = [{"name": hw["name"], "effect": hw["effect"], "equipped": True, "quantity": 1,
+                                "details": {"category": "melee weapon" if hw["melee"] else "firearm", "damage": str(hw["damage"]),
+                                            "damage_base": hw["damage"], "incursion_level": 1,
+                                            "ed": hw["ed"], "ap": hw["ap"], "rarity": "Common", "incursion_only": True, "stackable": False,
+                                            "minion_support": hw["minion_support"], "support_value": hw["support_value"]}}]
         else:
             _start_weapons = [dict(INC_STANDARD_WEAPON)]
     starting_wargear=_start_weapons[:3]+_start_nonweapons
@@ -7873,6 +8003,11 @@ def _inc_start_run(ch, origin=None):
     first_node = {"type": "shop", "subtype": "first_encampment", "offers": first_offers}
     initial_armour_key = _inc_weapon_key(standard_armour)
     armour_max = _inc_wargear_durability_max(standard_armour)
+    # Seed the tracked baseline for Human's Dreadnought-linked Shock (see
+    # _inc_sync_human_shock) to exactly what pools["shock_max"] already is,
+    # so the first later sync computes a correct delta instead of adding
+    # this initial value a second time on top of itself.
+    initial_statuses = {"human_shock_baseline": pools["shock_max"]} if origin == "Human" else {}
     weapon_values = {}
     for w in starting_wargear:
         details = _gear_details_dict(w.get("details", {}))
@@ -7891,7 +8026,7 @@ def _inc_start_run(ch, origin=None):
         "extra_talents,origin,minions) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (ch["id"], "active", "start", 1, run_number, pools["wounds_max"], pools["wounds_max"],
          pools["shock_max"], pools["shock_max"], pools["wrath_max"], pools["wrath_max"], 0, 0,
-         armour_max, armour_max, json.dumps(weapon_values), json.dumps({}), json.dumps(first_node), now_iso(), initial_armour_key, json.dumps(starting_wargear),
+         armour_max, armour_max, json.dumps(weapon_values), json.dumps(initial_statuses), json.dumps(first_node), now_iso(), initial_armour_key, json.dumps(starting_wargear),
          json.dumps(extra_talents), origin or "", json.dumps(starting_minions)))
     conn.commit()
     new_id = cur.lastrowid
@@ -7905,9 +8040,16 @@ def _inc_choose_start(run, ch, choice):
     if choice == "rest":
         heal = max(1, round(run["wounds_max"] * INC_REST_HEAL_FRACTION))
         run, repaired, armour_gain = _inc_recover_rest_durability(run, ch)
-        run = _inc_persist(run["id"], wounds_current=min(run["wounds_max"], run["wounds_current"] + heal),
-                            shock_current=run["shock_max"], node={"type": "rest_upgrade"},
-                            minions=_inc_revive_minions(run))
+        revived_minions = _inc_revive_minions(run)
+        updates = {"wounds_current": min(run["wounds_max"], run["wounds_current"] + heal),
+                   "node": {"type": "rest_upgrade"}, "minions": revived_minions}
+        if run.get("origin") == "Human":
+            # The Dreadnought is now fully healed - resync the Human
+            # player's Shock ceiling (20% of its Wounds) BEFORE the usual
+            # full-Shock-on-Rest heal, so it heals to the NEW ceiling.
+            updates.update(_inc_sync_human_shock({**run, "minions": revived_minions}, revived_minions))
+        updates["shock_current"] = updates.get("shock_max", run["shock_max"])
+        run = _inc_persist(run["id"], **updates)
         return run
     if choice == "first_encampment":
         offers = _inc_generate_first_encampment_offers(ch, run)
@@ -8079,13 +8221,18 @@ def _inc_record_wrath_spend(run, ch, amount):
         new_shock_current = min(new_shock_max, int(run.get("shock_current", 0) or 0) + 10 * amount)
         run = _inc_persist(run["id"], shock_max=new_shock_max, shock_current=new_shock_current)
     if run.get("origin") == "Human":
-        # Dreadnought's own species trait: a permanent attack die for every
-        # Wrath the pilot spends, for the rest of the Incursion.
+        # Dreadnought's own species trait: a permanent attack die AND a
+        # wound repair (15% of its own max Wounds + 20, flat) for every
+        # Wrath the pilot spends, scaled by how much Wrath was spent.
         dread_minions = [dict(m) for m in (run.get("minions") or [])]
         dread = next((m for m in dread_minions if m.get("name") == "Dreadnought"), None)
         if dread:
             dread["bonus_die"] = int(dread.get("bonus_die", 0) or 0) + amount
-            run = _inc_persist(run["id"], minions=dread_minions)
+            heal_per_point = round(int(dread.get("wounds_max", 0) or 0) * 0.15) + 20
+            dread["wounds_current"] = min(int(dread.get("wounds_max", 0) or 0), int(dread.get("wounds_current", 0) or 0) + heal_per_point * amount)
+            updates = {"minions": dread_minions}
+            updates.update(_inc_sync_human_shock({**run, "minions": dread_minions}, dread_minions))
+            run = _inc_persist(run["id"], **updates)
     if not _inc_talent_has(ch, run, "Wrathforged") and not _inc_talent_has(ch, run, "Iron Discipline"):
         return run
     statuses = _inc_talent_status(run)
@@ -8283,8 +8430,14 @@ def _inc_enemy_turn(enemies, player_traits, player_shock_current=0, minions=None
                 crit_total,crit_rolls=_inc_roll_damage(0,3); total_damage+=crit_total; damage_rolls.extend(crit_rolls)
             if target_minion:
                 m_net=max(0,total_damage-int(target_minion.get("resilience",0) or 0))
-                m_shock_avail=max(0,int(target_minion.get("shock_current",0) or 0))
-                m_shock_dealt=min(m_net,m_shock_avail); m_wounds_dealt=m_net-m_shock_dealt
+                if target_minion.get("wounds_first"):
+                    # The Dreadnought is reversed - Wounds absorb first,
+                    # then Shock (opposite of the player's own rule).
+                    m_wounds_avail=max(0,int(target_minion.get("wounds_current",0) or 0))
+                    m_wounds_dealt=min(m_net,m_wounds_avail); m_shock_dealt=m_net-m_wounds_dealt
+                else:
+                    m_shock_avail=max(0,int(target_minion.get("shock_current",0) or 0))
+                    m_shock_dealt=min(m_net,m_shock_avail); m_wounds_dealt=m_net-m_shock_dealt
                 target_minion["shock_current"]=max(0,int(target_minion.get("shock_current",0) or 0)-m_shock_dealt)
                 target_minion["wounds_current"]=max(0,int(target_minion.get("wounds_current",0) or 0)-m_wounds_dealt)
                 if target_minion["wounds_current"]<=0: target_minion["alive"]=False
@@ -8649,6 +8802,16 @@ def _inc_finish_combat_round(run, ch, node, round_log, wrath_gained=0, minions=N
                 dead["wounds_current"] = max(1, int(dead.get("wounds_max", 1) or 1) // 2)
                 dead["shock_current"] = int(dead.get("shock_max", 0) or 0)
         run = _inc_talent_persist_status(run, statuses)
+        if run.get("origin") == "Human":
+            # The Dreadnought regenerates a small amount every turn on its
+            # own, on top of everything else (Wrath-spend heals, Rest).
+            dread = next((m for m in minions if m.get("name") == "Dreadnought" and m.get("alive")), None)
+            if dread:
+                dread["wounds_current"] = min(int(dread.get("wounds_max", 0) or 0), int(dread.get("wounds_current", 0) or 0) + 5)
+                dread["shock_current"] = min(int(dread.get("shock_max", 0) or 0), int(dread.get("shock_current", 0) or 0) + 1)
+            sync = _inc_sync_human_shock(run, minions)
+            if sync:
+                run = _inc_persist(run["id"], **sync)
     enemy_shock = sum(int(e.get("shock", 0) or 0) for e in round_log if e.get("actor") == "enemy")
     enemy_wounds = sum(int(e.get("wounds", 0) or 0) for e in round_log if e.get("actor") == "enemy")
     # Field Triage / Adaptive Biomass: recovers player Shock whenever a
@@ -10194,6 +10357,57 @@ def _inc_generate_tyranid_wargear_offer():
             "label": weapon["name"], "cost": cost, "detail": detail}
 
 
+# "as armas dos humanos servem para aprimorar o dreadnought" - a Human's
+# WEAPON offers are always drawn from here instead of the generic Imperium
+# catalog (see _inc_generate_offers), every one of them supporting the
+# Dreadnought the same way Tyranid wargear supports its Minions, reusing
+# the exact same 5 minion_support effects (_inc_apply_weapon_minion_support
+# doesn't care which Origin's weapon triggered it). Armour stays generic.
+INC_HUMAN_WARGEAR = {
+    "Common": [{"name": "Combat Knife", "icon": "🔪", "melee": True, "damage": 5, "ed": 1, "ap": 0,
+                "effect": "On hit, the Dreadnought recovers 5 Wounds.",
+                "minion_support": "heal_strongest_on_hit", "support_value": 5},
+               {"name": "Service Pistol", "icon": "🔫", "melee": False, "damage": 4, "ed": 1, "ap": 0,
+                "effect": "On hit, the Dreadnought gains +1 die on its next attack.",
+                "minion_support": "bonus_die_on_hit", "support_value": 1}],
+    "Uncommon": [{"name": "Chainsword", "icon": "⚙", "melee": True, "damage": 7, "ed": 1, "ap": -1,
+                  "effect": "On hit, the Dreadnought recovers 10 Wounds.",
+                  "minion_support": "heal_strongest_on_hit", "support_value": 10},
+                 {"name": "Autogun", "icon": "🔫", "melee": False, "damage": 6, "ed": 1, "ap": 0,
+                  "effect": "On hit, the Dreadnought gains +2 dice on its next attack.",
+                  "minion_support": "bonus_die_on_hit", "support_value": 2}],
+    "Rare": [{"name": "Power Fist", "icon": "👊", "melee": True, "damage": 9, "ed": 2, "ap": -1,
+              "effect": "On a Critical, the Dreadnought fully recovers Shock.",
+              "minion_support": "shock_heal_weakest_on_crit", "support_value": 0},
+             {"name": "Plasma Gun", "icon": "☢", "melee": False, "damage": 10, "ed": 2, "ap": -1,
+              "effect": "On hit, the Dreadnought recovers 20 Wounds.",
+              "minion_support": "heal_strongest_on_hit", "support_value": 20}],
+    "Legendary": [{"name": "Thunder Hammer", "icon": "🔨", "melee": True, "damage": 14, "ed": 2, "ap": -2,
+                   "effect": "Every 2 kills, the Dreadnought permanently gains +1 Damage and +2 max Shock.",
+                   "minion_support": "boost_on_kills", "support_value": 2},
+                  {"name": "Lascannon", "icon": "🔦", "melee": False, "damage": 13, "ed": 2, "ap": -2,
+                   "effect": "Every attack, if the Dreadnought is down, it revives at half Wounds and full Shock.",
+                   "minion_support": "revive_on_attack", "support_value": 0}],
+    "Unique": [{"name": "The Emperor's Wrath", "icon": "⚡", "melee": True, "damage": 17, "ed": 3, "ap": -2,
+                "effect": "Every attack, if the Dreadnought is down, it revives at half Wounds and full Shock.",
+                "minion_support": "revive_on_attack", "support_value": 0},
+               {"name": "Relic Multi-Melta", "icon": "🔥", "melee": False, "damage": 18, "ed": 3, "ap": -3,
+                "effect": "Every 2 kills, the Dreadnought permanently gains +2 Damage and +4 max Shock.",
+                "minion_support": "boost_on_kills", "support_value": 4}],
+}
+
+
+def _inc_generate_human_wargear_offer():
+    rarity = random.choice(_INC_RARITIES)
+    weapon = random.choice(INC_HUMAN_WARGEAR[rarity])
+    cost = INC_MINION_RARITY_STATS[rarity]["cost"]
+    detail = f"{rarity} · {weapon['damage']} DMG +{weapon['ed']} ED · AP {weapon['ap']} · {weapon['effect']}"
+    return {"type": "human_wargear", "rarity": rarity, "name": weapon["name"], "icon": weapon["icon"],
+            "melee": weapon["melee"], "damage": weapon["damage"], "ed": weapon["ed"], "ap": weapon["ap"],
+            "effect": weapon["effect"], "minion_support": weapon["minion_support"], "support_value": weapon["support_value"],
+            "label": weapon["name"], "cost": cost, "detail": detail}
+
+
 # Human's Dreadnought is a single named sarcophagus, not a stackable
 # roster - these are permanent upgrade modules bolted onto it, one at a
 # time, rather than new Minions. "field"+"amount" adds a flat stat bonus;
@@ -10201,11 +10415,14 @@ def _inc_generate_tyranid_wargear_offer():
 # _inc_minion_group_attack for how bulk/module_bleed/module_double_attack
 # are read).
 INC_DREADNOUGHT_MODULES = {
-    "Common": [{"name": "Reinforced Plating", "effect": "Dreadnought's Resilience permanently +5.", "field": "resilience", "amount": 5}],
+    "Common": [{"name": "Reinforced Plating", "effect": "Dreadnought's Resilience permanently +5.", "field": "resilience", "amount": 5},
+               {"name": "Auto-Loader Rig", "effect": "Dreadnought's attack dice permanently +1.", "field": "bonus_die", "amount": 1}],
     "Uncommon": [{"name": "Siege Hammer Fist", "effect": "Dreadnought's Damage permanently +4.", "field": "damage", "amount": 4}],
-    "Rare": [{"name": "Bleeding Talons", "effect": "Dreadnought's attacks always inflict Bleeding.", "flag": "module_bleed"}],
+    "Rare": [{"name": "Bleeding Talons", "effect": "Dreadnought's attacks always inflict Bleeding.", "flag": "module_bleed"},
+             {"name": "Targeting Cogitator", "effect": "Dreadnought's attack dice permanently +2.", "field": "bonus_die", "amount": 2}],
     "Legendary": [{"name": "Bulkhead Frame", "effect": "Dreadnought gains Bulk - always draws every enemy attack while alive.", "flag": "bulk"}],
-    "Unique": [{"name": "Twin-Linked Autocannons", "effect": "Dreadnought attacks twice per action.", "flag": "module_double_attack"}],
+    "Unique": [{"name": "Twin-Linked Autocannons", "effect": "Dreadnought attacks twice per action.", "flag": "module_double_attack"},
+               {"name": "Overcharged Servo-Motors", "effect": "Dreadnought's attack dice permanently +4.", "field": "bonus_die", "amount": 4}],
 }
 
 

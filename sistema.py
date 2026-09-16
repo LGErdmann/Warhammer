@@ -4126,7 +4126,8 @@ def inject_theme():
        vertical gaps (~1rem each, stacked across HUD/header/dice tray/enemy
        row/action panel) were the real height cost. Scoped via :has() to the
        .incursion-frame marker div so the campaign-manager pages are untouched. */
-    .block-container:has(.incursion-frame){padding-top:.5rem !important;padding-bottom:.5rem !important;max-width:920px}
+    .block-container:has(.incursion-frame){padding-top:.5rem !important;padding-bottom:.5rem !important;padding-left:1rem !important;padding-right:1rem !important;max-width:100% !important}
+    header[data-testid="stHeader"]:has(~ div .incursion-frame){height:0;min-height:0}
     .block-container:has(.incursion-frame) [data-testid="stVerticalBlock"]{gap:.3rem !important}
     .block-container:has(.incursion-frame) [data-testid="stVerticalBlockBorderWrapper"]{padding:.4rem .6rem !important}
     .block-container:has(.incursion-frame) [data-testid="stHorizontalBlock"]{gap:.4rem !important;align-items:end}
@@ -6833,7 +6834,7 @@ def _inc_spawn_group(difficulty, loop_no):
     if difficulty == "hard":
         count = 2 if random.random() < 0.6 else 1
     if difficulty == "boss":
-        count = 1 + (loop_no - 1) // 4
+        count = 1 + int(loop_no - 1) // 4
     # The fallen-mob pool is only ever fetched (one DB round trip, at most
     # once per fight) if the dice actually call for it - most fights never
     # roll a fallen mob at all, so this saves a query on the common path.
@@ -6845,7 +6846,7 @@ def _inc_spawn_group(difficulty, loop_no):
     # appropriate and the player already has some XP or gear.
     fallen_pool = None
     enemies = []
-    for i in range(count):
+    for i in range(int(count)):
         if difficulty != "easy" and random.random() < INC_FALLEN_CHANCE:
             if fallen_pool is None:
                 fallen_pool = _inc_fetch_fallen_pool(tier) or []
@@ -6895,7 +6896,7 @@ def _inc_generate_offers(ch, run):
     attrs = effective_attributes(merged)
     candidates=[]
     for attr in ATTRS:
-        cur=int(attrs.get(attr,1)); candidates.append({"type":"attribute","attr":attr,"cost":_inc_attribute_cost(cur),"label":f"+1 {attr}","detail":f"Current: {cur}"})
+        cur=int(attrs.get(attr,1)); candidates.append({"type":"attribute","attr":attr,"cost":_inc_attribute_cost(cur),"label":f"+1 {attr}","detail":f"Current: {cur}","rarity":"Common"})
     pool=[r for r in list_craft_items("wargear", active_only=True) if craft_details(r).get("incursion_only")]
     weapons=[r for r in pool if str(craft_details(r).get("category","")).lower() in ("firearm","melee")]
     armour=[r for r in pool if _inc_is_armour_item({"details":craft_details(r)})]
@@ -6905,7 +6906,7 @@ def _inc_generate_offers(ch, run):
     def add_random(rows, n=2):
         for row in random.sample(rows,min(n,len(rows))):
             d=craft_details(row); rarity=d.get("rarity","Common")
-            candidates.append({"type":"wargear","craft_id":int(row["id"]),"name":row["name"],"effect":row.get("effect",""),"cost":max(10,int(row.get("cost",20) or 20)),"label":row["name"],"detail":f"{rarity} · {row.get('effect','')}"})
+            candidates.append({"type":"wargear","craft_id":int(row["id"]),"name":row["name"],"effect":row.get("effect",""),"cost":max(10,int(row.get("cost",20) or 20)),"label":row["name"],"detail":f"{rarity} · {row.get('effect','')}","rarity":rarity})
     add_random(weapons,2)
     add_random(armour,1)
     add_random(consumables,1)
@@ -6916,8 +6917,8 @@ def _inc_generate_offers(ch, run):
         row=next((r for r in talent_catalog.values() if str(r["name"]).lower()==str(pr["name"]).lower()),None)
         if row: available_talents.append((row,pr))
     for row,pr in random.sample(available_talents,min(2,len(available_talents))):
-        d=craft_details(row); candidates.append({"type":"talent","craft_id":int(row["id"]),"name":row["name"],"effect":row.get("effect",""),"cost":max(15,int(row.get("cost",30) or 30)),"label":row["name"],"detail":f"{pr['rarity']} · {row.get('effect','')}"})
-    candidates.append({"type":"heal_charge","cost":20,"label":"Medicae Ration","detail":"+1 Medicae use in combat"})
+        d=craft_details(row); candidates.append({"type":"talent","craft_id":int(row["id"]),"name":row["name"],"effect":row.get("effect",""),"cost":max(15,int(row.get("cost",30) or 30)),"label":row["name"],"detail":f"{pr['rarity']} · {row.get('effect','')}","rarity":pr['rarity']})
+    candidates.append({"type":"heal_charge","cost":20,"label":"Medicae Ration","detail":"+1 Medicae use in combat","rarity":"Common"})
     return [{**o,"offer_id":i} for i,o in enumerate(random.sample(candidates,min(3,len(candidates))))]
 
 def _inc_generate_first_encampment_offers(ch, run):
@@ -6938,10 +6939,11 @@ def _inc_generate_first_encampment_offers(ch, run):
     candidates = []
     for row in item_rows:
         d = craft_details(row)
+        rarity = d.get("rarity", "Common")
         candidates.append({"type": "wargear", "craft_id": int(row["id"]), "name": row["name"],
                             "effect": row.get("effect", ""), "cost": 0,
-                            "label": row["name"], "detail": f"{d.get('rarity', 'Common')} · {row.get('effect', '')}",
-                            "first_encampment_free": True})
+                            "label": row["name"], "detail": f"{rarity} · {row.get('effect', '')}",
+                            "rarity": rarity, "first_encampment_free": True})
 
     talent_catalog = {int(r["id"]): r for r in list_craft_items("talent", active_only=False)}
     available_talents = []
@@ -6953,7 +6955,8 @@ def _inc_generate_first_encampment_offers(ch, run):
         row, pr = random.choice(available_talents)
         candidates.append({"type": "talent", "craft_id": int(row["id"]), "name": row["name"],
                             "effect": row.get("effect", ""), "cost": 0, "label": row["name"],
-                            "detail": f"{pr['rarity']} · {row.get('effect', '')}", "first_encampment_free": True})
+                            "detail": f"{pr['rarity']} · {row.get('effect', '')}", "rarity": pr['rarity'],
+                            "first_encampment_free": True})
 
     return [{**o, "offer_id": i} for i, o in enumerate(candidates)]
 
@@ -8386,11 +8389,16 @@ def _inc_render_shop(run, ch, node):
     else:
         st.markdown(f"<div class='inc-card'><div class='inc-title'>Supplies</div>"
                     f"<div class='inc-flavor'>Available XP: <b>{run['xp']}</b></div></div>", unsafe_allow_html=True)
-    offers = node.get("offers") or []
-    if node.get("subtype") == "first_encampment" and not offers:
+    offers = node.get("offers")
+    if offers is None and node.get("subtype") == "first_encampment":
+        # Only ever generate ONCE, on the very first render of this node -
+        # an empty list means every offer has already been acquired, not
+        # "never generated yet". Treating those the same let a player loop
+        # Acquire -> list empties -> regenerate 3 more free offers forever.
         offers = _inc_generate_first_encampment_offers(ch, run)
         node = dict(node); node["offers"] = offers
         _inc_persist(run["id"], node=node)
+    offers = offers or []
     type_label = {"attribute": "Attribute", "wargear": "Wargear", "talent": "Talent",
                   "power": "Psychic Power", "heal_charge": "Supply", "keyword": "Keyword"}
     if not offers:
@@ -8399,8 +8407,9 @@ def _inc_render_shop(run, ch, node):
         cols = st.columns(len(offers))
         for col, offer in zip(cols, offers):
             with col:
+                rarity_cls = f"rarity-{str(offer.get('rarity') or 'Common').lower()}"
                 st.markdown(
-                    f"<div class='inc-offer'><div class='ot'>{type_label[offer['type']]}</div>"
+                    f"<div class='inc-offer {rarity_cls}'><div class='ot'>{type_label[offer['type']]}</div>"
                     f"<div class='on'>{html.escape(offer['label'])}</div>"
                     f"<div class='od'>{html.escape(offer.get('detail') or '')}</div>"
                     f"<div class='oc'>{offer['cost']} XP</div></div>", unsafe_allow_html=True)
@@ -10601,7 +10610,11 @@ def _ensure_schema_once():
 
 
 def main():
-    st.set_page_config(page_title="Cogitador Imperial", page_icon="✠", layout="wide")
+    # Collapsed by default in Incursion so the run actually fills the
+    # screen - the sidebar's Sign Out/nav buttons are still reachable, just
+    # not eating width by default the way the campaign manager wants them to.
+    sidebar_state = "collapsed" if st.session_state.get("app_mode") == "incursion" else "expanded"
+    st.set_page_config(page_title="Cogitador Imperial", page_icon="✠", layout="wide", initial_sidebar_state=sidebar_state)
     inject_theme(); _ensure_schema_once()
     st.session_state.setdefault("user", None)
     st.session_state.setdefault("editing", None)

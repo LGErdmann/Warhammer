@@ -6921,8 +6921,9 @@ def _inc_combat_use_item(run, ch, item_key):
             "heal_wounds": item["heal_wounds"], "heal_shock": item["heal_shock"]}]
     player_traits = _inc_player_traits(ch, run)
     minions = _inc_load_minions(run)
-    log += _inc_minion_group_attack(minions, node, _inc_merge_character(ch, run))
-    log += _inc_enemy_turn(node.get("enemies", []), player_traits, new_shock, minions)
+    talent_mods = _inc_minion_talent_mods(ch, run)
+    log += _inc_minion_group_attack(minions, node, _inc_merge_character(ch, run), talent_mods)
+    log += _inc_enemy_turn(node.get("enemies", []), player_traits, new_shock, minions, talent_mods)
     run = _inc_persist(run["id"], wounds_current=new_wounds, shock_current=new_shock)
     return _inc_finish_combat_round(run, ch, node, log, minions=minions)
 
@@ -7333,22 +7334,54 @@ def _inc_apply_purchase(run, ch, offer):
         icon=offer.get("icon","🐾")
         fellowship=int(effective_attributes(_inc_merge_character(ch,run)).get("Fellowship",INC_ORIGIN_BASE_ATTR))
         bulk=bool(offer.get("bulk"))
+        # Requisitioned Reinforcements/Hive Instinct, Chitinous Growth,
+        # Broodmind Resonance and For the Emperor!/Norn Queen's Blessing are
+        # baked into a Minion's stats the moment it's created or levelled,
+        # same way the Fellowship bonus already is - see _inc_minion_talent_mods.
+        mods=_inc_minion_talent_mods(ch,run)
+        def _apply_minion_talent_mods(m):
+            m["wounds_max"]=int(m.get("wounds_max",0) or 0)+mods["wounds_bonus"]
+            m["wounds_current"]=int(m.get("wounds_current",0) or 0)+mods["wounds_bonus"]
+            m["resilience"]=int(m.get("resilience",0) or 0)+mods["resilience_bonus"]
+            m["shock_max"]=int(m.get("shock_max",0) or 0)+mods["shock_max_bonus"]
+            m["shock_current"]=int(m.get("shock_current",0) or 0)+mods["shock_max_bonus"]
+            m["damage"]=round(int(m.get("damage",0) or 0)*mods["damage_mult"])
+            return m
         if existing:
             new_level=int(existing.get("level",1) or 1)+1
-            leveled=_inc_minion_stats(offer["name"],icon,offer["origin"],offer["rarity"],new_level,fellowship,bulk)
+            leveled=_apply_minion_talent_mods(_inc_minion_stats(offer["name"],icon,offer["origin"],offer["rarity"],new_level,fellowship,bulk))
             current_minions=[leveled if m.get("name")==offer["name"] else m for m in current_minions]
         else:
             if len(current_minions)>=INC_MINION_MAX: raise ValueError("minion_limit")
-            current_minions.append(_inc_minion_stats(offer["name"],icon,offer["origin"],offer["rarity"],1,fellowship,bulk))
+            current_minions.append(_apply_minion_talent_mods(_inc_minion_stats(offer["name"],icon,offer["origin"],offer["rarity"],1,fellowship,bulk)))
         pool_updates["minions"]=current_minions
     elif offer["type"]=="talent_minion":
         name=offer["name"]; rarity=offer.get("rarity","Common")
         current=next((x for x in extra_talents if str(x.get("name","")).lower()==name.lower()),None)
+        first_time=current is None
         if current: current["stacks"]=int(current.get("stacks",1) or 1)+1
         else: extra_talents.append({"name":name,"effect":offer.get("effect",""),"rarity":rarity,"cost":offer["cost"],"stacks":1,"max_stacks":5})
         shock_bonus=_INC_TALENT_SHOCK_BONUS.get(rarity,2)
         new_shock_max=int(run.get("shock_max",0) or 0)+shock_bonus
         pool_updates.update({"shock_max":new_shock_max,"shock_current":min(new_shock_max,int(run.get("shock_current",0) or 0)+shock_bonus)})
+        if first_time:
+            # A stat-baking Minion Talent (see _inc_minion_talent_mods)
+            # applies retroactively to every Minion already owned, once,
+            # the first time it's bought - Minions bought/levelled
+            # afterward get it baked in fresh by the "minion" branch above.
+            retro_minions=[dict(m) for m in (run.get("minions") or [])]
+            if name in ("Requisitioned Reinforcements","Hive Instinct"):
+                for m in retro_minions: m["wounds_max"]=int(m.get("wounds_max",0) or 0)+10; m["wounds_current"]=int(m.get("wounds_current",0) or 0)+10
+                pool_updates["minions"]=retro_minions
+            elif name=="Chitinous Growth":
+                for m in retro_minions: m["resilience"]=int(m.get("resilience",0) or 0)+2
+                pool_updates["minions"]=retro_minions
+            elif name=="Broodmind Resonance":
+                for m in retro_minions: m["shock_max"]=int(m.get("shock_max",0) or 0)+4; m["shock_current"]=int(m.get("shock_current",0) or 0)+4
+                pool_updates["minions"]=retro_minions
+            elif name in ("For the Emperor!","Norn Queen's Blessing"):
+                for m in retro_minions: m["damage"]=int(m.get("damage",0) or 0)*2
+                pool_updates["minions"]=retro_minions
     elif offer["type"]=="tyranid_wargear":
         # Tyranid bio-weapons are grown, not carried - only one at a time.
         # Buying the SAME one again upgrades it in place (like normal
@@ -8005,9 +8038,48 @@ def _inc_load_minions(run):
     return [dict(m) for m in (run.get("minions") or [])]
 
 
-def _inc_enemy_turn(enemies, player_traits, player_shock_current=0, minions=None):
+def _inc_minion_talent_mods(ch, run):
+    """Aggregate mechanical effect of every owned Minion Talent (see
+    INC_MINION_TALENTS) - computed fresh on every read rather than baked
+    into stored Minion stats, so it can never double-apply. Human and
+    Tyranid-Pattern's talents share the same mechanical shape per rarity
+    (only name/flavour differ), so both origins' talent names are checked
+    for each effect."""
+    wounds_bonus = 0; resilience_bonus = 0; shock_max_bonus = 0; pool_bonus = 0
+    damage_mult = 1.0; always_bleed = False; enemy_pool_penalty = 0
+    fast_revive = False; shock_on_minion_hit = 0; endless_swarm = False
+    if _inc_talent_has(ch, run, "Requisitioned Reinforcements") or _inc_talent_has(ch, run, "Hive Instinct"):
+        wounds_bonus += 10
+    if _inc_talent_has(ch, run, "Voice of Command") or _inc_talent_has(ch, run, "Synaptic Link"):
+        pool_bonus += 3
+    if _inc_talent_has(ch, run, "Chitinous Growth"):
+        resilience_bonus += 2
+    if _inc_talent_has(ch, run, "Broodmind Resonance"):
+        shock_max_bonus += 4
+    if _inc_talent_has(ch, run, "Field Triage") or _inc_talent_has(ch, run, "Adaptive Biomass"):
+        shock_on_minion_hit += 2
+    if _inc_talent_has(ch, run, "Last Stand Together") or _inc_talent_has(ch, run, "Regenerative Swarm"):
+        fast_revive = True
+    if _inc_talent_has(ch, run, "Toxic Bloodline"):
+        always_bleed = True
+    if _inc_talent_has(ch, run, "Endless Swarm"):
+        endless_swarm = True
+    if _inc_talent_has(ch, run, "For the Emperor!") or _inc_talent_has(ch, run, "Norn Queen's Blessing"):
+        damage_mult *= 2.0
+    if _inc_talent_has(ch, run, "Shadow in the Warp"):
+        enemy_pool_penalty += 1
+    return {"wounds_bonus": wounds_bonus, "resilience_bonus": resilience_bonus, "shock_max_bonus": shock_max_bonus,
+            "pool_bonus": pool_bonus, "damage_mult": damage_mult, "always_bleed": always_bleed,
+            "enemy_pool_penalty": enemy_pool_penalty, "fast_revive": fast_revive,
+            "shock_on_minion_hit": shock_on_minion_hit, "endless_swarm": endless_swarm}
+
+
+def _inc_enemy_turn(enemies, player_traits, player_shock_current=0, minions=None, talent_mods=None):
     log=[]
     minions=minions or []
+    talent_mods=talent_mods or {}
+    enemy_pool_penalty=int(talent_mods.get("enemy_pool_penalty",0) or 0)
+    minion_hit_shock_recover=int(talent_mods.get("shock_on_minion_hit",0) or 0)
     # Tracked locally so a second (or third) enemy hitting in the same
     # round correctly sees the Shock the first enemy already drained -
     # _inc_finish_combat_round then re-derives the real totals by summing
@@ -8020,7 +8092,7 @@ def _inc_enemy_turn(enemies, player_traits, player_shock_current=0, minions=None
         if wrath>0 and current_shock<max_shock//2:
             recovered=min(max_shock-current_shock,wrath); enemy["shock_current"]=current_shock+recovered; enemy["wrath_current"]=wrath-recovered
             log.append({"actor":"enemy","action":"recover_shock","actor_name":enemy["name"],"shock":recovered,"wrath_spent":recovered}); continue
-        base_pool=max(1,int(enemy.get("attack_pool",1) or 1)); expected_icons=base_pool//2
+        base_pool=max(1,int(enemy.get("attack_pool",1) or 1)-enemy_pool_penalty); expected_icons=base_pool//2
         needed=max(0,int(player_traits["Defence"])-expected_icons)
         wrath_spent=min(wrath, max(1, needed) if wrath > 0 else 0)
         attack_pool=base_pool+wrath_spent; enemy["wrath_current"]=wrath-wrath_spent
@@ -8058,7 +8130,8 @@ def _inc_enemy_turn(enemies, player_traits, player_shock_current=0, minions=None
                 # to a random combat Attribute for the rest of this fight.
                 if int(enemy.get("tier",1) or 1)>=2 and random.random()<INC_DEBUFF_CHANCE:
                     debuff_attr=random.choice(INC_DEBUFF_ATTRS); debuff_amount=-1
-        log.append({"actor":"enemy","action":"attack","actor_name":enemy["name"],"skill":enemy["attack_skill"],"pool":attack_pool,"rolls":rolls,"icons":icons,"weapon":enemy["weapon_name"],"hit":hit,"damage":total_damage,"shock":shock,"wounds":wounds,"damage_rolls":damage_rolls,"critical":critical,"wrath_spent":wrath_spent,"wrath_gained":1 if critical else 0,"wrath_current":enemy["wrath_current"],"debuff_attr":debuff_attr,"debuff_amount":debuff_amount,"target":"minion" if target_minion else "player","minion_damage":minion_damage,"minion_name":minion_name})
+        player_shock_gain=minion_hit_shock_recover if (target_minion and hit) else 0
+        log.append({"actor":"enemy","action":"attack","actor_name":enemy["name"],"skill":enemy["attack_skill"],"pool":attack_pool,"rolls":rolls,"icons":icons,"weapon":enemy["weapon_name"],"hit":hit,"damage":total_damage,"shock":shock,"wounds":wounds,"damage_rolls":damage_rolls,"critical":critical,"wrath_spent":wrath_spent,"wrath_gained":1 if critical else 0,"wrath_current":enemy["wrath_current"],"debuff_attr":debuff_attr,"debuff_amount":debuff_amount,"target":"minion" if target_minion else "player","minion_damage":minion_damage,"minion_name":minion_name,"player_shock_gain":player_shock_gain})
     return log
 
 
@@ -8113,15 +8186,20 @@ def _inc_apply_weapon_minion_support(run, minions, support, value, hit_any, crit
     return run
 
 
-def _inc_minion_group_attack(minions, node, merged):
+def _inc_minion_group_attack(minions, node, merged, talent_mods=None):
     """Every alive Minion fights alongside you, no matter what action you
     took this turn (Attack, Heal, Recover Shock, use an Item...) - one
     attack each, against the first live enemy, using its own damage/ED and
     a pool driven by your Fellowship PLUS that Minion's own current Shock
     (same "Shock buys hit dice" rule the player gets). Rarity is a power
     tier, not just bigger numbers: Rare+ Bleeds on hit, Legendary+ attacks
-    twice, Unique also hits 50% harder (see INC_MINION_RARITY_ABILITY)."""
+    twice, Unique also hits 50% harder (see INC_MINION_RARITY_ABILITY).
+    talent_mods (see _inc_minion_talent_mods) adds Voice of
+    Command/Synaptic Link's pool bonus and Toxic Bloodline's always-Bleed."""
     log = []
+    talent_mods = talent_mods or {}
+    pool_bonus = int(talent_mods.get("pool_bonus", 0) or 0)
+    always_bleed = bool(talent_mods.get("always_bleed"))
     fellowship = max(1, int(merged.get("attributes", {}).get("Fellowship", 1) or 1))
     for minion in minions:
         if not (minion.get("alive") and int(minion.get("wounds_current", 0) or 0) > 0):
@@ -8129,8 +8207,8 @@ def _inc_minion_group_attack(minions, node, merged):
         rarity = minion.get("rarity", "Common")
         swings = 2 if rarity in ("Legendary", "Unique") else 1
         dmg_mult = 1.5 if rarity == "Unique" else 1.0
-        bleeds = rarity in ("Rare", "Legendary", "Unique")
-        m_pool = fellowship + max(0, int(minion.get("shock_current", 0) or 0)) + int(minion.pop("next_bonus_die", 0) or 0) + int(minion.get("bonus_die", 0) or 0)
+        bleeds = rarity in ("Rare", "Legendary", "Unique") or always_bleed
+        m_pool = fellowship + max(0, int(minion.get("shock_current", 0) or 0)) + int(minion.pop("next_bonus_die", 0) or 0) + int(minion.get("bonus_die", 0) or 0) + pool_bonus
         for _swing in range(swings):
             live_targets = [e for e in node["enemies"] if e["alive"]]
             if not live_targets:
@@ -8185,10 +8263,11 @@ def _inc_resolve_player_attack(ch, run, node, target_uids, weapon, bonus_die=0, 
         default=0)
     enemy_acts_first = fastest_enemy_initiative > player_initiative
     minions = _inc_load_minions(run)
+    talent_mods = _inc_minion_talent_mods(ch, run)
     pre_log = []
     shock_now = max(0, int(run.get("shock_current", 0) or 0))
     if enemy_acts_first:
-        pre_log = _inc_enemy_turn(node["enemies"], player_traits, shock_now, minions)
+        pre_log = _inc_enemy_turn(node["enemies"], player_traits, shock_now, minions, talent_mods)
         enemy_shock_dealt = sum(int(e.get("shock", 0) or 0) for e in pre_log if e.get("action") == "attack")
         shock_now = max(0, shock_now - enemy_shock_dealt)
     # Every point of Shock still standing adds a hit die - Shock is now the
@@ -8288,12 +8367,23 @@ def _inc_resolve_player_attack(ch, run, node, target_uids, weapon, bonus_die=0, 
                                                 hit_any=any(e["hit"] for e in log),
                                                 crit_any=any(e.get("wrath_crit") for e in log),
                                                 kills=sum(1 for e in log if e.get("target_defeated")))
+    kill_count = sum(1 for e in log if e.get("target_defeated"))
+    if talent_mods.get("endless_swarm") and kill_count and len(minions) < INC_MINION_MAX:
+        for _ in range(kill_count):
+            if len(minions) >= INC_MINION_MAX:
+                break
+            if random.random() < 0.25:
+                origin = run.get("origin") or "Human"
+                fellowship = int(merged.get("attributes", {}).get("Fellowship", INC_ORIGIN_BASE_ATTR) or INC_ORIGIN_BASE_ATTR)
+                variants = INC_MINION_CATALOG.get(origin, {}).get("Common") or [{"name": "Swarm Spawn", "icon": ""}]
+                entry = random.choice(variants)
+                minions.append(_inc_minion_stats(entry["name"], entry.get("icon", ""), origin, "Common", 1, fellowship))
     if node.get("pending_talent_triggers"):
         return pre_log + log, wrath_gained, minions
-    log += _inc_minion_group_attack(minions, node, merged)
+    log += _inc_minion_group_attack(minions, node, merged, talent_mods)
     if enemy_acts_first:
         return pre_log + log, wrath_gained, minions
-    return log + _inc_enemy_turn(node["enemies"], player_traits, run.get("shock_current", 0), minions), wrath_gained, minions
+    return log + _inc_enemy_turn(node["enemies"], player_traits, run.get("shock_current", 0), minions, talent_mods), wrath_gained, minions
 
 
 def _inc_resolve_player_heal(ch, run, node, spend_wrath=0):
@@ -8306,8 +8396,9 @@ def _inc_resolve_player_heal(ch, run, node, spend_wrath=0):
     shock_recovered=min(run["shock_max"]-run["shock_current"],spend_wrath*per_wrath); new_shock=run["shock_current"]+shock_recovered
     log=[{"actor":"player","action":"heal","amount":new_wounds-run["wounds_current"],"shock_recovered":shock_recovered,"wrath_spent":spend_wrath}]
     minions=_inc_load_minions(run)
-    log+=_inc_minion_group_attack(minions,node,merged)
-    return log+_inc_enemy_turn(node["enemies"],player_traits,new_shock,minions),new_wounds,new_shock,run["heal_charges"]-1,int(run["wrath_current"])-spend_wrath,minions
+    talent_mods=_inc_minion_talent_mods(ch,run)
+    log+=_inc_minion_group_attack(minions,node,merged,talent_mods)
+    return log+_inc_enemy_turn(node["enemies"],player_traits,new_shock,minions,talent_mods),new_wounds,new_shock,run["heal_charges"]-1,int(run["wrath_current"])-spend_wrath,minions
 
 
 def _inc_resolve_player_flee(ch, run, node, target_uid, bonus_die=0):
@@ -8335,11 +8426,24 @@ def _inc_resolve_player_flee(ch, run, node, target_uid, bonus_die=0):
         node["victory"] = False
         return log, run["wrath_current"] - bonus_die, True, None
     minions = _inc_load_minions(run)
-    return log + _inc_enemy_turn(node["enemies"], player_traits, run.get("shock_current", 0), minions), run["wrath_current"] - bonus_die, False, minions
+    talent_mods = _inc_minion_talent_mods(ch, run)
+    return log + _inc_enemy_turn(node["enemies"], player_traits, run.get("shock_current", 0), minions, talent_mods), run["wrath_current"] - bonus_die, False, minions
 
 
 
 def _inc_finish_combat_round(run, ch, node, round_log, wrath_gained=0, minions=None):
+    # The caller's `run` can be stale: _inc_resolve_player_attack persists
+    # its own mid-action Talent/status updates (Ruthless Momentum,
+    # Predator's Harvest, Relentless Assault, every Tyranid weapon support
+    # effect...) through _inc_talent_persist_status, but only returns
+    # (log, wrath_gained, minions) - the updated run object it built along
+    # the way is discarded, and every caller still holds the ORIGINAL run
+    # from before those persists. Refetching here means this function's own
+    # status writes below merge onto the latest state instead of
+    # clobbering it back to pre-action values. `node` and `minions` are
+    # deliberately NOT re-sourced from DB - they carry this action's
+    # in-memory combat result, not yet persisted.
+    run = _inc_get_run(run["id"]) or run
     enemy_crits = sum(1 for entry in round_log if entry.get("actor") == "enemy" and entry.get("critical"))
     if enemy_crits:
         current_armour, max_armour = _inc_armour_durability(ch, run)
@@ -8355,10 +8459,12 @@ def _inc_finish_combat_round(run, ch, node, round_log, wrath_gained=0, minions=N
     if minions:
         # Every 2 turns, one downed Minion crawls back up on its own - half
         # Wounds, full Shock - independent of Rest or what action you took.
+        # Last Stand Together / Regenerative Swarm speeds this up to every turn.
         statuses = _inc_talent_status(run)
         turn_count = int(statuses.get("combat_turn_count", 0) or 0) + 1
         statuses["combat_turn_count"] = turn_count
-        if turn_count % 2 == 0:
+        revive_every = 1 if _inc_minion_talent_mods(ch, run).get("fast_revive") else 2
+        if turn_count % revive_every == 0:
             dead = next((m for m in minions if not m.get("alive")), None)
             if dead:
                 dead["alive"] = True
@@ -8367,7 +8473,11 @@ def _inc_finish_combat_round(run, ch, node, round_log, wrath_gained=0, minions=N
         run = _inc_talent_persist_status(run, statuses)
     enemy_shock = sum(int(e.get("shock", 0) or 0) for e in round_log if e.get("actor") == "enemy")
     enemy_wounds = sum(int(e.get("wounds", 0) or 0) for e in round_log if e.get("actor") == "enemy")
+    # Field Triage / Adaptive Biomass: recovers player Shock whenever a
+    # Minion takes a hit meant for them (see _inc_enemy_turn).
+    minion_hit_shock_gain = sum(int(e.get("player_shock_gain", 0) or 0) for e in round_log if e.get("actor") == "enemy")
     new_shock = max(0, int(run.get("shock_current", 0) or 0) - enemy_shock)
+    new_shock = min(int(run.get("shock_max", 0) or 0), new_shock + minion_hit_shock_gain)
     new_wounds = max(0, int(run.get("wounds_current", 0) or 0) - enemy_wounds)
     if _inc_talent_has(ch, run, "Unyielding Flesh") and enemy_wounds > 0:
         statuses = _inc_talent_status(run)
@@ -8439,8 +8549,9 @@ def _inc_resolve_pending_talent(run, ch, selected_indices):
     node.pop("pending_talent_triggers", None)
     log = [{"actor":"player","action":"talent_trigger","talent":"Blood Must Die","amount":applied,"target_name":triggers[0].get("target_name","Target")}]
     minions = _inc_load_minions(run)
-    log += _inc_minion_group_attack(minions, node, _inc_merge_character(ch, run))
-    log += _inc_enemy_turn(node.get("enemies", []), _inc_player_traits(ch, run), run.get("shock_current", 0), minions)
+    talent_mods = _inc_minion_talent_mods(ch, run)
+    log += _inc_minion_group_attack(minions, node, _inc_merge_character(ch, run), talent_mods)
+    log += _inc_enemy_turn(node.get("enemies", []), _inc_player_traits(ch, run), run.get("shock_current", 0), minions, talent_mods)
     return _inc_finish_combat_round(run, ch, node, log, minions=minions)
 
 def _inc_combat_attack(run, ch, target_uids, weapon_key, bonus_die=0, six_mode="ED", restore_shock=False, guaranteed_hit=False):
@@ -8512,8 +8623,9 @@ def _inc_resolve_restore_shock(ch, run, node):
     log = [{"actor": "player", "action": "restore_shock", "shock_recovered": recovered, "wrath_spent": 1}]
     player_traits = _inc_player_traits(ch, run)
     minions = _inc_load_minions(run)
-    log += _inc_minion_group_attack(minions, node, merged)
-    return log + _inc_enemy_turn(node.get("enemies", []), player_traits, new_shock, minions), new_shock, current_wrath - 1, minions
+    talent_mods = _inc_minion_talent_mods(ch, run)
+    log += _inc_minion_group_attack(minions, node, merged, talent_mods)
+    return log + _inc_enemy_turn(node.get("enemies", []), player_traits, new_shock, minions, talent_mods), new_shock, current_wrath - 1, minions
 
 
 def _inc_combat_restore_shock(run, ch):

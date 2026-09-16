@@ -4162,6 +4162,14 @@ def inject_theme():
     .inc-enemy.rarity-rare{border-color:#3d78c9}
     .inc-enemy.rarity-legendary{border-color:#c9922e;box-shadow:0 0 14px rgba(201,146,46,.25)}
     .inc-enemy.rarity-unique{border-color:#b23ad0;box-shadow:0 0 16px rgba(178,58,208,.3)}
+    /* Minion origin glyphs - no emoji, a small animated CSS-drawn shape
+       instead: a pulsing gold diamond for Human, a breathing organic blob
+       for Tyranid-Pattern, so the two are told apart at a glance. */
+    .inc-minion-glyph{display:inline-block;width:11px;height:11px;margin-right:5px;vertical-align:middle;position:relative;top:-1px}
+    .inc-minion-glyph.origin-human{background:linear-gradient(135deg,#e8c96a,#8f6b32);clip-path:polygon(50% 0%,100% 50%,50% 100%,0% 50%);animation:inc-glyph-human 2.2s ease-in-out infinite}
+    .inc-minion-glyph.origin-tyranid{background:radial-gradient(circle at 35% 30%,#d79bff,#6a1b9a);border-radius:60% 40% 55% 45%/50% 60% 40% 50%;animation:inc-glyph-tyranid 1.6s ease-in-out infinite}
+    @keyframes inc-glyph-human{0%,100%{box-shadow:0 0 2px rgba(232,201,106,.5);transform:rotate(0deg)}50%{box-shadow:0 0 9px rgba(232,201,106,.95);transform:rotate(45deg)}}
+    @keyframes inc-glyph-tyranid{0%,100%{transform:scale(1);box-shadow:0 0 2px rgba(154,60,208,.5)}50%{transform:scale(1.3);box-shadow:0 0 10px rgba(215,155,255,.95)}}
     .inc-enemy{position:relative;border:1px solid #3a2e18;border-radius:0;padding:13px;background:#11100d;min-height:160px;overflow:hidden;transition:transform .15s ease,border-color .15s ease,box-shadow .15s ease}.inc-enemy:after{content:"";position:absolute;right:-28px;bottom:-28px;width:90px;height:90px;border:1px solid rgba(190,160,90,.12);transform:rotate(45deg);pointer-events:none}.inc-enemy.selected{transform:translateY(-2px);border-color:#c64a3d;box-shadow:0 0 0 1px rgba(198,74,61,.25),0 0 24px rgba(120,20,15,.18)}.inc-enemy.selected:before{content:"TARGET LOCK";position:absolute;right:8px;top:7px;font:9px monospace;letter-spacing:.13em;color:#d96a5d}.inc-enemy.dead{opacity:.3;filter:grayscale(1)}.inc-enemy .en{position:relative;z-index:1;font-family:Cinzel,serif;font-weight:700;font-size:.9rem;color:#ded0ad;letter-spacing:.06em;text-transform:uppercase}.inc-enemy .et{position:relative;z-index:1;font-size:.61rem;color:#89785d;opacity:.9;text-transform:uppercase;margin:3px 0 8px;letter-spacing:.08em}.inc-npc-vitals{position:relative;z-index:1;display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin:8px 0}.inc-npc-vitals span{border:1px solid #2e2418;padding:6px 5px;text-align:center;font-size:.56rem;color:#766750;text-transform:uppercase}.inc-npc-vitals b{display:block;color:#c9b98f;font:700 .82rem Cinzel,serif}.inc-vital{position:relative;overflow:hidden;box-shadow:inset 0 0 18px var(--vital-glow)}.inc-vital:before{content:"";position:absolute;inset:0;z-index:0;background:linear-gradient(90deg,var(--vital-color) 0%,var(--vital-color) var(--vital-pct),transparent var(--vital-pct),transparent 100%);opacity:.22}.inc-vital>*{position:relative;z-index:1}.inc-vital.wounds{--vital-glow:rgba(55,170,95,.30);--vital-color:hsl(calc(120 * var(--vital-pct-num)),72%,42%)}.inc-vital.shock{--vital-glow:rgba(150,105,205,.30);--vital-color:#9b72c2}.inc-vital-label{display:block;margin-top:2px;font-size:.52rem;letter-spacing:.12em}.inc-vital.wounds .inc-vital-label{color:#8bcf9b}.inc-vital.shock .inc-vital-label{color:#c6a7df}.inc-npc-def{position:relative;z-index:1;font:10px monospace;color:#827157;letter-spacing:.05em;border-top:1px solid #292016;padding-top:7px}.inc-enemy.enemy-v0{background:linear-gradient(155deg,#101715 0%,#0b0d0c 55%,#101812 100%);border-left:4px solid #5d8b73}.inc-enemy.enemy-v0 .inc-enemy-strip{color:#79a88f;border-bottom-color:#294238}.inc-enemy.enemy-v0 .en{color:#b9d4c4}.inc-enemy.enemy-v1{background:linear-gradient(155deg,#18130c 0%,#0e0b08 58%,#191208 100%);border-left:4px solid #b08a45}.inc-enemy.enemy-v1 .inc-enemy-strip{color:#c7a662;border-bottom-color:#4c3a1f}.inc-enemy.enemy-v1 .en{color:#e0c994}.inc-enemy.enemy-v2{background:linear-gradient(155deg,#190d0d 0%,#0e0909 58%,#1a0d0c 100%);border-left:4px solid #a7473d}.inc-enemy.enemy-v2 .inc-enemy-strip{color:#d06a60;border-bottom-color:#54231f}.inc-enemy.enemy-v2 .en{color:#e1aaa4}.inc-enemy.enemy-v3{background:linear-gradient(155deg,#16101b 0%,#0b0910 58%,#17101d 100%);border-left:4px solid #8760a8}.inc-enemy.enemy-v3 .inc-enemy-strip{color:#a985c1;border-bottom-color:#3c2849}.inc-enemy.enemy-v3 .en{color:#ceb9d9}.inc-enemy.enemy-v0 .inc-npc-vitals span{border-color:#294238}.inc-enemy.enemy-v1 .inc-npc-vitals span{border-color:#4c3a1f}.inc-enemy.enemy-v2 .inc-npc-vitals span{border-color:#54231f}.inc-enemy.enemy-v3 .inc-npc-vitals span{border-color:#3c2849}
     .inc-log{max-height:280px;overflow-y:auto;background:#090807;border:1px solid #332719;border-radius:0;padding:10px;margin-bottom:14px;display:flex;flex-direction:column-reverse;gap:4px}.inc-log-line{font-size:.7rem;padding:6px 8px;border-radius:0;border-left:2px solid transparent;font-family:monospace}.inc-log-line.player{background:rgba(70,82,72,.1);border-left-color:#8c7546}.inc-log-line.enemy{background:rgba(120,20,20,.09);border-left-color:#87322c}.inc-log-line.system{text-align:center;font-style:italic;color:#9b8455;border-left:none}
     .inc-banner-win{font-family:Cinzel,serif;text-align:center;padding:14px;border-radius:0;margin-bottom:14px;letter-spacing:.15em;text-transform:uppercase;background:linear-gradient(90deg,rgba(80,60,20,.08),rgba(201,162,39,.16),rgba(80,60,20,.08));border:1px solid #8a6b32;color:#ddc581}.inc-banner-lose{font-family:Cinzel,serif;text-align:center;padding:14px;border-radius:0;margin-bottom:14px;letter-spacing:.15em;text-transform:uppercase;background:rgba(100,15,15,.13);border:1px solid #7d302b;color:#d87870}
@@ -6428,6 +6436,14 @@ def _inc_discard_item(run, ch, item_key):
     return _inc_persist(run["id"], **updates)
 
 
+def _inc_minion_glyph_html(origin):
+    """No emoji - a small animated CSS-drawn glyph instead, distinct per
+    Minion origin: a pulsing gold diamond for Human, a breathing organic
+    blob for Tyranid-Pattern. Doubles as an at-a-glance origin marker."""
+    slug = "tyranid" if origin == "Tyranid-Pattern" else "human"
+    return f"<span class='inc-minion-glyph origin-{slug}'></span>"
+
+
 def _inc_render_backpack(run, ch):
     """Right-side loadout panel: every carried item as a rarity-coloured
     tile - a firearm/melee icon and an EQUIPPED marker for Armour instead
@@ -6438,7 +6454,7 @@ def _inc_render_backpack(run, ch):
         level = int(minion.get("level", 1) or 1)
         lvl_tag = f" · Lv{level}" if level > 1 else ""
         st.markdown(
-            f"<div class='inc-pack-item {rarity_cls}'><span class='pack-icon'>{minion.get('icon','🐾')}</span>"
+            f"<div class='inc-pack-item {rarity_cls}'><span class='pack-icon'>{_inc_minion_glyph_html(minion.get('origin'))}</span>"
             f"<span class='pack-name'>{html.escape(str(minion.get('name','Minion')))}{lvl_tag}</span>"
             f"<span class='pack-sub'>{int(minion.get('wounds_current',0))}/{int(minion.get('wounds_max',0))}W · "
             f"{int(minion.get('shock_current',0))}/{int(minion.get('shock_max',0))}S · {status}</span></div>",
@@ -7124,7 +7140,8 @@ def _inc_generate_offers(ch, run):
             d=craft_details(row); candidates.append({"type":"talent","craft_id":int(row["id"]),"name":row["name"],"effect":row.get("effect",""),"cost":max(15,int(row.get("cost",30) or 30)),"label":row["name"],"detail":f"{pr['rarity']} · {row.get('effect','')}","rarity":pr['rarity']})
     if is_minion_origin:
         n = 2 if is_tyranid else 1
-        for mt in random.sample(INC_MINION_TALENTS, min(n, len(INC_MINION_TALENTS))):
+        origin_talents = INC_MINION_TALENTS.get(origin, [])
+        for mt in random.sample(origin_talents, min(n, len(origin_talents))):
             cost = max(15, INC_MINION_RARITY_STATS[mt["rarity"]]["cost"])
             candidates.append({"type":"talent_minion","name":mt["name"],"effect":mt["effect"],"cost":cost,
                                 "label":mt["name"],"detail":f"{mt['rarity']} · {mt['effect']}","rarity":mt["rarity"]})
@@ -7259,12 +7276,13 @@ def _inc_apply_purchase(run, ch, offer):
         current_minions=[dict(m) for m in (run.get("minions") or [])]
         existing=next((m for m in current_minions if m.get("name")==offer["name"]),None)
         icon=offer.get("icon","🐾")
+        fellowship=int(effective_attributes(_inc_merge_character(ch,run)).get("Fellowship",INC_ORIGIN_BASE_ATTR))
         if existing:
             new_level=int(existing.get("level",1) or 1)+1
-            leveled=_inc_minion_stats(offer["name"],icon,offer["origin"],offer["rarity"],new_level)
+            leveled=_inc_minion_stats(offer["name"],icon,offer["origin"],offer["rarity"],new_level,fellowship)
             current_minions=[leveled if m.get("name")==offer["name"] else m for m in current_minions]
         else:
-            current_minions.append(_inc_minion_stats(offer["name"],icon,offer["origin"],offer["rarity"],1))
+            current_minions.append(_inc_minion_stats(offer["name"],icon,offer["origin"],offer["rarity"],1,fellowship))
         pool_updates["minions"]=current_minions
     elif offer["type"]=="talent_minion":
         name=offer["name"]; rarity=offer.get("rarity","Common")
@@ -8687,7 +8705,7 @@ def _inc_render_minion_status(run, node):
                 roll_html = "<div class='inc-dice-empty'>No rolls yet</div>"
             st.markdown(
                 f"<div class='inc-enemy {rarity_cls}'>"
-                f"<div class='inc-enemy-strip'><span>{minion.get('icon','🐾')} {html.escape(str(minion.get('name','Minion')))}</span><span>{status}</span></div>"
+                f"<div class='inc-enemy-strip'><span>{_inc_minion_glyph_html(minion.get('origin'))}{html.escape(str(minion.get('name','Minion')))}</span><span>{status}</span></div>"
                 f"<div class='inc-npc-vitals'>"
                 f"<span class='inc-vital wounds' style='--vital-pct:{wounds_pct:.1f}%;--vital-pct-num:{wounds_pct/100:.3f};--vital-color:#b23a35'><b>{wounds_cur}/{wounds_max}</b><span class='inc-vital-label'>WOUNDS</span></span>"
                 f"<span class='inc-vital shock' style='--vital-pct:{shock_pct:.1f}%;--vital-color:#9b72c2'><b>{shock_cur}/{shock_max}</b><span class='inc-vital-label'>SHOCK</span></span>"
@@ -9414,14 +9432,26 @@ INC_MINION_CATALOG = {
 }
 # Minion-related Talents - exclusive to Human/Tyranid-Pattern; a Tyranid
 # run's Talent offers are ALWAYS drawn only from this list (see
-# _inc_generate_offers), never the general combat Talent pool.
-INC_MINION_TALENTS = [
-    {"name": "Loyal Retinue", "rarity": "Common", "effect": "Your Minions' max Wounds increase by 10 (each)."},
-    {"name": "Voice of Command", "rarity": "Uncommon", "effect": "Your Minions' attack pool gains +3 dice (each)."},
-    {"name": "Symbiotic Bond", "rarity": "Rare", "effect": "Whenever a Minion is hit, you recover 2 Shock."},
-    {"name": "Undying Swarm", "rarity": "Legendary", "effect": "Each Minion revives once mid-fight if killed (in addition to on Rest)."},
-    {"name": "Alpha Predator", "rarity": "Unique", "effect": "Your Minions' damage is doubled (each)."},
-]
+# _inc_generate_offers), never the general combat Talent pool. Reflavoured
+# per Origin (Imperial command doctrine vs. Hive Mind biology) rather than
+# one shared generic list - same mechanical shape per rarity, different
+# theme and wording.
+INC_MINION_TALENTS = {
+    "Human": [
+        {"name": "Requisitioned Reinforcements", "rarity": "Common", "effect": "Your Minions' max Wounds increase by 10 (each)."},
+        {"name": "Voice of Command", "rarity": "Uncommon", "effect": "Your Minions' attack pool gains +3 dice (each)."},
+        {"name": "Field Triage", "rarity": "Rare", "effect": "Whenever a Minion is hit, you recover 2 Shock."},
+        {"name": "Last Stand Together", "rarity": "Legendary", "effect": "Each Minion revives once mid-fight if killed (in addition to on Rest)."},
+        {"name": "For the Emperor!", "rarity": "Unique", "effect": "Your Minions' damage is doubled (each)."},
+    ],
+    "Tyranid-Pattern": [
+        {"name": "Hive Instinct", "rarity": "Common", "effect": "Your Minions' max Wounds increase by 10 (each)."},
+        {"name": "Synaptic Link", "rarity": "Uncommon", "effect": "Your Minions' attack pool gains +3 dice (each)."},
+        {"name": "Adaptive Biomass", "rarity": "Rare", "effect": "Whenever a Minion is hit, you recover 2 Shock."},
+        {"name": "Regenerative Swarm", "rarity": "Legendary", "effect": "Each Minion revives once mid-fight if killed (in addition to on Rest)."},
+        {"name": "Norn Queen's Blessing", "rarity": "Unique", "effect": "Your Minions' damage is doubled (each)."},
+    ],
+}
 _INC_MINION_LEVEL_GROWTH = 0.25  # +25% to every stat per level beyond 1
 
 # Tyranid-Pattern's own Wargear pool - "eles só podem usar coisas de
@@ -9473,19 +9503,27 @@ def _inc_generate_tyranid_wargear_offer():
             "label": weapon["name"], "cost": cost, "detail": detail}
 
 
-def _inc_minion_stats(name, icon, origin, rarity, level=1):
+def _inc_minion_stats(name, icon, origin, rarity, level=1, fellowship=INC_ORIGIN_BASE_ATTR):
     """Stats keyed on an explicit name/icon (not re-rolled here) so
     levelling up a Minion you already own keeps its identity - only
-    _inc_generate_minion_offer picks a random named variant for a NEW one."""
+    _inc_generate_minion_offer picks a random named variant for a NEW one.
+
+    Fellowship above the baseline is baked in as a permanent bonus to the
+    Minion's Shock and Damage at the moment it's recruited/levelled - a
+    better commander fields tougher, harder-hitting Minions. Buying or
+    levelling later locks in whatever Fellowship you have at that moment.
+    """
     stats = INC_MINION_RARITY_STATS[rarity]
     level = max(1, int(level or 1))
     mult = 1 + _INC_MINION_LEVEL_GROWTH * (level - 1)
     def scale(v): return max(1, round(v * mult))
+    fellowship_bonus = max(0, int(fellowship or INC_ORIGIN_BASE_ATTR) - INC_ORIGIN_BASE_ATTR)
+    shock_val = scale(stats["shock"]) + fellowship_bonus
     return {"name": name, "icon": icon, "origin": origin, "rarity": rarity, "level": level,
             "ability": INC_MINION_RARITY_ABILITY.get(rarity, ""),
             "wounds_max": scale(stats["wounds"]), "wounds_current": scale(stats["wounds"]),
-            "shock_max": scale(stats["shock"]), "shock_current": scale(stats["shock"]),
-            "resilience": scale(stats["resilience"]), "damage": scale(stats["damage"]),
+            "shock_max": shock_val, "shock_current": shock_val,
+            "resilience": scale(stats["resilience"]), "damage": scale(stats["damage"]) + fellowship_bonus,
             "ed": stats["ed"], "alive": True}
 
 

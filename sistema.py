@@ -55,6 +55,10 @@ INC_TALENT_ADAPTERS = {}
 
 _INC_RARITIES = ("Common", "Uncommon", "Rare", "Legendary", "Unique")
 _INC_RARITY_MAX_STACKS = {"Common": 5, "Uncommon": 5, "Rare": 5, "Legendary": 5, "Unique": 1}
+# Every Talent acquisition (bought or stacked) permanently raises max Shock
+# by this much - rarer Talents represent more of an edge, so they buy more
+# of the resource that both soaks damage and now fuels bonus hit dice.
+_INC_TALENT_SHOCK_BONUS = {"Common": 2, "Uncommon": 4, "Rare": 6, "Legendary": 10, "Unique": 15}
 
 # 100 Incursion-only talents. Five copies of each talent exist in the pool;
 # Unique talents still have a per-player stack cap of one.
@@ -7061,6 +7065,9 @@ def _inc_apply_purchase(run, ch, offer):
         if current: current["stacks"]=current_stacks+1
         else:
             entry=_build_craft_entry(row,"talent"); entry.update({"rarity":rarity,"max_stacks":max_stacks,"stacks":1}); extra_talents.append(entry)
+        shock_bonus=_INC_TALENT_SHOCK_BONUS.get(rarity,2)
+        new_shock_max=int(run.get("shock_max",0) or 0)+shock_bonus
+        pool_updates.update({"shock_max":new_shock_max,"shock_current":min(new_shock_max,int(run.get("shock_current",0) or 0)+shock_bonus)})
     elif offer["type"]=="wargear":
         conn=get_conn(); row=conn.execute("SELECT * FROM craft_items WHERE id=? AND kind='wargear'",(int(offer["craft_id"]),)).fetchone(); conn.close()
         if row is None: raise ValueError("item_not_found")
@@ -7642,10 +7649,26 @@ def _inc_resolve_player_attack(ch, run, node, target_uids, weapon, bonus_die=0, 
     extra_pool += int(status.get("next_attack_bonus_dice", 0) or 0)
     status["next_attack_bonus_dice"] = 0
     run = _inc_talent_persist_status(run, status) if extra_pool or _inc_talent_has(ch, run, "Relentless Assault") else run
+    # Whoever has the higher Initiative acts first - if any alive enemy
+    # out-paces the player, they strike before the player's attack (and
+    # their Damage/Shock hit lands before the player's own Shock-driven
+    # bonus dice for THIS attack are counted, since acting second means
+    # you're already reacting with whatever Shock you have left).
+    player_initiative = int(merged.get("attributes", {}).get("Initiative", 1) or 1)
+    fastest_enemy_initiative = max(
+        (int(e.get("attributes", {}).get("Initiative", 1) or 1) for e in node["enemies"] if e["alive"]),
+        default=0)
+    enemy_acts_first = fastest_enemy_initiative > player_initiative
+    pre_log = []
+    shock_now = max(0, int(run.get("shock_current", 0) or 0))
+    if enemy_acts_first:
+        pre_log = _inc_enemy_turn(node["enemies"], player_traits, shock_now)
+        enemy_shock_dealt = sum(int(e.get("shock", 0) or 0) for e in pre_log if e.get("action") == "attack")
+        shock_now = max(0, shock_now - enemy_shock_dealt)
     # Every point of Shock still standing adds a hit die - Shock is now the
     # buffer that eats damage before Wounds do, so keeping it topped up is
     # both defence AND offence, and losing it in a fight costs you both.
-    shock_bonus = max(0, int(run.get("shock_current", 0) or 0))
+    shock_bonus = shock_now
     per_target_pool = max(1, pool - (len(targets) - 1) + int(bonus_die or 0) + extra_pool + shock_bonus)
     log = []
     wrath_gained = 0
@@ -7720,7 +7743,9 @@ def _inc_resolve_player_attack(ch, run, node, target_uids, weapon, bonus_die=0, 
             triggers = _inc_attack_talent_triggers(ch, run, target, rolls)
             if triggers: node["pending_talent_triggers"] = triggers
     if node.get("pending_talent_triggers"):
-        return log, wrath_gained
+        return pre_log + log, wrath_gained
+    if enemy_acts_first:
+        return pre_log + log, wrath_gained
     return log + _inc_enemy_turn(node["enemies"], player_traits, run.get("shock_current", 0)), wrath_gained
 
 
@@ -7806,6 +7831,11 @@ def _inc_finish_combat_round(run, ch, node, round_log, wrath_gained=0):
 
     if all_dead:
         node["resolved"], node["victory"] = True, True
+        # Post-fight recovery: winning a fight is its own small breather -
+        # 20% of max Wounds and a flat 10 Shock back before whatever comes
+        # next (loot, another fight, the shop).
+        new_wounds = min(int(run.get("wounds_max", 0) or 0), new_wounds + round(int(run.get("wounds_max", 0) or 0) * 0.20))
+        new_shock = min(int(run.get("shock_max", 0) or 0), new_shock + 10)
         bosses_cleared, pending_boss3 = run["bosses_cleared"], run["pending_boss3_pvp"]
         if run["stage"] == "boss":
             bosses_cleared += 1

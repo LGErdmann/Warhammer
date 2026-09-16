@@ -7274,22 +7274,27 @@ def _inc_generate_first_encampment_offers(ch, run):
 
 def _inc_pool_updates_for_attribute(ch, run, bonus_attrs, attr):
     """When a purchased Attribute is Toughness or Willpower, Max Wounds/Max
-    Shock grow immediately - recompute them and carry the current value's
-    absolute increase over to current, same as leveling up would on the
-    real sheet."""
+    Shock grow immediately - by the MARGINAL effect of this one Attribute
+    point (before vs after, isolated from everything else), added on top
+    of whatever Max Wounds/Shock already is. Replacing the stored value
+    outright with a from-scratch _inc_life_pools recompute would silently
+    erase any flat bonus stacked on top by a Talent purchase
+    (_INC_TALENT_SHOCK_BONUS) that formula has no way to know about."""
     if attr not in ("Toughness", "Willpower"):
         return {}
-    merged = _inc_merge_character(ch, {**run, "bonus_attributes": bonus_attrs})
-    pools = _inc_life_pools(merged, run.get("origin"), run.get("minions"))
+    merged_before = _inc_merge_character(ch, run)
+    pools_before = _inc_life_pools(merged_before, run.get("origin"), run.get("minions"))
+    merged_after = _inc_merge_character(ch, {**run, "bonus_attributes": bonus_attrs})
+    pools_after = _inc_life_pools(merged_after, run.get("origin"), run.get("minions"))
     updates = {}
     if attr == "Toughness":
-        delta = max(0, pools["wounds_max"] - run["wounds_max"])
-        updates["wounds_max"] = pools["wounds_max"]
-        updates["wounds_current"] = min(pools["wounds_max"], run["wounds_current"] + delta)
+        gain = max(0, pools_after["wounds_max"] - pools_before["wounds_max"])
+        updates["wounds_max"] = int(run.get("wounds_max", 0) or 0) + gain
+        updates["wounds_current"] = min(updates["wounds_max"], int(run.get("wounds_current", 0) or 0) + gain)
     if attr == "Willpower":
-        delta = max(0, pools["shock_max"] - run["shock_max"])
-        updates["shock_max"] = pools["shock_max"]
-        updates["shock_current"] = min(pools["shock_max"], run["shock_current"] + delta)
+        gain = max(0, pools_after["shock_max"] - pools_before["shock_max"])
+        updates["shock_max"] = int(run.get("shock_max", 0) or 0) + gain
+        updates["shock_current"] = min(updates["shock_max"], int(run.get("shock_current", 0) or 0) + gain)
     return updates
 
 
@@ -7759,6 +7764,8 @@ def _inc_advance(run, ch):
             delta = max(0, new_max - int(run.get("wounds_max", 0) or 0))
             updates["wounds_max"] = new_max
             updates["wounds_current"] = min(new_max, int(run.get("wounds_current", 0) or 0) + delta)
+    if nxt == "start":
+        updates.update(_inc_apply_origin_scaling(run, ch))
     return _inc_persist(run["id"], **updates)
 
 
@@ -9280,6 +9287,26 @@ def _inc_render_tutorial():
             "</div>", unsafe_allow_html=True)
 
 
+def _inc_origin_minion_description(origin):
+    """Name + description of the Minion guaranteed at the start of a run
+    with this Origin, for the Battle Sheet preview (see
+    _inc_render_origin_select) - Apex Tyranid/Dreadnought's own bespoke
+    text, or a helper Minion's real ability from INC_ORIGIN_HELPER_MINION."""
+    if origin == "Tyranid-Pattern":
+        return ("Apex Tyranid", "Legendary. Starts with Bulk (always draws every enemy attack while alive) and 3 "
+                "bonus attack dice. At the end of every Loop it consumes your weakest other Minion, absorbing 50% "
+                "of its Wounds/Shock, inheriting its ability, and permanently gaining more attack dice.")
+    if origin == "Human":
+        return ("Dreadnought", "Unique. 20x your own Wounds. Gains a permanent attack die for every Wrath you "
+                "spend. Only Rest brings it back if it falls - push on without resting while it's down and it "
+                "is lost for the rest of the Incursion. Upgrade modules (Bulk, Bleeding and more) can be bought "
+                "for it in the field shop.")
+    helper = INC_ORIGIN_HELPER_MINION.get(origin)
+    if helper:
+        return helper["name"], helper.get("ability", "")
+    return None, None
+
+
 def _inc_render_origin_select(ch, key_prefix):
     """Origin picker + compact battle sheet, shown before starting a run
     for an incursion-kind account. Origin is a per-run choice, not locked
@@ -9294,13 +9321,26 @@ def _inc_render_origin_select(ch, key_prefix):
     talent = INC_ORIGIN_TALENTS[origin]
     attr_line = " · ".join(f"{a} {attrs[a]}" for a in ATTRS)
     weapon_dmg = int(attrs.get("Strength", 3)) + 2
+    if origin == "Tyranid-Pattern":
+        tw = INC_TYRANID_WARGEAR["Common"][0]; ta = INC_TYRANID_ARMOUR["Common"][0]
+        wargear_name = f"{tw['name']} · {ta['name']}"
+        wargear_desc = f"{tw['name']}: {tw['damage']} DMG +{tw['ed']} ED · {tw['effect']} {ta['name']}: Armour +{ta['armour_rating']}."
+    else:
+        wargear_name = "Incursion Combat Knife · Field Plate"
+        wargear_desc = f"Knife: {weapon_dmg} DMG · +1 ED · melee. Field Plate: +2 Armour."
+    minion_name, minion_desc = _inc_origin_minion_description(origin)
+    minion_block = ""
+    if minion_name:
+        minion_block = (f"<div class='inc-offer'><div class='ot'>Starting Minion</div><div class='on'>{html.escape(minion_name)}</div>"
+                         f"<div class='od'>{html.escape(minion_desc)}</div></div>")
     st.markdown(
         f"<div class='inc-card'><div class='inc-title'>Battle Sheet · {html.escape(origin)}</div>"
         f"<div class='inc-flavor'>{html.escape(attr_line)}</div>"
         f"<div class='inc-offer'><div class='ot'>Signature Talent</div><div class='on'>{html.escape(talent['name'])}</div>"
         f"<div class='od'>{html.escape(talent['effect'])}</div></div>"
-        f"<div class='inc-offer'><div class='ot'>Starting Wargear</div><div class='on'>Incursion Combat Knife · Field Plate</div>"
-        f"<div class='od'>Knife: {weapon_dmg} DMG · +1 ED · melee. Field Plate: +2 Armour.</div></div>"
+        f"<div class='inc-offer'><div class='ot'>Starting Wargear</div><div class='on'>{html.escape(wargear_name)}</div>"
+        f"<div class='od'>{html.escape(wargear_desc)}</div></div>"
+        f"{minion_block}"
         f"</div>", unsafe_allow_html=True)
     return origin
 
@@ -9833,30 +9873,97 @@ INC_ORIGIN_TALENTS = {
     # _inc_finish_combat_round for the "wired" ones below) rather than
     # description-only flavour.
     "Human": {"name": "Indomitable", "effect": "Once per FIGHT (not just once per Incursion), reroll any one failed Test."},  # wired
-    "Aeldari-Pattern": {"name": "Battle Precognition", "effect": "Once per fight, reroll your Wrath Die AND keep the better of the two results."},
-    "Ork-Pattern": {"name": "WAAAGH!", "effect": "While below half Wounds, add +2 bonus dice (not +1) to all melee attacks."},  # wired
-    "Necron-Pattern": {"name": "Reanimation Protocols", "effect": "Once per fight (not just once per Incursion), if you would be reduced to 0 Wounds, instead remain at 25% Max Wounds."},  # wired
-    "Tau-Pattern": {"name": "For the Greater Good", "effect": "Once per fight, add +4 bonus dice to a ranged attack."},
-    "Ogryn-Pattern": {"name": "Bone 'Ead", "effect": "Reduce all Shock damage taken by 3 (minimum 0)."},
-    "Custodes-Pattern": {"name": "Guardian Eternal", "effect": "Twice per fight, negate one hit entirely before damage is rolled."},
-    "Sororitas-Pattern": {"name": "Shield of Faith", "effect": "Once per fight, reroll any one failed Test."},
-    "Kroot-Pattern": {"name": "Pack Hunter", "effect": "+2 bonus dice on the first attack against any target no one has attacked yet this fight."},
-    "Genestealer-Cultist-Pattern": {"name": "The Stars Are Right", "effect": "Every Critical Hit grants an extra attack action (no longer once per fight)."},
-    "Death-Guard-Pattern": {"name": "Nurgle's Gift", "effect": "Immune to Bleeding; recover 3 Wounds (not 1) whenever you inflict Bleeding."},
-    "Grey-Knight-Pattern": {"name": "Aegis of the Emperor", "effect": "Twice per fight, reduce incoming damage from a single hit by double your Willpower."},
-    "Chaos-Pattern": {"name": "Dark Blessing", "effect": "Your first Guaranteed Hit or Recover Shock each fight costs 0 Wrath instead of 1."},
-    "Tyranid-Pattern": {"name": "Hive Mind Link", "effect": "Your Minions' attack pools gain +4 dice and each revives once mid-fight if killed. You start with Apex Tyranid: at the end of every Loop, it consumes your weakest other Minion, absorbing half its Wounds/Shock, inheriting its special ability, and permanently gaining +1 attack die."},
-    "Ultramarines Astartes": {"name": "Tactical Doctrine", "effect": "Twice per fight, reroll a missed attack."},
-    "Blood Angels Astartes": {"name": "Red Thirst", "effect": "While below half Wounds, add +2 bonus dice (not +1) to melee attacks."},
-    "Dark Angels Astartes": {"name": "Secrets of the Rock", "effect": "Once per fight (not just once per Incursion), avoid one Wound entirely."},
-    "Space Wolves Astartes": {"name": "Curse of the Wulfen", "effect": "Melee Critical Hits deal +3 damage (not +1)."},
-    "Imperial Fists Astartes": {"name": "Bolter Drill", "effect": "Ranged attacks gain +2 ED (not +1)."},
-    "Salamanders Astartes": {"name": "Flame-Touched", "effect": "+3 Medicae charges (not +1) per Incursion; immune to Bleeding."},
-    "Raven Guard Astartes": {"name": "Shadow Strike", "effect": "The first attack against each new enemy group gains +3 bonus dice."},
-    "White Scars Astartes": {"name": "Hit and Run", "effect": "May Flee without triggering an enemy turn, twice per fight."},
-    "Iron Hands Astartes": {"name": "The Flesh is Weak", "effect": "Weapon and Armour durability loss is reduced by 2 per hit (not 1)."},
-    "Black Templars Astartes": {"name": "Vow of the Crusade", "effect": "While below half Wounds, add +2 bonus dice (not +1) to all attacks."},
+    "Aeldari-Pattern": {"name": "Battle Precognition", "effect": "Once per fight, reroll your Wrath Die AND keep the better of the two results. Also grows +1 Agility every Loop."},
+    "Ork-Pattern": {"name": "WAAAGH!", "effect": "While below half Wounds, add +2 bonus dice (not +1) to all melee attacks. Also grows +1 Strength every Loop."},  # wired
+    "Necron-Pattern": {"name": "Reanimation Protocols", "effect": "Once per fight (not just once per Incursion), if you would be reduced to 0 Wounds, instead remain at 25% Max Wounds. Also grows +1 Toughness every Loop."},  # wired
+    "Tau-Pattern": {"name": "For the Greater Good", "effect": "Once per fight, add +4 bonus dice to a ranged attack. Also grows +1 Intellect every Loop."},
+    "Ogryn-Pattern": {"name": "Bone 'Ead", "effect": "Reduce all Shock damage taken by 3 (minimum 0). Also grows +1 Strength every Loop."},
+    "Custodes-Pattern": {"name": "Guardian Eternal", "effect": "Twice per fight, negate one hit entirely before damage is rolled. Also grows +1 Willpower every Loop."},
+    "Sororitas-Pattern": {"name": "Shield of Faith", "effect": "Once per fight, reroll any one failed Test. Also grows +1 Willpower every Loop."},
+    "Kroot-Pattern": {"name": "Pack Hunter", "effect": "+2 bonus dice on the first attack against any target no one has attacked yet this fight. Also grows +1 Agility every Loop."},
+    "Genestealer-Cultist-Pattern": {"name": "The Stars Are Right", "effect": "Every Critical Hit grants an extra attack action (no longer once per fight). Also grows +1 Toughness every Loop."},
+    "Death-Guard-Pattern": {"name": "Nurgle's Gift", "effect": "Immune to Bleeding; recover 3 Wounds (not 1) whenever you inflict Bleeding. Also grows +1 Toughness every Loop."},
+    "Grey-Knight-Pattern": {"name": "Aegis of the Emperor", "effect": "Twice per fight, reduce incoming damage from a single hit by double your Willpower. Also grows +1 Willpower every Loop."},
+    "Chaos-Pattern": {"name": "Dark Blessing", "effect": "Your first Guaranteed Hit or Recover Shock each fight costs 0 Wrath instead of 1. Also grows +1 Strength every Loop."},
+    "Tyranid-Pattern": {"name": "Hive Mind Link", "effect": "Your Minions' attack pools gain +4 dice and each revives once mid-fight if killed. You start with Apex Tyranid: at the end of every Loop, it consumes your weakest other Minion, absorbing half its Wounds/Shock, inheriting its special ability, and permanently gaining attack dice."},
+    "Ultramarines Astartes": {"name": "Tactical Doctrine", "effect": "Twice per fight, reroll a missed attack. Also grows +1 Intellect every Loop."},
+    "Blood Angels Astartes": {"name": "Red Thirst", "effect": "While below half Wounds, add +2 bonus dice (not +1) to melee attacks. Also grows +1 Strength every Loop."},
+    "Dark Angels Astartes": {"name": "Secrets of the Rock", "effect": "Once per fight (not just once per Incursion), avoid one Wound entirely. Also grows +1 Willpower every Loop."},
+    "Space Wolves Astartes": {"name": "Curse of the Wulfen", "effect": "Melee Critical Hits deal +3 damage (not +1). Also grows +1 Agility every Loop."},
+    "Imperial Fists Astartes": {"name": "Bolter Drill", "effect": "Ranged attacks gain +2 ED (not +1). Also grows +1 Toughness every Loop."},
+    "Salamanders Astartes": {"name": "Flame-Touched", "effect": "+3 Medicae charges (not +1) per Incursion; immune to Bleeding. Also grows +1 Toughness every Loop."},
+    "Raven Guard Astartes": {"name": "Shadow Strike", "effect": "The first attack against each new enemy group gains +3 bonus dice. Also grows +1 Agility every Loop."},
+    "White Scars Astartes": {"name": "Hit and Run", "effect": "May Flee without triggering an enemy turn, twice per fight. Also grows +1 Initiative every Loop."},
+    "Iron Hands Astartes": {"name": "The Flesh is Weak", "effect": "Weapon and Armour durability loss is reduced by 2 per hit (not 1). Also grows +1 Toughness every Loop."},
+    "Black Templars Astartes": {"name": "Vow of the Crusade", "effect": "While below half Wounds, add +2 bonus dice (not +1) to all attacks. Also grows +1 Willpower every Loop."},
 }
+
+# Every non-minion-focused Origin gets a real, permanent scaling ability of
+# its own too - not just its starting helper Minion (see
+# INC_ORIGIN_HELPER_MINION) - so it keeps pace with escalating enemies
+# (see _inc_scale_factor) the same way Apex Tyranid/the Dreadnought do for
+# their Origins. Applied once per completed Loop (_inc_advance), same
+# trigger point as Minion growth. Human/Tyranid-Pattern scale entirely
+# through their Minion instead and are deliberately absent here.
+INC_ORIGIN_SCALING = {
+    "Aeldari-Pattern": {"attr": "Agility"},
+    "Ork-Pattern": {"attr": "Strength"},
+    "Necron-Pattern": {"attr": "Toughness"},
+    "Tau-Pattern": {"attr": "Intellect"},
+    "Ogryn-Pattern": {"attr": "Strength"},
+    "Custodes-Pattern": {"attr": "Willpower"},
+    "Sororitas-Pattern": {"attr": "Willpower"},
+    "Kroot-Pattern": {"attr": "Agility"},
+    "Genestealer-Cultist-Pattern": {"attr": "Toughness"},
+    "Death-Guard-Pattern": {"attr": "Toughness"},
+    "Grey-Knight-Pattern": {"attr": "Willpower"},
+    "Chaos-Pattern": {"attr": "Strength"},
+    "Ultramarines Astartes": {"attr": "Intellect"},
+    "Blood Angels Astartes": {"attr": "Strength"},
+    "Dark Angels Astartes": {"attr": "Willpower"},
+    "Space Wolves Astartes": {"attr": "Agility"},
+    "Imperial Fists Astartes": {"attr": "Toughness"},
+    "Salamanders Astartes": {"attr": "Toughness"},
+    "Raven Guard Astartes": {"attr": "Agility"},
+    "White Scars Astartes": {"attr": "Initiative"},
+    "Iron Hands Astartes": {"attr": "Toughness"},
+    "Black Templars Astartes": {"attr": "Willpower"},
+}
+
+
+def _inc_apply_origin_scaling(run, ch):
+    """Permanent +1 Attribute every completed Loop, for every non-minion-
+    focused Origin (see INC_ORIGIN_SCALING) - returns the extra fields to
+    fold into _inc_advance's single persist call, never persists on its
+    own (avoids the stale-run clobbering _inc_finish_combat_round hit
+    earlier: everything here must land in ONE write)."""
+    scaling = INC_ORIGIN_SCALING.get(run.get("origin"))
+    if not scaling:
+        return {}
+    attr = scaling["attr"]
+    statuses = dict(run.get("incursion_statuses") or {})
+    perm = dict(statuses.get("talent_permanent_attributes") or {})
+    perm[attr] = int(perm.get(attr, 0) or 0) + 1
+    statuses["talent_permanent_attributes"] = perm
+    updates = {"incursion_statuses": statuses}
+    if attr in ("Toughness", "Willpower"):
+        # Marginal effect of this one point only, added on top of whatever
+        # Max Wounds/Shock already is - see _inc_pool_updates_for_attribute
+        # for why replacing it outright with a from-scratch recompute would
+        # silently erase a stacked Talent's flat shock/wounds bonus.
+        merged_before = _inc_merge_character(ch, run)
+        pools_before = _inc_life_pools(merged_before, run.get("origin"), run.get("minions"))
+        merged_after = _inc_merge_character(ch, {**run, "incursion_statuses": statuses})
+        pools_after = _inc_life_pools(merged_after, run.get("origin"), run.get("minions"))
+        if attr == "Toughness":
+            gain = max(0, pools_after["wounds_max"] - pools_before["wounds_max"])
+            updates["wounds_max"] = int(run.get("wounds_max", 0) or 0) + gain
+            updates["wounds_current"] = min(updates["wounds_max"], int(run.get("wounds_current", 0) or 0) + gain)
+        else:
+            gain = max(0, pools_after["shock_max"] - pools_before["shock_max"])
+            updates["shock_max"] = int(run.get("shock_max", 0) or 0) + gain
+            updates["shock_current"] = min(updates["shock_max"], int(run.get("shock_current", 0) or 0) + gain)
+    return updates
 
 
 def _inc_origin_attributes(origin):

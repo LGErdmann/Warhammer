@@ -4150,6 +4150,8 @@ def inject_theme():
     .inc-pack-item .pack-icon{font-size:1rem}
     .inc-pack-item .pack-name{flex:1;font:700 .74rem Cinzel,serif;color:#d8c18a;text-transform:uppercase;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .inc-pack-item .pack-sub{font:8px monospace;color:#8f8065;white-space:nowrap}
+    .inc-pack-item .pack-ability{margin-left:auto;padding-left:8px;font-size:.62rem;color:#d8a8ff;text-align:right;font-style:italic}
+    .inc-minion-ability{margin-top:5px;text-align:right;font-size:.62rem;color:#d8a8ff;font-style:italic;opacity:.9}
     .inc-pack-item.rarity-uncommon{border-color:#4c9a5b}.inc-pack-item.rarity-uncommon .pack-name{color:#8fd98f}
     .inc-pack-item.rarity-rare{border-color:#3d78c9}.inc-pack-item.rarity-rare .pack-name{color:#8fc0ff}
     .inc-pack-item.rarity-legendary{border-color:#c9922e;box-shadow:0 0 10px rgba(201,146,46,.25)}.inc-pack-item.rarity-legendary .pack-name{color:#ffcf6b}
@@ -6453,12 +6455,21 @@ def _inc_render_backpack(run, ch):
         status = "ACTIVE" if minion.get("alive") else "DOWN · revives on Rest"
         level = int(minion.get("level", 1) or 1)
         lvl_tag = f" · Lv{level}" if level > 1 else ""
+        ability = str(minion.get("ability") or "").strip()
+        ability_html = f"<span class='pack-ability'>{html.escape(ability)}</span>" if ability else ""
         st.markdown(
             f"<div class='inc-pack-item {rarity_cls}'><span class='pack-icon'>{_inc_minion_glyph_html(minion.get('origin'))}</span>"
             f"<span class='pack-name'>{html.escape(str(minion.get('name','Minion')))}{lvl_tag}</span>"
             f"<span class='pack-sub'>{int(minion.get('wounds_current',0))}/{int(minion.get('wounds_max',0))}W · "
-            f"{int(minion.get('shock_current',0))}/{int(minion.get('shock_max',0))}S · {status}</span></div>",
+            f"{int(minion.get('shock_current',0))}/{int(minion.get('shock_max',0))}S · {status}</span>{ability_html}</div>",
             unsafe_allow_html=True)
+        if st.button("Release", key=f"inc_release_minion_{run['id']}_{minion.get('name')}", use_container_width=True):
+            try:
+                _inc_release_minion(run, ch, minion.get("name"))
+            except ValueError as exc:
+                st.error(str(exc).replace("_", " ").title())
+            else:
+                st.rerun()
     items = list(run.get("starting_wargear") or []) + list(run.get("extra_wargear") or [])
     st.markdown("<div class='inc-backpack-title'>BACKPACK</div>", unsafe_allow_html=True)
     if not items:
@@ -7161,6 +7172,29 @@ def _inc_generate_first_encampment_offers(ch, run):
     A dedicated pool rather than _inc_generate_offers()'s general random mix,
     so a fresh run never opens on three Attribute offers with nothing to
     actually equip."""
+    if run.get("origin") == "Tyranid-Pattern":
+        # Tyranid-Pattern never sees generic Imperium gear or combat
+        # Talents, not even here at the very first choice of the run.
+        weapon = INC_TYRANID_WARGEAR["Common"][0]
+        armour = INC_TYRANID_ARMOUR["Common"]
+        candidates = [
+            {"type": "tyranid_wargear", "rarity": "Common", "name": weapon["name"], "icon": weapon["icon"],
+             "melee": weapon["melee"], "damage": weapon["damage"], "ed": weapon["ed"], "ap": weapon["ap"],
+             "effect": weapon["effect"], "minion_support": weapon["minion_support"], "support_value": weapon["support_value"],
+             "cost": 0, "label": weapon["name"],
+             "detail": f"Common · {weapon['damage']} DMG +{weapon['ed']} ED · {weapon['effect']}",
+             "first_encampment_free": True},
+            {"type": "tyranid_armour", "rarity": "Common", "name": armour["name"], "icon": armour["icon"],
+             "armour_rating": armour["armour_rating"], "cost": 0, "label": armour["name"],
+             "detail": f"Common · Armour Rating +{armour['armour_rating']}", "first_encampment_free": True},
+        ]
+        talents = INC_MINION_TALENTS.get("Tyranid-Pattern", [])
+        if talents:
+            mt = random.choice(talents)
+            candidates.append({"type": "talent_minion", "name": mt["name"], "effect": mt["effect"], "cost": 0,
+                                "label": mt["name"], "detail": f"{mt['rarity']} · {mt['effect']}",
+                                "rarity": mt["rarity"], "first_encampment_free": True})
+        return [{**o, "offer_id": i} for i, o in enumerate(candidates)]
     merged = _inc_merge_character(ch, run)
     pool = [r for r in list_craft_items("wargear", active_only=True) if craft_details(r).get("incursion_only")]
     weapons = [r for r in pool if str(craft_details(r).get("category", "")).lower() in ("firearm", "melee")]
@@ -7282,6 +7316,7 @@ def _inc_apply_purchase(run, ch, offer):
             leveled=_inc_minion_stats(offer["name"],icon,offer["origin"],offer["rarity"],new_level,fellowship)
             current_minions=[leveled if m.get("name")==offer["name"] else m for m in current_minions]
         else:
+            if len(current_minions)>=INC_MINION_MAX: raise ValueError("minion_limit")
             current_minions.append(_inc_minion_stats(offer["name"],icon,offer["origin"],offer["rarity"],1,fellowship))
         pool_updates["minions"]=current_minions
     elif offer["type"]=="talent_minion":
@@ -7476,12 +7511,41 @@ def _inc_stage_after(run):
     return INC_SEQUENCE[(i + 1) % len(INC_SEQUENCE)]
 
 
+def _inc_apex_tyranid_consume(minions):
+    """Apex Tyranid's species trait: at the end of each Loop, it consumes
+    the weakest other Minion - absorbs half its Wounds/Shock (permanently,
+    into its own max), inherits its special ability, and permanently
+    gains +1 attack die. The consumed Minion is removed from the roster."""
+    apex = next((m for m in minions if m.get("name") == "Apex Tyranid"), None)
+    if not apex:
+        return minions
+    others = [m for m in minions if m is not apex]
+    if not others:
+        return minions
+    weakest = min(others, key=lambda m: int(m.get("wounds_max", 0) or 0) + int(m.get("shock_max", 0) or 0))
+    gained_wounds = max(0, int(weakest.get("wounds_max", 0) or 0) // 2)
+    gained_shock = max(0, int(weakest.get("shock_max", 0) or 0) // 2)
+    apex["wounds_max"] = int(apex.get("wounds_max", 0) or 0) + gained_wounds
+    apex["wounds_current"] = int(apex.get("wounds_current", 0) or 0) + gained_wounds
+    apex["shock_max"] = int(apex.get("shock_max", 0) or 0) + gained_shock
+    apex["shock_current"] = int(apex.get("shock_current", 0) or 0) + gained_shock
+    apex["bonus_die"] = int(apex.get("bonus_die", 0) or 0) + 1
+    consumed_ability = str(weakest.get("ability") or "").strip()
+    if consumed_ability and consumed_ability not in str(apex.get("ability") or ""):
+        existing = str(apex.get("ability") or "").strip()
+        apex["ability"] = f"{existing} {consumed_ability}".strip()
+    return [m for m in minions if m is not weakest]
+
+
 def _inc_advance(run, ch):
     nxt = _inc_stage_after(run)
     loop_no = run["loop_no"] + 1 if nxt == "start" else run["loop_no"]
     pending_clear = False if run["stage"] in ("boss", "pvp_boss3") else run["pending_boss3_pvp"]
     node = _inc_build_node_for_stage(nxt, ch, {**run, "loop_no": loop_no})
-    return _inc_persist(run["id"], stage=nxt, loop_no=loop_no, pending_boss3_pvp=pending_clear, node=node)
+    updates = {"stage": nxt, "loop_no": loop_no, "pending_boss3_pvp": pending_clear, "node": node}
+    if nxt == "start" and run.get("minions"):
+        updates["minions"] = _inc_apex_tyranid_consume([dict(m) for m in run["minions"]])
+    return _inc_persist(run["id"], **updates)
 
 
 def _inc_mark_dead(run, ch, reason):
@@ -7522,14 +7586,38 @@ def _inc_start_run(ch, origin=None):
     _start_weapons=[w for w in starting_wargear if _inc_is_weapon_item(w)]
     _start_nonweapons=[w for w in starting_wargear if not _inc_is_weapon_item(w)]
     if not _start_weapons:
-        _start_weapons = [dict(INC_STANDARD_WEAPON)]
+        # A fresh self-registered account always has an empty real sheet,
+        # so this is the primary path for everyone, not just an edge case -
+        # Tyranid-Pattern must never fall back to a generic Imperium knife.
+        if origin == "Tyranid-Pattern":
+            tw = INC_TYRANID_WARGEAR["Common"][0]
+            _start_weapons = [{"name": tw["name"], "effect": tw["effect"], "equipped": True, "quantity": 1,
+                                "details": {"category": "melee weapon" if tw["melee"] else "firearm", "damage": str(tw["damage"]),
+                                            "ed": tw["ed"], "ap": tw["ap"], "rarity": "Common", "incursion_only": True, "stackable": False,
+                                            "minion_support": tw["minion_support"], "support_value": tw["support_value"]}}]
+        else:
+            _start_weapons = [dict(INC_STANDARD_WEAPON)]
     starting_wargear=_start_weapons[:3]+_start_nonweapons
-    standard_armour = {"name":"Incursion Field Plate","effect":"Standard Incursion armour. Armour Rating +2.","equipped":True,"quantity":1,
-                       "details":{"category":"armour","armour_rating":2,"rarity":"Common","incursion_only":True,"stackable":False}}
+    if origin == "Tyranid-Pattern":
+        ta = INC_TYRANID_ARMOUR["Common"]
+        standard_armour = {"name": ta["name"], "effect": "Tyranid bio-armour.", "equipped": True, "quantity": 1,
+                            "details": {"category": "armour", "armour_rating": ta["armour_rating"], "rarity": "Common",
+                                        "incursion_only": True, "stackable": False}}
+    else:
+        standard_armour = {"name":"Incursion Field Plate","effect":"Standard Incursion armour. Armour Rating +2.","equipped":True,"quantity":1,
+                           "details":{"category":"armour","armour_rating":2,"rarity":"Common","incursion_only":True,"stackable":False}}
     starting_wargear.append(standard_armour)
     extra_talents = [origin_talent] if origin_talent else []
+    starting_minions = []
+    if origin == "Tyranid-Pattern":
+        # Species trait, on top of Hive Mind Link: Apex Tyranid grows by
+        # consuming the weakest other Minion at the end of each Loop - see
+        # _inc_apex_tyranid_consume, called from _inc_advance.
+        fellowship = int(_inc_origin_attributes(origin).get("Fellowship", INC_ORIGIN_BASE_ATTR))
+        starting_minions = [_inc_minion_stats("Apex Tyranid", "", "Tyranid-Pattern", "Legendary", 1, fellowship)]
     first_run_stub = {"bonus_attributes": {}, "bonus_skills": {}, "extra_wargear": [], "starting_wargear": starting_wargear,
-                      "extra_talents": extra_talents, "extra_powers": [], "equipped_armor_key": _inc_weapon_key(standard_armour)}
+                      "extra_talents": extra_talents, "extra_powers": [], "equipped_armor_key": _inc_weapon_key(standard_armour),
+                      "origin": origin}
     first_offers = _inc_generate_first_encampment_offers(run_ch, first_run_stub)
     first_node = {"type": "shop", "subtype": "first_encampment", "offers": first_offers}
     initial_armour_key = _inc_weapon_key(standard_armour)
@@ -7549,11 +7637,11 @@ def _inc_start_run(ch, origin=None):
         "INSERT INTO incursion_run(character_id,status,stage,loop_no,run_number,wounds_current,wounds_max,"
         "shock_current,shock_max,wrath_current,wrath_max,xp,xp_earned,armour_durability_current,"
         "armour_durability_max,weapon_durabilities,incursion_statuses,node,created_at,equipped_armor_key,starting_wargear,"
-        "extra_talents,origin) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "extra_talents,origin,minions) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (ch["id"], "active", "start", 1, run_number, pools["wounds_max"], pools["wounds_max"],
          pools["shock_max"], pools["shock_max"], pools["wrath_max"], pools["wrath_max"], 0, 0,
          armour_max, armour_max, json.dumps(weapon_values), json.dumps({}), json.dumps(first_node), now_iso(), initial_armour_key, json.dumps(starting_wargear),
-         json.dumps(extra_talents), origin or ""))
+         json.dumps(extra_talents), origin or "", json.dumps(starting_minions)))
     conn.commit()
     new_id = cur.lastrowid
     conn.close()
@@ -7953,7 +8041,7 @@ def _inc_minion_group_attack(minions, node, merged):
         swings = 2 if rarity in ("Legendary", "Unique") else 1
         dmg_mult = 1.5 if rarity == "Unique" else 1.0
         bleeds = rarity in ("Rare", "Legendary", "Unique")
-        m_pool = fellowship + max(0, int(minion.get("shock_current", 0) or 0)) + int(minion.pop("next_bonus_die", 0) or 0)
+        m_pool = fellowship + max(0, int(minion.get("shock_current", 0) or 0)) + int(minion.pop("next_bonus_die", 0) or 0) + int(minion.get("bonus_die", 0) or 0)
         for _swing in range(swings):
             live_targets = [e for e in node["enemies"] if e["alive"]]
             if not live_targets:
@@ -8703,13 +8791,15 @@ def _inc_render_minion_status(run, node):
                              f"<span class='inc-dice-icons'>rolled {int(entry.get('damage',0) or 0)} dmg</span></div>")
             else:
                 roll_html = "<div class='inc-dice-empty'>No rolls yet</div>"
+            ability = str(minion.get("ability") or "").strip()
+            ability_html = f"<div class='inc-minion-ability'>{html.escape(ability)}</div>" if ability else ""
             st.markdown(
                 f"<div class='inc-enemy {rarity_cls}'>"
                 f"<div class='inc-enemy-strip'><span>{_inc_minion_glyph_html(minion.get('origin'))}{html.escape(str(minion.get('name','Minion')))}</span><span>{status}</span></div>"
                 f"<div class='inc-npc-vitals'>"
                 f"<span class='inc-vital wounds' style='--vital-pct:{wounds_pct:.1f}%;--vital-pct-num:{wounds_pct/100:.3f};--vital-color:#b23a35'><b>{wounds_cur}/{wounds_max}</b><span class='inc-vital-label'>WOUNDS</span></span>"
                 f"<span class='inc-vital shock' style='--vital-pct:{shock_pct:.1f}%;--vital-color:#9b72c2'><b>{shock_cur}/{shock_max}</b><span class='inc-vital-label'>SHOCK</span></span>"
-                f"</div>{roll_html}</div>", unsafe_allow_html=True)
+                f"</div>{roll_html}{ability_html}</div>", unsafe_allow_html=True)
 
 
 def _inc_render_dice_tray(node):
@@ -9369,7 +9459,7 @@ INC_ORIGIN_TALENTS = {
     "Death-Guard-Pattern": {"name": "Nurgle's Gift", "effect": "Immune to Bleeding; recover 3 Wounds (not 1) whenever you inflict Bleeding."},
     "Grey-Knight-Pattern": {"name": "Aegis of the Emperor", "effect": "Twice per fight, reduce incoming damage from a single hit by double your Willpower."},
     "Chaos-Pattern": {"name": "Dark Blessing", "effect": "Your first Guaranteed Hit or Recover Shock each fight costs 0 Wrath instead of 1."},
-    "Tyranid-Pattern": {"name": "Hive Mind Link", "effect": "Your Minion's attack pool gains +4 dice and it revives once mid-fight if killed."},
+    "Tyranid-Pattern": {"name": "Hive Mind Link", "effect": "Your Minions' attack pools gain +4 dice and each revives once mid-fight if killed. You start with Apex Tyranid: at the end of every Loop, it consumes your weakest other Minion, absorbing half its Wounds/Shock, inheriting its special ability, and permanently gaining +1 attack die."},
     "Ultramarines Astartes": {"name": "Tactical Doctrine", "effect": "Twice per fight, reroll a missed attack."},
     "Blood Angels Astartes": {"name": "Red Thirst", "effect": "While below half Wounds, add +2 bonus dice (not +1) to melee attacks."},
     "Dark Angels Astartes": {"name": "Secrets of the Rock", "effect": "Once per fight (not just once per Incursion), avoid one Wound entirely."},
@@ -9398,6 +9488,7 @@ def _inc_origin_attributes(origin):
 # meant for you in order until they drop ("leva o dano na frente"), and
 # revive to full on Rest. Never a separate equip step - bought = active.
 INC_MINION_ORIGINS = ("Human", "Tyranid-Pattern")
+INC_MINION_MAX = 4
 INC_MINION_RARITY_STATS = {
     "Common":    {"wounds": 8,  "shock": 4,  "resilience": 2, "damage": 3,  "ed": 1, "cost": 15},
     "Uncommon":  {"wounds": 14, "shock": 6,  "resilience": 3, "damage": 5,  "ed": 1, "cost": 30},
@@ -9547,6 +9638,15 @@ def _inc_revive_minions(run):
         m["shock_current"] = int(m.get("shock_max", 0) or 0)
         m["alive"] = True
     return minions
+
+
+def _inc_release_minion(run, ch, name):
+    """Voluntarily let a Minion go - frees a roster slot (capped at
+    INC_MINION_MAX) so a better one from the shop isn't wasted."""
+    minions = [m for m in (run.get("minions") or []) if m.get("name") != name]
+    if len(minions) == len(run.get("minions") or []):
+        raise ValueError("minion_not_found")
+    return _inc_persist(run["id"], minions=minions)
 
 
 def _inc_register_account(username, pw):

@@ -8672,9 +8672,18 @@ def _inc_minion_group_attack(minions, node, merged, talent_mods=None):
         m_pool = fellowship + max(0, int(minion.get("shock_current", 0) or 0)) + int(minion.pop("next_bonus_die", 0) or 0) + int(minion.get("bonus_die", 0) or 0) + pool_bonus
         for _swing in range(swings):
             live_targets = [e for e in node["enemies"] if e["alive"]]
-            if not live_targets:
+            if live_targets:
+                mtarget = live_targets[0]
+            elif node["enemies"]:
+                # The player's own attack (which can hit every locked
+                # target at once) already finished off every enemy before
+                # this Minion's turn came - it still takes its swing
+                # (against the last-standing target, no real effect) so
+                # its own roll always shows instead of leaving the card
+                # stuck on "No rolls yet" for the rest of the fight.
+                mtarget = node["enemies"][-1]
+            else:
                 break
-            mtarget = live_targets[0]
             m_rolls, m_icons, m_wrath_die_6 = _inc_roll_pool(m_pool)
             m_hit = m_icons >= mtarget["defence"]
             m_damage = 0

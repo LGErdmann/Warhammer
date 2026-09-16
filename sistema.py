@@ -1426,7 +1426,7 @@ def init_db():
         "wrath_current": "INTEGER", "wrath_max": "INTEGER", "armour_durability_current": "INTEGER DEFAULT 0",
         "armour_durability_max": "INTEGER DEFAULT 0", "weapon_durabilities": "TEXT DEFAULT '{}'", "xp_earned": "INTEGER DEFAULT 0",
         "incursion_statuses": "TEXT DEFAULT '{}'", "run_number": "INTEGER DEFAULT 1",
-        "origin": "TEXT DEFAULT ''",
+        "origin": "TEXT DEFAULT ''", "minion": "TEXT DEFAULT '{}'",
     })
     c.execute("""CREATE TABLE IF NOT EXISTS incursion_pvp_queue(
         id INTEGER PRIMARY KEY AUTOINCREMENT, run_id INTEGER NOT NULL, character_id INTEGER NOT NULL,
@@ -6107,6 +6107,28 @@ INC_REWARD_XP = {"easy": 15, "medium": 28, "hard": 45, "boss": 120}
 INC_REST_HEAL_FRACTION = 0.25
 INC_FALLEN_CHANCE = 0.35
 INC_EASY_POOL_CAP = 4
+INC_DEBUFF_CHANCE = 0.25
+INC_DEBUFF_ATTRS = ["Initiative", "Agility", "Strength", "Willpower"]
+
+# "Once per fight" Talent/status flags - none of these were ever being
+# cleared anywhere, so every "once per fight" Talent (Combat Veteran,
+# Predator's Mark, Unyielding Flesh, Iron Resolve, and the new Indomitable/
+# Reanimation Protocols below) only ever fired ONCE FOR THE ENTIRE RUN,
+# not once per fight as their text promised - a real, pre-existing reason
+# Talents felt weak. Cleared whenever the current fight actually ends
+# (victory or a successful Flee).
+_INC_PER_FIGHT_STATUS_FLAGS = (
+    "combat_first_hit_used", "predator_mark_used", "unyielding_used",
+    "iron_resolve_used", "reroll_miss_used", "reanimation_used",
+)
+
+
+def _inc_reset_per_fight_statuses(statuses):
+    statuses = dict(statuses or {})
+    for k in _INC_PER_FIGHT_STATUS_FLAGS:
+        statuses.pop(k, None)
+    statuses["enemy_debuffs"] = {}
+    return statuses
 INC_DIFFICULTY_TIER = {"easy": 1, "medium": 2, "hard": 3, "boss": 4}
 INC_PVP_XP_REWARD = {"mid": 180, "boss3": 300}
 INC_FALLEN_PREFIXES = ["Spectre of", "Shade of", "Corrupted Echo of", "Remnant of"]
@@ -6138,6 +6160,7 @@ def _inc_decode_run(row):
     r["incursion_statuses"] = _inc_json_field(r.get("incursion_statuses"), {})
     r["consumable_charges"] = _inc_json_field(r.get("consumable_charges"), {})
     r["weapon_durabilities"] = _inc_json_field(r.get("weapon_durabilities"), {})
+    r["minion"] = _inc_json_field(r.get("minion"), {})
     for f in ("starting_wargear", "extra_wargear", "extra_talents", "extra_powers", "extra_keywords"):
         r[f] = _inc_json_field(r.get(f), [])
     r["node"] = _inc_json_field(r.get("node"), None)
@@ -6323,6 +6346,9 @@ def _inc_merge_character(ch, run):
     statuses=dict(run.get("incursion_statuses") or {})
     for k,v in (statuses.get("talent_permanent_attributes") or {}).items(): attrs[k]=int(attrs.get(k,1))+int(v)
     for k,v in (statuses.get("combat_attribute_bonus") or {}).items(): attrs[k]=int(attrs.get(k,1))+int(v)
+    # Some enemies can inflict a debuff on a hit - lasts for the rest of
+    # the fight only, cleared by _inc_finish_combat_round once it resolves.
+    for k,v in (statuses.get("enemy_debuffs") or {}).items(): attrs[k]=max(1,int(attrs.get(k,1))+int(v))
     merged["attributes"]=attrs
     merged["skills"]={s:0 for s in SKILLS}
     # Rank/Tier are run-local baselines, not inherited from the character.
@@ -6399,6 +6425,15 @@ def _inc_render_backpack(run, ch):
     """Right-side loadout panel: every carried item as a rarity-coloured
     tile - a firearm/melee icon and an EQUIPPED marker for Armour instead
     of a dropdown you had to open to see what you're even carrying."""
+    minion = run.get("minion") or {}
+    if minion:
+        rarity_cls = f"rarity-{str(minion.get('rarity') or 'Common').lower()}"
+        status = "ACTIVE" if minion.get("alive") else "DOWN · revives on Rest"
+        st.markdown(
+            f"<div class='inc-pack-item {rarity_cls}'><span class='pack-icon'>🐾</span>"
+            f"<span class='pack-name'>{html.escape(str(minion.get('name','Minion')))}</span>"
+            f"<span class='pack-sub'>{int(minion.get('wounds_current',0))}/{int(minion.get('wounds_max',0))} · {status}</span></div>",
+            unsafe_allow_html=True)
     items = list(run.get("starting_wargear") or []) + list(run.get("extra_wargear") or [])
     st.markdown("<div class='inc-backpack-title'>BACKPACK</div>", unsafe_allow_html=True)
     if not items:
@@ -6416,6 +6451,7 @@ def _inc_render_backpack(run, ch):
         name = str(item.get("name", "Item"))
         is_armour = _inc_is_armour_item(item)
         is_weapon = details.get("damage") not in (None, "")
+        heal_wounds = int(details.get("heal_wounds", 0) or 0); heal_shock = int(details.get("heal_shock", 0) or 0)
         equipped_cls = ""
         if is_armour:
             equipped = str(run.get("equipped_armor_key") or "") == key
@@ -6432,7 +6468,18 @@ def _inc_render_backpack(run, ch):
             f"<div class='inc-pack-item rarity-{rarity} {equipped_cls}'>"
             f"<span class='pack-icon'>{icon}</span><span class='pack-name'>{html.escape(name)}</span>"
             f"<span class='pack-sub'>{html.escape(sub)}</span></div>", unsafe_allow_html=True)
-        if not is_armour:
+        if not is_armour and not is_weapon and (heal_wounds or heal_shock):
+            # Healing Consumables (Stims etc.) were previously stuck in the
+            # backpack with no way to actually use them - only weapons had
+            # a "damage" field and thus showed up as a usable action.
+            if st.button("USE", key=f"inc_pack_use_{run['id']}_{key}", use_container_width=True):
+                try:
+                    _inc_use_consumable(run, ch, key)
+                except ValueError as exc:
+                    st.error(str(exc).replace("_", " ").title())
+                else:
+                    st.rerun()
+        elif not is_armour:
             if st.button("Discard", key=f"inc_pack_discard_{run['id']}_{key}", use_container_width=True):
                 try:
                     _inc_discard_item(run, ch, key)
@@ -6625,23 +6672,26 @@ def _inc_life_pools(ch):
             "wrath_max": 2}
 
 
-def _inc_damage_result(total_damage, resilience, ap=0, shock_current=None):
+def _inc_damage_result(total_damage, resilience, ap=0, shock_current=None, defence=0):
     """Resolve a hit: Resilience (adjusted by Armour Penetration) soaks
-    damage like armour, same as before. What gets through no longer checks
-    for an exact Resilience match to decide "a little Shock or nothing" -
-    it drains the target's current Shock first, and only once Shock is
-    fully spent does the remainder become Wounds. shock_current=None (no
-    Shock pool to reference, e.g. the compressed offline duel simulation)
-    falls back to sending all net damage straight to Wounds.
+    damage like armour, same as before, and that soaked total is what CAN
+    drain Shock while any is standing. Once Shock is fully spent, the
+    remainder reaching Wounds passes through a second reduction - Defence
+    - before it counts as a Wound; being hard to hit still helps even on a
+    hit that gets through. shock_current=None (no Shock pool to reference,
+    e.g. the compressed offline duel simulation) sends all of the
+    Resilience-reduced damage to Wounds, still passing through Defence.
     """
     total_damage = max(0, int(total_damage or 0))
     effective_resilience = max(0, int(resilience or 0) + int(ap or 0))
     net = max(0, total_damage - effective_resilience)
+    defence = max(0, int(defence or 0))
     if shock_current is None:
-        return 0, net, effective_resilience
+        return 0, max(0, net - defence), effective_resilience
     shock_avail = max(0, int(shock_current or 0))
     shock_dealt = min(net, shock_avail)
-    wounds_dealt = net - shock_dealt
+    remainder = net - shock_dealt
+    wounds_dealt = max(0, remainder - defence)
     return shock_dealt, wounds_dealt, effective_resilience
 
 
@@ -6749,6 +6799,72 @@ def _inc_usable_weapons(ch, run):
 def _inc_weapon_by_key(ch, run, key):
     options = _inc_usable_weapons(ch, run)
     return next((w for w in options if w["key"] == key), options[0])
+
+
+def _inc_usable_consumables(ch, run):
+    """Wargear whose only effect is healing (heal_wounds/heal_shock), with
+    no damage profile - these never appeared in _inc_usable_weapons (which
+    requires a "damage" field to list anything at all), so a bought Stim
+    just sat in the backpack doing nothing, with no action anywhere to
+    actually use it."""
+    merged = _inc_merge_character(ch, run)
+    charges = run.get("consumable_charges") or {}
+    out = []
+    seen = set()
+    for w in (merged.get("wargear") or []):
+        if not w.get("equipped", True):
+            continue
+        details = _gear_details_dict(w.get("details", {}))
+        if details.get("damage") not in (None, ""):
+            continue
+        heal_wounds = int(details.get("heal_wounds", 0) or 0)
+        heal_shock = int(details.get("heal_shock", 0) or 0)
+        if heal_wounds <= 0 and heal_shock <= 0:
+            continue
+        key = _inc_weapon_key(w)
+        if key in seen:
+            continue
+        seen.add(key)
+        remaining = charges.get(key)
+        if remaining is None:
+            remaining = int(w.get("quantity", 1) or 0)
+        if remaining <= 0:
+            continue
+        out.append({"key": key, "name": w.get("name", "Item"), "heal_wounds": heal_wounds,
+                     "heal_shock": heal_shock, "remaining": remaining,
+                     "rarity": str(details.get("rarity") or "Common")})
+    return out
+
+
+def _inc_apply_consumable(run, ch, item_key):
+    item = next((i for i in _inc_usable_consumables(ch, run) if i["key"] == item_key), None)
+    if item is None: raise ValueError("item_not_found")
+    new_wounds = min(int(run.get("wounds_max", 0) or 0), int(run.get("wounds_current", 0) or 0) + item["heal_wounds"])
+    new_shock = min(int(run.get("shock_max", 0) or 0), int(run.get("shock_current", 0) or 0) + item["heal_shock"])
+    charges = dict(run.get("consumable_charges") or {})
+    charges[item_key] = max(0, item["remaining"] - 1)
+    return item, new_wounds, new_shock, charges
+
+
+def _inc_use_consumable(run, ch, item_key):
+    """Out-of-combat use (Encampment/Shop/Backpack) - no enemy turn to trigger."""
+    item, new_wounds, new_shock, charges = _inc_apply_consumable(run, ch, item_key)
+    return _inc_persist(run["id"], wounds_current=new_wounds, shock_current=new_shock, consumable_charges=charges)
+
+
+def _inc_combat_use_item(run, ch, item_key):
+    """In-combat use - costs your turn, same as Medicae/Heal does."""
+    if not run.get("node") or run["node"].get("type") != "combat": raise ValueError("wrong_node")
+    node = copy.deepcopy(run["node"])
+    item, new_wounds, new_shock, charges = _inc_apply_consumable(run, ch, item_key)
+    run = _inc_persist(run["id"], consumable_charges=charges)
+    log = [{"actor": "player", "action": "use_item", "item": item["name"],
+            "heal_wounds": item["heal_wounds"], "heal_shock": item["heal_shock"]}]
+    player_traits = _inc_player_traits(ch, run)
+    minion = _inc_load_minion(run)
+    log += _inc_enemy_turn(node.get("enemies", []), player_traits, new_shock, minion)
+    run = _inc_persist(run["id"], wounds_current=new_wounds, shock_current=new_shock)
+    return _inc_finish_combat_round(run, ch, node, log, minion=minion)
 
 
 def _inc_best_attack_pool(ch):
@@ -6956,6 +7072,9 @@ def _inc_is_psyker(ch):
 def _inc_generate_offers(ch, run):
     merged = _inc_merge_character(ch, run)
     attrs = effective_attributes(merged)
+    origin = run.get("origin")
+    is_tyranid = (origin == "Tyranid-Pattern")
+    is_minion_origin = origin in INC_MINION_ORIGINS
     candidates=[]
     for attr in ATTRS:
         cur=int(attrs.get(attr,1)); candidates.append({"type":"attribute","attr":attr,"cost":_inc_attribute_cost(cur),"label":f"+1 {attr}","detail":f"Current: {cur}","rarity":"Common"})
@@ -6972,16 +7091,33 @@ def _inc_generate_offers(ch, run):
     add_random(weapons,2)
     add_random(armour,1)
     add_random(consumables,1)
-    # Talent offers are limited by the shared physical pool.
-    talent_catalog={int(r["id"]):r for r in list_craft_items("talent",active_only=False)}
-    available_talents=[]
-    for pr in _inc_talent_pool_rows():
-        row=next((r for r in talent_catalog.values() if str(r["name"]).lower()==str(pr["name"]).lower()),None)
-        if row: available_talents.append((row,pr))
-    for row,pr in random.sample(available_talents,min(2,len(available_talents))):
-        d=craft_details(row); candidates.append({"type":"talent","craft_id":int(row["id"]),"name":row["name"],"effect":row.get("effect",""),"cost":max(15,int(row.get("cost",30) or 30)),"label":row["name"],"detail":f"{pr['rarity']} · {row.get('effect','')}","rarity":pr['rarity']})
+    # Talent offers: a Tyranid-Pattern run's Talents are ALWAYS Minion
+    # Talents only, never the general combat pool - "os tyranídios só têm
+    # talentos relacionados a minions". Human (the other Minion-eligible
+    # Origin) mixes both pools; everyone else never sees a Minion Talent.
+    if not is_tyranid:
+        talent_catalog={int(r["id"]):r for r in list_craft_items("talent",active_only=False)}
+        available_talents=[]
+        for pr in _inc_talent_pool_rows():
+            row=next((r for r in talent_catalog.values() if str(r["name"]).lower()==str(pr["name"]).lower()),None)
+            if row: available_talents.append((row,pr))
+        for row,pr in random.sample(available_talents,min(2,len(available_talents))):
+            d=craft_details(row); candidates.append({"type":"talent","craft_id":int(row["id"]),"name":row["name"],"effect":row.get("effect",""),"cost":max(15,int(row.get("cost",30) or 30)),"label":row["name"],"detail":f"{pr['rarity']} · {row.get('effect','')}","rarity":pr['rarity']})
+    if is_minion_origin:
+        n = 2 if is_tyranid else 1
+        for mt in random.sample(INC_MINION_TALENTS, min(n, len(INC_MINION_TALENTS))):
+            cost = max(15, INC_MINION_RARITY_STATS[mt["rarity"]]["cost"])
+            candidates.append({"type":"talent_minion","name":mt["name"],"effect":mt["effect"],"cost":cost,
+                                "label":mt["name"],"detail":f"{mt['rarity']} · {mt['effect']}","rarity":mt["rarity"]})
     candidates.append({"type":"heal_charge","cost":20,"label":"Medicae Ration","detail":"+1 Medicae use in combat","rarity":"Common"})
-    return [{**o,"offer_id":i} for i,o in enumerate(random.sample(candidates,min(3,len(candidates))))]
+    picked = random.sample(candidates, min(3, len(candidates))) if candidates else []
+    # Minions get a GUARANTEED slot for Human/Tyranid runs, every shop -
+    # "toda loja de boss aparece pelo menos 1" (and every other shop too).
+    if is_minion_origin:
+        minion_offer = _inc_generate_minion_offer(origin)
+        if picked: picked[0] = minion_offer
+        else: picked = [minion_offer]
+    return [{**o,"offer_id":i} for i,o in enumerate(picked[:3])]
 
 def _inc_generate_first_encampment_offers(ch, run):
     """The very first choice of an Incursion, and only this one: exactly two
@@ -7096,6 +7232,18 @@ def _inc_apply_purchase(run, ch, offer):
             if existing: existing["quantity"]=int(existing.get("quantity",1))+1
             else: extra_wargear.append(entry)
     elif offer["type"]=="heal_charge": heal_charges+=1
+    elif offer["type"]=="minion":
+        # Always equipped the instant it's bought - no separate equip step,
+        # and a new one simply replaces whatever Minion you already had.
+        pool_updates["minion"]=_inc_minion_stats(offer["origin"],offer["rarity"])
+    elif offer["type"]=="talent_minion":
+        name=offer["name"]; rarity=offer.get("rarity","Common")
+        current=next((x for x in extra_talents if str(x.get("name","")).lower()==name.lower()),None)
+        if current: current["stacks"]=int(current.get("stacks",1) or 1)+1
+        else: extra_talents.append({"name":name,"effect":offer.get("effect",""),"rarity":rarity,"cost":offer["cost"],"stacks":1,"max_stacks":5})
+        shock_bonus=_INC_TALENT_SHOCK_BONUS.get(rarity,2)
+        new_shock_max=int(run.get("shock_max",0) or 0)+shock_bonus
+        pool_updates.update({"shock_max":new_shock_max,"shock_current":min(new_shock_max,int(run.get("shock_current",0) or 0)+shock_bonus)})
     else: raise ValueError("unknown_offer_type")
     updated=_inc_persist(run["id"],xp=run["xp"]-offer["cost"],bonus_attributes=bonus_attrs,starting_wargear=starting_wargear,extra_wargear=extra_wargear,extra_talents=extra_talents,extra_powers=[],extra_keywords=extra_keywords,heal_charges=heal_charges,**pool_updates)
     if offer["type"]=="wargear":
@@ -7349,7 +7497,8 @@ def _inc_choose_start(run, ch, choice):
         heal = max(1, round(run["wounds_max"] * INC_REST_HEAL_FRACTION))
         run, repaired, armour_gain = _inc_recover_rest_durability(run, ch)
         run = _inc_persist(run["id"], wounds_current=min(run["wounds_max"], run["wounds_current"] + heal),
-                            shock_current=run["shock_max"], node={"type": "rest_upgrade"})
+                            shock_current=run["shock_max"], node={"type": "rest_upgrade"},
+                            minion=_inc_revive_minion(run))
         return run
     if choice == "first_encampment":
         offers = _inc_generate_first_encampment_offers(ch, run)
@@ -7613,7 +7762,12 @@ def _inc_apply_player_talent_attack_effects(ch, run, target, entry):
         run = _inc_talent_persist_status(run, statuses)
     return run
 
-def _inc_enemy_turn(enemies, player_traits, player_shock_current=0):
+def _inc_load_minion(run):
+    m = run.get("minion") or {}
+    return dict(m) if m else None
+
+
+def _inc_enemy_turn(enemies, player_traits, player_shock_current=0, minion=None):
     log=[]
     # Tracked locally so a second (or third) enemy hitting in the same
     # round correctly sees the Shock the first enemy already drained -
@@ -7633,13 +7787,26 @@ def _inc_enemy_turn(enemies, player_traits, player_shock_current=0):
         attack_pool=base_pool+wrath_spent; enemy["wrath_current"]=wrath-wrath_spent
         rolls,icons,wrath_die_6=_inc_roll_pool(attack_pool); hit=icons>=player_traits["Defence"]; total_damage=0; shock=0; wounds=0; damage_rolls=[]; critical=bool(hit and wrath_die_6)
         if critical: enemy["wrath_current"]+=1
+        debuff_attr=None; debuff_amount=0; minion_damage=0
+        # A Minion "leva o dano na frente" - it soaks hits meant for the
+        # player, using its own Resilience, until it goes down.
+        target_minion=bool(minion) and minion.get("alive") and int(minion.get("wounds_current",0) or 0)>0
         if hit:
             total_damage,damage_rolls=_inc_roll_damage(enemy.get("weapon_damage",0),enemy.get("weapon_ed",0))
             if critical:
                 crit_total,crit_rolls=_inc_roll_damage(0,3); total_damage+=crit_total; damage_rolls.extend(crit_rolls)
-            shock,wounds,_=_inc_damage_result(total_damage,player_traits["Resilience"],enemy.get("weapon_ap",0),player_shock_left)
-            player_shock_left=max(0,player_shock_left-shock)
-        log.append({"actor":"enemy","action":"attack","actor_name":enemy["name"],"skill":enemy["attack_skill"],"pool":attack_pool,"rolls":rolls,"icons":icons,"weapon":enemy["weapon_name"],"hit":hit,"damage":total_damage,"shock":shock,"wounds":wounds,"damage_rolls":damage_rolls,"critical":critical,"wrath_spent":wrath_spent,"wrath_gained":1 if critical else 0,"wrath_current":enemy["wrath_current"]})
+            if target_minion:
+                minion_damage=max(0,total_damage-int(minion.get("resilience",0) or 0))
+                minion["wounds_current"]=max(0,int(minion.get("wounds_current",0) or 0)-minion_damage)
+                if minion["wounds_current"]<=0: minion["alive"]=False
+            else:
+                shock,wounds,_=_inc_damage_result(total_damage,player_traits["Resilience"],enemy.get("weapon_ap",0),player_shock_left,player_traits["Defence"])
+                player_shock_left=max(0,player_shock_left-shock)
+                # Some enemies (Tier 2+) can inflict a debilitating hit - a -1
+                # to a random combat Attribute for the rest of this fight.
+                if int(enemy.get("tier",1) or 1)>=2 and random.random()<INC_DEBUFF_CHANCE:
+                    debuff_attr=random.choice(INC_DEBUFF_ATTRS); debuff_amount=-1
+        log.append({"actor":"enemy","action":"attack","actor_name":enemy["name"],"skill":enemy["attack_skill"],"pool":attack_pool,"rolls":rolls,"icons":icons,"weapon":enemy["weapon_name"],"hit":hit,"damage":total_damage,"shock":shock,"wounds":wounds,"damage_rolls":damage_rolls,"critical":critical,"wrath_spent":wrath_spent,"wrath_gained":1 if critical else 0,"wrath_current":enemy["wrath_current"],"debuff_attr":debuff_attr,"debuff_amount":debuff_amount,"target":"minion" if target_minion else "player","minion_damage":minion_damage})
     return log
 
 
@@ -7671,6 +7838,10 @@ def _inc_resolve_player_attack(ch, run, node, target_uids, weapon, bonus_die=0, 
     extra_pool = 0
     last_stand = _inc_talent_count(ch, run, "Last Stand")
     if last_stand and int(run.get("wounds_current", 0) or 0) <= max(1, int(run.get("wounds_max", 1) or 1) // 4): extra_pool += 2 * last_stand
+    below_half_wounds = int(run.get("wounds_current", 0) or 0) <= max(1, int(run.get("wounds_max", 1) or 1) // 2)
+    if below_half_wounds and weapon.get("melee") and _inc_talent_has(ch, run, "WAAAGH!"): extra_pool += 2
+    if below_half_wounds and _inc_talent_has(ch, run, "Red Thirst") and weapon.get("melee"): extra_pool += 2
+    if below_half_wounds and _inc_talent_has(ch, run, "Vow of the Crusade"): extra_pool += 2
     extra_pool += int(status.get("next_attack_bonus_dice", 0) or 0)
     status["next_attack_bonus_dice"] = 0
     run = _inc_talent_persist_status(run, status) if extra_pool or _inc_talent_has(ch, run, "Relentless Assault") else run
@@ -7684,10 +7855,11 @@ def _inc_resolve_player_attack(ch, run, node, target_uids, weapon, bonus_die=0, 
         (int(e.get("attributes", {}).get("Initiative", 1) or 1) for e in node["enemies"] if e["alive"]),
         default=0)
     enemy_acts_first = fastest_enemy_initiative > player_initiative
+    minion = _inc_load_minion(run)
     pre_log = []
     shock_now = max(0, int(run.get("shock_current", 0) or 0))
     if enemy_acts_first:
-        pre_log = _inc_enemy_turn(node["enemies"], player_traits, shock_now)
+        pre_log = _inc_enemy_turn(node["enemies"], player_traits, shock_now, minion)
         enemy_shock_dealt = sum(int(e.get("shock", 0) or 0) for e in pre_log if e.get("action") == "attack")
         shock_now = max(0, shock_now - enemy_shock_dealt)
     # Every point of Shock still standing adds a hit die - Shock is now the
@@ -7697,9 +7869,23 @@ def _inc_resolve_player_attack(ch, run, node, target_uids, weapon, bonus_die=0, 
     per_target_pool = max(1, pool - (len(targets) - 1) + int(bonus_die or 0) + extra_pool + shock_bonus)
     log = []
     wrath_gained = 0
+    reroll_uses = 0
+    if _inc_talent_has(ch, run, "Indomitable"): reroll_uses = 1
+    if _inc_talent_has(ch, run, "Shield of Faith"): reroll_uses = max(reroll_uses, 1)
+    if _inc_talent_has(ch, run, "Tactical Doctrine"): reroll_uses = max(reroll_uses, 2)
     for target in targets:
         rolls, icons, wrath_die_6 = _inc_roll_pool(per_target_pool)
         hit = bool(guaranteed_hit) or icons >= target["defence"]
+        if not hit and reroll_uses:
+            reroll_status = _inc_talent_status(run)
+            used = int(reroll_status.get("reroll_miss_used", 0) or 0)
+            if used < reroll_uses:
+                reroll_status["reroll_miss_used"] = used + 1
+                run = _inc_talent_persist_status(run, reroll_status)
+                rolls2, icons2, wrath_die_6_2 = _inc_roll_pool(per_target_pool)
+                if icons2 >= target["defence"]:
+                    rolls, icons, wrath_die_6 = rolls2, icons2, wrath_die_6_2
+                    hit = True
         critical = bool(hit and wrath_die_6)
         if critical:
             wrath_gained += 1
@@ -7726,7 +7912,7 @@ def _inc_resolve_player_attack(ch, run, node, target_uids, weapon, bonus_die=0, 
                 crit_total, crit_rolls = _inc_roll_damage(0, 3)
                 total_damage += crit_total
                 damage_rolls.extend(crit_rolls)
-            shock, wounds, _effective_res = _inc_damage_result(total_damage, target["resilience"], weapon.get("ap", 0), target.get("shock_current", 0))
+            shock, wounds, _effective_res = _inc_damage_result(total_damage, target["resilience"], weapon.get("ap", 0), target.get("shock_current", 0), target.get("defence", 0))
             bonus_wounds = int(preview_entry.get("talent_bonus_wounds", 0) or 0)
             wounds += bonus_wounds
             target["shock_current"] = max(0, int(target.get("shock_current", 0) or 0) - shock)
@@ -7768,10 +7954,30 @@ def _inc_resolve_player_attack(ch, run, node, target_uids, weapon, bonus_die=0, 
             triggers = _inc_attack_talent_triggers(ch, run, target, rolls)
             if triggers: node["pending_talent_triggers"] = triggers
     if node.get("pending_talent_triggers"):
-        return pre_log + log, wrath_gained
+        return pre_log + log, wrath_gained, minion
+    # The Minion fights alongside you - one attack per player action,
+    # against the first live enemy, using its own damage/ED and a pool
+    # driven by your Fellowship (per the "usa Fellowship" request).
+    if minion and minion.get("alive") and int(minion.get("wounds_current", 0) or 0) > 0:
+        live_targets = [e for e in node["enemies"] if e["alive"]]
+        if live_targets:
+            mtarget = live_targets[0]
+            fellowship = max(1, int(merged.get("attributes", {}).get("Fellowship", 1) or 1))
+            m_rolls, m_icons, m_wrath_die_6 = _inc_roll_pool(fellowship)
+            m_hit = m_icons >= mtarget["defence"]
+            m_damage = 0
+            if m_hit:
+                m_damage, _m_dr = _inc_roll_damage(int(minion.get("damage", 0) or 0), int(minion.get("ed", 0) or 0))
+                m_net = max(0, m_damage - int(mtarget.get("resilience", 0) or 0))
+                mtarget["wounds_current"] = max(0, int(mtarget.get("wounds_current", 0) or 0) - m_net)
+                if mtarget["wounds_current"] <= 0: mtarget["alive"] = False
+            log.append({"actor": "minion", "action": "attack", "actor_name": minion.get("name", "Minion"),
+                        "target_name": mtarget["name"], "target_uid": mtarget["uid"], "weapon": minion.get("name", "Minion"),
+                        "pool": fellowship, "rolls": m_rolls, "icons": m_icons, "hit": m_hit, "damage": m_damage,
+                        "shock": 0, "wounds": 0, "target_defeated": not mtarget["alive"]})
     if enemy_acts_first:
-        return pre_log + log, wrath_gained
-    return log + _inc_enemy_turn(node["enemies"], player_traits, run.get("shock_current", 0)), wrath_gained
+        return pre_log + log, wrath_gained, minion
+    return log + _inc_enemy_turn(node["enemies"], player_traits, run.get("shock_current", 0), minion), wrath_gained, minion
 
 
 def _inc_resolve_player_heal(ch, run, node, spend_wrath=0):
@@ -7783,7 +7989,8 @@ def _inc_resolve_player_heal(ch, run, node, spend_wrath=0):
     per_wrath=max(1,int(merged.get("rank",1) or 1)+int(merged.get("tier",1) or 1))
     shock_recovered=min(run["shock_max"]-run["shock_current"],spend_wrath*per_wrath); new_shock=run["shock_current"]+shock_recovered
     log=[{"actor":"player","action":"heal","amount":new_wounds-run["wounds_current"],"shock_recovered":shock_recovered,"wrath_spent":spend_wrath}]
-    return log+_inc_enemy_turn(node["enemies"],player_traits,new_shock),new_wounds,new_shock,run["heal_charges"]-1,int(run["wrath_current"])-spend_wrath
+    minion=_inc_load_minion(run)
+    return log+_inc_enemy_turn(node["enemies"],player_traits,new_shock,minion),new_wounds,new_shock,run["heal_charges"]-1,int(run["wrath_current"])-spend_wrath,minion
 
 
 def _inc_resolve_player_flee(ch, run, node, target_uid, bonus_die=0):
@@ -7809,12 +8016,13 @@ def _inc_resolve_player_flee(ch, run, node, target_uid, bonus_die=0):
         node["resolved"] = True
         node["fled"] = True
         node["victory"] = False
-        return log, run["wrath_current"] - bonus_die, True
-    return log + _inc_enemy_turn(node["enemies"], player_traits, run.get("shock_current", 0)), run["wrath_current"] - bonus_die, False
+        return log, run["wrath_current"] - bonus_die, True, None
+    minion = _inc_load_minion(run)
+    return log + _inc_enemy_turn(node["enemies"], player_traits, run.get("shock_current", 0), minion), run["wrath_current"] - bonus_die, False, minion
 
 
 
-def _inc_finish_combat_round(run, ch, node, round_log, wrath_gained=0):
+def _inc_finish_combat_round(run, ch, node, round_log, wrath_gained=0, minion=None):
     enemy_crits = sum(1 for entry in round_log if entry.get("actor") == "enemy" and entry.get("critical"))
     if enemy_crits:
         current_armour, max_armour = _inc_armour_durability(ch, run)
@@ -7848,13 +8056,29 @@ def _inc_finish_combat_round(run, ch, node, round_log, wrath_gained=0):
     merciless = _inc_talent_count(ch, run, "Merciless")
     if merciless and any(e.get("actor") == "player" and e.get("target_defeated") for e in round_log):
         new_shock = min(int(run.get("shock_max", 0) or 0), new_shock + merciless)
+    debuff_hits = [e for e in round_log if e.get("actor") == "enemy" and e.get("debuff_attr")]
+    if debuff_hits:
+        statuses = _inc_talent_status(run)
+        debuffs = dict(statuses.get("enemy_debuffs") or {})
+        for e in debuff_hits:
+            debuffs[e["debuff_attr"]] = int(debuffs.get(e["debuff_attr"], 0) or 0) + int(e["debuff_amount"])
+        statuses["enemy_debuffs"] = debuffs
+        run = _inc_talent_persist_status(run, statuses)
     all_dead = all(not e["alive"] for e in node["enemies"])
 
     if new_wounds <= 0:
-        _inc_persist(run["id"], shock_current=new_shock, wounds_current=0, wrath_current=new_wrath, node=node)
-        return _inc_mark_dead({**run, "wounds_current": 0}, ch, "Fell in battle")
+        statuses = _inc_talent_status(run)
+        if _inc_talent_has(ch, run, "Reanimation Protocols") and not statuses.get("reanimation_used"):
+            new_wounds = max(1, int(run.get("wounds_max", 1) or 1) // 4)
+            statuses["reanimation_used"] = True
+            run = _inc_talent_persist_status(run, statuses)
+        else:
+            _inc_persist(run["id"], shock_current=new_shock, wounds_current=0, wrath_current=new_wrath, node=node, **({"minion": minion} if minion is not None else {}))
+            return _inc_mark_dead({**run, "wounds_current": 0}, ch, "Fell in battle")
 
     if all_dead:
+        # Fight is over - clear per-fight Talent flags and enemy debuffs.
+        run = _inc_talent_persist_status(run, _inc_reset_per_fight_statuses(_inc_talent_status(run)))
         node["resolved"], node["victory"] = True, True
         # Post-fight recovery: winning a fight is its own small breather -
         # 20% of max Wounds and a flat 10 Shock back before whatever comes
@@ -7868,11 +8092,13 @@ def _inc_finish_combat_round(run, ch, node, round_log, wrath_gained=0):
                 pending_boss3 = True
         updated = _inc_persist(run["id"], shock_current=new_shock, wounds_current=new_wounds, wrath_current=new_wrath,
                                xp=run["xp"] + node["reward_xp"], xp_earned=run.get("xp_earned", 0) + node["reward_xp"], node=node,
-                               bosses_cleared=bosses_cleared, pending_boss3_pvp=pending_boss3)
+                               bosses_cleared=bosses_cleared, pending_boss3_pvp=pending_boss3,
+                               **({"minion": minion} if minion is not None else {}))
         loot_node = _inc_post_combat_loot(updated, ch, node)
         return loot_node if loot_node is not None else updated
 
-    return _inc_persist(run["id"], shock_current=new_shock, wounds_current=new_wounds, wrath_current=new_wrath, node=node)
+    return _inc_persist(run["id"], shock_current=new_shock, wounds_current=new_wounds, wrath_current=new_wrath, node=node,
+                         **({"minion": minion} if minion is not None else {}))
 
 
 def _inc_resolve_pending_talent(run, ch, selected_indices):
@@ -7882,8 +8108,9 @@ def _inc_resolve_pending_talent(run, ch, selected_indices):
     applied = sum(_inc_apply_talent_trigger(node, t, selected_indices) for t in triggers)
     node.pop("pending_talent_triggers", None)
     log = [{"actor":"player","action":"talent_trigger","talent":"Blood Must Die","amount":applied,"target_name":triggers[0].get("target_name","Target")}]
-    log += _inc_enemy_turn(node.get("enemies", []), _inc_player_traits(ch, run), run.get("shock_current", 0))
-    return _inc_finish_combat_round(run, ch, node, log)
+    minion = _inc_load_minion(run)
+    log += _inc_enemy_turn(node.get("enemies", []), _inc_player_traits(ch, run), run.get("shock_current", 0), minion)
+    return _inc_finish_combat_round(run, ch, node, log, minion=minion)
 
 def _inc_combat_attack(run, ch, target_uids, weapon_key, bonus_die=0, six_mode="ED", restore_shock=False, guaranteed_hit=False):
     if not run.get("node") or run["node"].get("type")!="combat": raise ValueError("wrong_node")
@@ -7916,7 +8143,7 @@ def _inc_combat_attack(run, ch, target_uids, weapon_key, bonus_die=0, six_mode="
     elif bonus_die:
         run=_inc_persist(run["id"],wrath_current=int(run["wrath_current"])-bonus_die)
         run=_inc_record_wrath_spend(run, ch, bonus_die)
-    round_log,wrath_gained=_inc_resolve_player_attack(ch,run,node,target_uids,weapon,bonus_die=bonus_die,six_mode=six_mode,guaranteed_hit=guaranteed_hit)
+    round_log,wrath_gained,minion=_inc_resolve_player_attack(ch,run,node,target_uids,weapon,bonus_die=bonus_die,six_mode=six_mode,guaranteed_hit=guaranteed_hit)
     weapon_ones = sum(1 for entry in round_log if entry.get("actor") == "player" and entry.get("rolls") and int(entry["rolls"][-1]) == 1)
     if weapon_ones and weapon.get("key") != "__unarmed__":
         run, lost, weapon_cur, weapon_max = _inc_damage_weapon_from_wrath_one(run, ch, weapon["key"])
@@ -7924,7 +8151,7 @@ def _inc_combat_attack(run, ch, target_uids, weapon_key, bonus_die=0, six_mode="
                           "durability_current":weapon_cur,"durability_max":weapon_max})
     if weapon.get("consumable"):
         charges=dict(run.get("consumable_charges") or {}); charges[weapon["key"]]=max(0,int(weapon["remaining"])-1); run=_inc_persist(run["id"],consumable_charges=charges)
-    return _inc_finish_combat_round(run,ch,node,round_log,wrath_gained)
+    return _inc_finish_combat_round(run,ch,node,round_log,wrath_gained,minion=minion)
 
 
 def _inc_resolve_restore_shock(ch, run, node):
@@ -7944,39 +8171,41 @@ def _inc_resolve_restore_shock(ch, run, node):
     new_shock = current_shock + recovered
     log = [{"actor": "player", "action": "restore_shock", "shock_recovered": recovered, "wrath_spent": 1}]
     player_traits = _inc_player_traits(ch, run)
-    return log + _inc_enemy_turn(node.get("enemies", []), player_traits, new_shock), new_shock, current_wrath - 1
+    minion = _inc_load_minion(run)
+    return log + _inc_enemy_turn(node.get("enemies", []), player_traits, new_shock, minion), new_shock, current_wrath - 1, minion
 
 
 def _inc_combat_restore_shock(run, ch):
     if not run.get("node") or run["node"].get("type") != "combat":
         raise ValueError("wrong_node")
     node = copy.deepcopy(run["node"])
-    round_log, new_shock, wrath_left = _inc_resolve_restore_shock(ch, run, node)
+    round_log, new_shock, wrath_left, minion = _inc_resolve_restore_shock(ch, run, node)
     run = _inc_persist(run["id"], shock_current=new_shock, wrath_current=wrath_left)
     run = _inc_record_wrath_spend(run, ch, 1)
-    return _inc_finish_combat_round(run, ch, node, round_log)
+    return _inc_finish_combat_round(run, ch, node, round_log, minion=minion)
 
 
 def _inc_combat_heal(run, ch, spend_wrath=0):
     if not run.get("node") or run["node"].get("type")!="combat": raise ValueError("wrong_node")
-    node=copy.deepcopy(run["node"]); round_log,new_wounds,new_shock,charges_left,wrath_left=_inc_resolve_player_heal(ch,run,node,spend_wrath=spend_wrath)
+    node=copy.deepcopy(run["node"]); round_log,new_wounds,new_shock,charges_left,wrath_left,minion=_inc_resolve_player_heal(ch,run,node,spend_wrath=spend_wrath)
     run=_inc_persist(run["id"],heal_charges=charges_left,wounds_current=new_wounds,shock_current=new_shock,wrath_current=wrath_left)
     run=_inc_record_wrath_spend(run,ch,int(spend_wrath or 0))
-    return _inc_finish_combat_round(run,ch,node,round_log)
+    return _inc_finish_combat_round(run,ch,node,round_log,minion=minion)
 
 
 def _inc_combat_flee(run, ch, target_uid, bonus_die=0):
     if not run.get("node") or run["node"].get("type") != "combat":
         raise ValueError("wrong_node")
     node = copy.deepcopy(run["node"])
-    round_log, wrath_left, escaped = _inc_resolve_player_flee(ch, run, node, target_uid, bonus_die=bonus_die)
+    round_log, wrath_left, escaped, minion = _inc_resolve_player_flee(ch, run, node, target_uid, bonus_die=bonus_die)
     if escaped:
         node["log"] = (node.get("log") or []) + round_log
         run = _inc_persist(run["id"], wrath_current=wrath_left, node=node)
+        run = _inc_talent_persist_status(run, _inc_reset_per_fight_statuses(_inc_talent_status(run)))
         return _inc_record_wrath_spend(run, ch, int(bonus_die or 0))
     run = _inc_persist(run["id"], wrath_current=wrath_left)
     run = _inc_record_wrath_spend(run, ch, int(bonus_die or 0))
-    return _inc_finish_combat_round(run, ch, node, round_log)
+    return _inc_finish_combat_round(run, ch, node, round_log, minion=minion)
 
 
 
@@ -8146,7 +8375,7 @@ def _inc_pvp_apply_attack(match, side, spend_wrath=0, six_mode="ED"):
         total_damage, _ = _inc_roll_damage(weapon["damage"], int(weapon.get("ed", 0)) + shifted)
         if wrath_die_6:
             crit_total, _ = _inc_roll_damage(0, 3); total_damage += crit_total
-        shock, wounds, _ = _inc_damage_result(total_damage, int(target["resilience"]), int(weapon.get("ap", 0)), int(target.get("shock", 0)))
+        shock, wounds, _ = _inc_damage_result(total_damage, int(target["resilience"]), int(weapon.get("ap", 0)), int(target.get("shock", 0)), int(target.get("defence", 0)))
         target["shock"] = max(0, int(target["shock"]) - shock)
         target["wounds"] = max(0, int(target["wounds"]) - wounds)
     actor["wrath"] += wrath_gained
@@ -8541,7 +8770,8 @@ def _inc_render_shop(run, ch, node):
         _inc_persist(run["id"], node=node)
     offers = offers or []
     type_label = {"attribute": "Attribute", "wargear": "Wargear", "talent": "Talent",
-                  "power": "Psychic Power", "heal_charge": "Supply", "keyword": "Keyword"}
+                  "power": "Psychic Power", "heal_charge": "Supply", "keyword": "Keyword",
+                  "minion": "Minion", "talent_minion": "Minion Talent"}
     if not offers:
         st.caption("Nothing left to buy here.")
     else:
@@ -8550,7 +8780,7 @@ def _inc_render_shop(run, ch, node):
             with col:
                 rarity_cls = f"rarity-{str(offer.get('rarity') or 'Common').lower()}"
                 st.markdown(
-                    f"<div class='inc-offer {rarity_cls}'><div class='ot'>{type_label[offer['type']]}</div>"
+                    f"<div class='inc-offer {rarity_cls}'><div class='ot'>{type_label.get(offer['type'], offer['type'].title())}</div>"
                     f"<div class='on'>{html.escape(offer['label'])}</div>"
                     f"<div class='od'>{html.escape(offer.get('detail') or '')}</div>"
                     f"<div class='oc'>{offer['cost']} XP</div></div>", unsafe_allow_html=True)
@@ -8691,7 +8921,7 @@ def _inc_render_combat(run, ch, node):
     # STRIKE buttons into one horizontal row instead of stacking each on
     # its own line - this is what actually keeps total page height down
     # now that the layout is full-width again instead of a 50/50 split.
-    action=st.radio("",["ATTACK","FLEE","HEAL"],key=f"inc_action_{run['id']}",horizontal=True,label_visibility="collapsed")
+    action=st.radio("",["ATTACK","FLEE","HEAL","ITEM"],key=f"inc_action_{run['id']}",horizontal=True,label_visibility="collapsed")
     with st.container(border=True):
         if action=="ATTACK":
             weapons=_inc_usable_weapons(ch,run); keys=[w["key"] for w in weapons]; wk=f"inc_weapon_{run['id']}"
@@ -8740,7 +8970,7 @@ def _inc_render_combat(run, ch, node):
                 try: _inc_combat_flee(run,ch,target,bonus_die=int(spend))
                 except ValueError as exc: st.error(str(exc).replace('_',' ').title())
                 st.rerun()
-        else:
+        elif action=="HEAL":
             if int(run.get("wrath_current",0))>0:
                 spend=_inc_wrath_spend_control(run['id'],min(1,int(run.get('wrath_current',0))),"inc_heal_wrath","+1 WRATH: EXTRA SHOCK")
             else: spend=0
@@ -8749,6 +8979,27 @@ def _inc_render_combat(run, ch, node):
                 try: _inc_combat_heal(run,ch,spend_wrath=int(spend))
                 except ValueError as exc: st.error(str(exc).replace('_',' ').title())
                 st.rerun()
+        else:
+            consumables=_inc_usable_consumables(ch,run)
+            if not consumables:
+                st.caption("No usable Consumables carried.")
+            else:
+                ccols=st.columns(len(consumables))
+                for ccol,item in zip(ccols,consumables):
+                    with ccol:
+                        rarity_cls=f"rarity-{item['rarity'].lower()}"
+                        heal_bits=" · ".join(x for x in [
+                            f"+{item['heal_wounds']} Wounds" if item['heal_wounds'] else "",
+                            f"+{item['heal_shock']} Shock" if item['heal_shock'] else ""] if x)
+                        st.markdown(
+                            f"<div class='inc-offer {rarity_cls}'><div class='ot'>Consumable</div>"
+                            f"<div class='on'>{html.escape(item['name'])}</div>"
+                            f"<div class='od'>{html.escape(heal_bits)}</div>"
+                            f"<div class='oc'>×{item['remaining']}</div></div>", unsafe_allow_html=True)
+                        if st.button("USE",key=f"inc_use_item_{run['id']}_{item['key']}",use_container_width=True):
+                            try: _inc_combat_use_item(run,ch,item["key"])
+                            except ValueError as exc: st.error(str(exc).replace('_',' ').title())
+                            st.rerun()
 
 
 def _inc_render_reward_choice(run, ch, node):
@@ -8883,6 +9134,7 @@ INC_ORIGINS = {
     "Death-Guard-Pattern": {"Toughness": 3, "Strength": 1},
     "Grey-Knight-Pattern": {"Willpower": 2, "Initiative": 2},
     "Chaos-Pattern": {"Strength": 2, "Willpower": 2},
+    "Tyranid-Pattern": {"Agility": 2, "Toughness": 2},
     # Space Marine Chapters - each a distinct Astartes sub-origin rather
     # than one generic "Astartes-Pattern". Named with "Astartes" in the
     # string so is_astartes()/species_speed() still grant the Speed 7
@@ -8905,29 +9157,34 @@ INC_ORIGIN_BASE_ATTR = 3
 # that Origin is chosen. Origin (and therefore this Talent) is a per-run
 # choice, not locked to the account - see _inc_render_origin_select.
 INC_ORIGIN_TALENTS = {
-    "Human": {"name": "Indomitable", "effect": "Once per Incursion, reroll any one failed Test."},
-    "Aeldari-Pattern": {"name": "Battle Precognition", "effect": "Once per fight, reroll your Wrath Die."},
-    "Ork-Pattern": {"name": "WAAAGH!", "effect": "While below half Wounds, add +1 bonus die to all melee attacks."},
-    "Necron-Pattern": {"name": "Reanimation Protocols", "effect": "Once per Incursion, if you would be reduced to 0 Wounds, instead remain at 1."},
-    "Tau-Pattern": {"name": "For the Greater Good", "effect": "Once per fight, add +2 bonus dice to a ranged attack."},
-    "Ogryn-Pattern": {"name": "Bone 'Ead", "effect": "Reduce all Shock damage taken by 1 (minimum 0)."},
-    "Custodes-Pattern": {"name": "Guardian Eternal", "effect": "Once per fight, negate one hit entirely before damage is rolled."},
-    "Sororitas-Pattern": {"name": "Shield of Faith", "effect": "Once per Incursion, reroll any one failed Test."},
-    "Kroot-Pattern": {"name": "Pack Hunter", "effect": "+1 bonus die on the first attack against any target no one has attacked yet this fight."},
-    "Genestealer-Cultist-Pattern": {"name": "The Stars Are Right", "effect": "Once per fight, gain an extra attack action after a Critical Hit."},
-    "Death-Guard-Pattern": {"name": "Nurgle's Gift", "effect": "Immune to Bleeding; recover 1 Wound whenever you inflict Bleeding."},
-    "Grey-Knight-Pattern": {"name": "Aegis of the Emperor", "effect": "Once per fight, reduce incoming damage from a single hit by your Willpower."},
-    "Chaos-Pattern": {"name": "Dark Blessing", "effect": "Wrath spent on bonus attack dice grants +2 dice instead of +1."},
-    "Ultramarines Astartes": {"name": "Tactical Doctrine", "effect": "Once per fight, reroll a missed attack."},
-    "Blood Angels Astartes": {"name": "Red Thirst", "effect": "While below half Wounds, add +1 bonus die to melee attacks."},
-    "Dark Angels Astartes": {"name": "Secrets of the Rock", "effect": "Once per Incursion, avoid one Wound entirely."},
-    "Space Wolves Astartes": {"name": "Curse of the Wulfen", "effect": "Melee Critical Hits deal +1 damage."},
-    "Imperial Fists Astartes": {"name": "Bolter Drill", "effect": "Ranged attacks gain +1 ED."},
-    "Salamanders Astartes": {"name": "Flame-Touched", "effect": "+1 Medicae charge per Incursion; immune to Bleeding."},
-    "Raven Guard Astartes": {"name": "Shadow Strike", "effect": "The first attack each fight gains +1 bonus die."},
-    "White Scars Astartes": {"name": "Hit and Run", "effect": "May Flee without triggering an enemy turn, once per fight."},
-    "Iron Hands Astartes": {"name": "The Flesh is Weak", "effect": "Weapon and Armour durability loss is reduced by 1 per hit."},
-    "Black Templars Astartes": {"name": "Vow of the Crusade", "effect": "While below half Wounds, add +1 bonus die to all attacks."},
+    # Buffed and, for the handful most likely to be a first pick, actually
+    # wired into real code (see _inc_apply_player_talent_attack_effects /
+    # _inc_finish_combat_round for the "wired" ones below) rather than
+    # description-only flavour.
+    "Human": {"name": "Indomitable", "effect": "Once per FIGHT (not just once per Incursion), reroll any one failed Test."},  # wired
+    "Aeldari-Pattern": {"name": "Battle Precognition", "effect": "Once per fight, reroll your Wrath Die AND keep the better of the two results."},
+    "Ork-Pattern": {"name": "WAAAGH!", "effect": "While below half Wounds, add +2 bonus dice (not +1) to all melee attacks."},  # wired
+    "Necron-Pattern": {"name": "Reanimation Protocols", "effect": "Once per fight (not just once per Incursion), if you would be reduced to 0 Wounds, instead remain at 25% Max Wounds."},  # wired
+    "Tau-Pattern": {"name": "For the Greater Good", "effect": "Once per fight, add +4 bonus dice to a ranged attack."},
+    "Ogryn-Pattern": {"name": "Bone 'Ead", "effect": "Reduce all Shock damage taken by 3 (minimum 0)."},
+    "Custodes-Pattern": {"name": "Guardian Eternal", "effect": "Twice per fight, negate one hit entirely before damage is rolled."},
+    "Sororitas-Pattern": {"name": "Shield of Faith", "effect": "Once per fight, reroll any one failed Test."},
+    "Kroot-Pattern": {"name": "Pack Hunter", "effect": "+2 bonus dice on the first attack against any target no one has attacked yet this fight."},
+    "Genestealer-Cultist-Pattern": {"name": "The Stars Are Right", "effect": "Every Critical Hit grants an extra attack action (no longer once per fight)."},
+    "Death-Guard-Pattern": {"name": "Nurgle's Gift", "effect": "Immune to Bleeding; recover 3 Wounds (not 1) whenever you inflict Bleeding."},
+    "Grey-Knight-Pattern": {"name": "Aegis of the Emperor", "effect": "Twice per fight, reduce incoming damage from a single hit by double your Willpower."},
+    "Chaos-Pattern": {"name": "Dark Blessing", "effect": "Your first Guaranteed Hit or Recover Shock each fight costs 0 Wrath instead of 1."},
+    "Tyranid-Pattern": {"name": "Hive Mind Link", "effect": "Your Minion's attack pool gains +4 dice and it revives once mid-fight if killed."},
+    "Ultramarines Astartes": {"name": "Tactical Doctrine", "effect": "Twice per fight, reroll a missed attack."},
+    "Blood Angels Astartes": {"name": "Red Thirst", "effect": "While below half Wounds, add +2 bonus dice (not +1) to melee attacks."},
+    "Dark Angels Astartes": {"name": "Secrets of the Rock", "effect": "Once per fight (not just once per Incursion), avoid one Wound entirely."},
+    "Space Wolves Astartes": {"name": "Curse of the Wulfen", "effect": "Melee Critical Hits deal +3 damage (not +1)."},
+    "Imperial Fists Astartes": {"name": "Bolter Drill", "effect": "Ranged attacks gain +2 ED (not +1)."},
+    "Salamanders Astartes": {"name": "Flame-Touched", "effect": "+3 Medicae charges (not +1) per Incursion; immune to Bleeding."},
+    "Raven Guard Astartes": {"name": "Shadow Strike", "effect": "The first attack against each new enemy group gains +3 bonus dice."},
+    "White Scars Astartes": {"name": "Hit and Run", "effect": "May Flee without triggering an enemy turn, twice per fight."},
+    "Iron Hands Astartes": {"name": "The Flesh is Weak", "effect": "Weapon and Armour durability loss is reduced by 2 per hit (not 1)."},
+    "Black Templars Astartes": {"name": "Vow of the Crusade", "effect": "While below half Wounds, add +2 bonus dice (not +1) to all attacks."},
 }
 
 
@@ -8936,6 +9193,71 @@ def _inc_origin_attributes(origin):
     for k, v in INC_ORIGINS.get(origin, {}).items():
         attrs[k] = attrs.get(k, INC_ORIGIN_BASE_ATTR) + v
     return attrs
+
+
+# ---- Minions: exclusive to Human and Tyranid-Pattern Origins -----------
+# A Minion is always "equipped" the instant it's bought (no separate equip
+# step - buying one just replaces whatever you had). It fights alongside
+# you (one attack per player action, pool driven by your Fellowship - see
+# _inc_resolve_player_attack) and tanks hits meant for you until it drops
+# (see _inc_enemy_turn) - it "leva o dano na frente" of your character.
+# Revives to full on Rest (_inc_choose_start).
+INC_MINION_ORIGINS = ("Human", "Tyranid-Pattern")
+INC_MINION_RARITY_STATS = {
+    "Common":    {"wounds": 8,  "resilience": 2, "damage": 3,  "ed": 1, "cost": 15},
+    "Uncommon":  {"wounds": 14, "resilience": 3, "damage": 5,  "ed": 1, "cost": 30},
+    "Rare":      {"wounds": 20, "resilience": 4, "damage": 7,  "ed": 2, "cost": 50},
+    "Legendary": {"wounds": 30, "resilience": 6, "damage": 10, "ed": 2, "cost": 80},
+    "Unique":    {"wounds": 45, "resilience": 8, "damage": 14, "ed": 3, "cost": 120},
+}
+INC_MINION_CATALOG = {
+    "Human": {
+        "Common": "Conscript Aide", "Uncommon": "Chem-Dog Handler", "Rare": "Rough Rider Outrider",
+        "Legendary": "Ogryn Bodyguard", "Unique": "Primaris Lieutenant Escort",
+    },
+    "Tyranid-Pattern": {
+        "Common": "Ripper Swarm", "Uncommon": "Termagant Brood", "Rare": "Hormagaunt Pack",
+        "Legendary": "Tyranid Warrior", "Unique": "Broodlord",
+    },
+}
+# Minion-related Talents - exclusive to Human/Tyranid-Pattern; a Tyranid
+# run's Talent offers are ALWAYS drawn only from this list (see
+# _inc_generate_offers), never the general combat Talent pool.
+INC_MINION_TALENTS = [
+    {"name": "Loyal Retinue", "rarity": "Common", "effect": "Your Minion's max Wounds increase by 10."},
+    {"name": "Voice of Command", "rarity": "Uncommon", "effect": "Your Minion's attack pool gains +3 dice."},
+    {"name": "Symbiotic Bond", "rarity": "Rare", "effect": "Whenever your Minion is hit, you recover 2 Shock."},
+    {"name": "Undying Swarm", "rarity": "Legendary", "effect": "Your Minion revives once mid-fight if killed (in addition to on Rest)."},
+    {"name": "Alpha Predator", "rarity": "Unique", "effect": "Your Minion's damage is doubled."},
+]
+
+
+def _inc_minion_stats(origin, rarity):
+    stats = INC_MINION_RARITY_STATS[rarity]
+    name = INC_MINION_CATALOG.get(origin, {}).get(rarity, f"{rarity} Minion")
+    return {"name": name, "origin": origin, "rarity": rarity,
+            "wounds_max": stats["wounds"], "wounds_current": stats["wounds"],
+            "resilience": stats["resilience"], "damage": stats["damage"], "ed": stats["ed"], "alive": True}
+
+
+def _inc_generate_minion_offer(origin):
+    rarity = random.choice(_INC_RARITIES)
+    stats = INC_MINION_RARITY_STATS[rarity]
+    name = INC_MINION_CATALOG.get(origin, {}).get(rarity, f"{rarity} Minion")
+    return {"type": "minion", "origin": origin, "rarity": rarity, "name": name, "label": name,
+            "cost": stats["cost"],
+            "detail": f"{rarity} · {stats['wounds']} Wounds · {stats['damage']} DMG +{stats['ed']} ED · Res {stats['resilience']} · always equipped"}
+
+
+def _inc_revive_minion(run):
+    """Full heal on Rest - a dead Minion comes back at max Wounds."""
+    minion = run.get("minion") or {}
+    if not minion:
+        return {}
+    minion = dict(minion)
+    minion["wounds_current"] = int(minion.get("wounds_max", 0) or 0)
+    minion["alive"] = True
+    return minion
 
 
 def _inc_register_account(username, pw):

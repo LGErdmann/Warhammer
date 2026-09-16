@@ -6102,6 +6102,7 @@ INC_STAGE_LABELS = {
 INC_REWARD_XP = {"easy": 15, "medium": 28, "hard": 45, "boss": 120}
 INC_REST_HEAL_FRACTION = 0.25
 INC_FALLEN_CHANCE = 0.35
+INC_EASY_POOL_CAP = 4
 INC_DIFFICULTY_TIER = {"easy": 1, "medium": 2, "hard": 3, "boss": 4}
 INC_PVP_XP_REWARD = {"mid": 180, "boss3": 300}
 INC_FALLEN_PREFIXES = ["Spectre of", "Shade of", "Corrupted Echo of", "Remnant of"]
@@ -6884,6 +6885,15 @@ def _inc_spawn_group(difficulty, loop_no):
                 enemies.append(_inc_build_enemy_from_fallen(random.choice(fallen_pool), loop_no, i))
                 continue
         enemies.append(_inc_build_enemy_from_bestiary(random.choice(book_pool), loop_no, i))
+    if difficulty == "easy":
+        # Book NPC pools already bake in a trained Skill rating on top of
+        # the Attribute (an Enforcer or Ork Boy prints pool 6-7), which is
+        # fine for a squad fight in the tabletop but murder for a solo
+        # Rank-1 operative whose own pool starts at the floor of 3 - the
+        # very first, gentlest encounter type was out-dicing the player
+        # more than 2:1 before either side rolled a single die.
+        for e in enemies:
+            e["attack_pool"] = min(int(e["attack_pool"]), INC_EASY_POOL_CAP)
     return enemies
 
 
@@ -7888,8 +7898,11 @@ def _inc_combat_continue(run, ch):
 def _inc_build_snapshot(ch, run):
     merged = _inc_merge_character(ch, run)
     return {
-        "name": ch.get("name", ""), "tier": ch.get("tier"), "armour": ch.get("armour", 0),
-        "species": ch.get("species", ""), "attributes": merged["attributes"], "skills": merged.get("skills", {}),
+        # species from merged, not the raw character - for an incursion-kind
+        # account this is the run's Origin (e.g. "Aeldari-Pattern"), which is
+        # what species_speed() needs to grant the right Speed in the duel.
+        "name": ch.get("name", ""), "tier": merged.get("tier", 1), "armour": ch.get("armour", 0),
+        "species": merged.get("species", ""), "attributes": merged["attributes"], "skills": merged.get("skills", {}),
         "wargear": merged["wargear"], "talents": merged.get("talents", []), "powers": merged.get("powers", []),
         "wounds_current": run["wounds_current"], "wounds_max": run["wounds_max"],
         "loop_no": run["loop_no"], "bosses_cleared": run["bosses_cleared"],
@@ -7977,8 +7990,14 @@ def _inc_create_pvp_match(waiting, current):
         (waiting["checkpoint"], waiting["run_id"], current["run_id"], waiting["character_id"], current["character_id"],
          json.dumps(state), now_iso(), now_iso()))
     match_id = cur.lastrowid
+    # Only "waiting" has a queue row to update - it's the one polling via
+    # _inc_resolve_waiting_pvp for a match to appear. "current" is the
+    # player who just walked in and found them, and gets its pvp_match
+    # node set synchronously by the caller instead; it was never inserted
+    # into incursion_pvp_queue, so a second UPDATE keyed on current["id"]
+    # (a field that never existed) crashed with KeyError every time two
+    # players actually met at a Challenge checkpoint.
     conn.execute("UPDATE incursion_pvp_queue SET status='matched', result=? WHERE id=?", (json.dumps({"match_id": match_id, "side": "a"}), waiting["id"]))
-    conn.execute("UPDATE incursion_pvp_queue SET status='matched', result=? WHERE id=?", (json.dumps({"match_id": match_id, "side": "b"}), current["id"]))
     conn.commit(); conn.close()
     return match_id
 

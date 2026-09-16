@@ -6587,9 +6587,13 @@ def _inc_damage_result(total_damage, resilience, ap=0):
 
 
 def _inc_roll_damage(base_damage, ed):
-    """Roll a weapon's Extra Damage Dice exactly as W&G 2e defines them."""
+    """Roll a weapon's Extra Damage Dice: each ED die adds its full face
+    value to damage. This is NOT the Icon conversion used for to-hit rolls
+    (4-5=1, 6=2) - conflating the two made every point of ED worth ~0.67
+    damage on average instead of a full d6 (~3.5), which is why almost
+    nothing could out-damage Resilience even with a decent-ED weapon."""
     rolls = [random.randint(1, 6) for _ in range(max(0, int(ed or 0)))]
-    bonus = sum(2 if r == 6 else (1 if r >= 4 else 0) for r in rolls)
+    bonus = sum(rolls)
     return int(base_damage or 0) + bonus, rolls
 
 
@@ -6690,9 +6694,20 @@ def _inc_weapon_by_key(ch, run, key):
 
 def _inc_best_attack_pool(ch):
     attrs = effective_attributes(ch)
-    # Incursion intentionally ignores the live character's Skills. The run
-    # uses its starting Attributes as the attack pool baseline.
-    return ("Weapon Skill", max(1, int(attrs.get("Initiative",1)))) if int(attrs.get("Initiative",1)) >= int(attrs.get("Agility",1)) else ("Ballistic Skill", max(1, int(attrs.get("Agility",1))))
+    skills = effective_skills(ch)
+    # W&G 2e pools are Attribute + Skill, not the bare Attribute alone - a
+    # melee-built character who dumped Initiative/Agility to invest in
+    # Weapon/Ballistic Skill was being reduced to a 1-die pool (nearly
+    # always missing) despite real combat training, and Bestiary entries'
+    # printed pools (e.g. "Ballistic Skill 5") already bake the skill in,
+    # so leaving it out here made enemies relatively far more accurate too.
+    ws_pool = int(attrs.get("Initiative", 1)) + int(skills.get("Weapon Skill", 0) or 0)
+    bs_pool = int(attrs.get("Agility", 1)) + int(skills.get("Ballistic Skill", 0) or 0)
+    # Floor of 3, not 1: a real sheet that never invested in either combat
+    # skill (an unfinished character, or one built for a totally different
+    # role) would otherwise be stuck rolling a single die forever - which
+    # can never compete with even a tier-1 threat and isn't fun to play.
+    return ("Weapon Skill", max(3, ws_pool)) if ws_pool >= bs_pool else ("Ballistic Skill", max(3, bs_pool))
 
 
 def _inc_roll_pool(size):
@@ -8417,14 +8432,17 @@ def _inc_render_combat(run, ch, node):
     player_damage_taken = sum(int(e.get("damage", 0) or 0) for e in fresh if e.get("actor") == "enemy" and e.get("hit"))
     if player_damage_taken > 0:
         st.markdown(f"<div class='inc-hit-flash-player'>⚠ YOU TOOK {player_damage_taken} DAMAGE</div>", unsafe_allow_html=True)
-    # Side-by-side, not stacked: enemies on the left, the action panel on
-    # the right, so a typical 1-2 enemy fight never pushes the STRIKE
-    # button below the fold.
-    left_col, right_col = st.columns([1, 1])
-    with left_col:
-        cols=st.columns(min(2,max(1,len(node["enemies"]))))
-        for i,e in enumerate(node["enemies"]):
-            with cols[i%len(cols)]:
+    # Full-width enemy grid, chunked into rows of up to 3 - this scales to
+    # however many enemies actually spawn (1 enemy fills the row; 4+ wraps
+    # onto a second row) instead of squeezing everyone into a fixed split
+    # or a fixed grid that gets nonsensically cramped as the count grows.
+    enemies = node["enemies"]
+    per_row = min(3, max(1, len(enemies)))
+    for row_start in range(0, len(enemies), per_row):
+        row = list(enumerate(enemies))[row_start:row_start + per_row]
+        cols = st.columns(len(row))
+        for col, (i, e) in zip(cols, row):
+            with col:
                 bleed=int((e.get("statuses") or {}).get("Bleeding",0) or 0)
                 wounds_max=max(1,int(e.get("wounds_max",1) or 1)); wounds_cur=max(0,min(wounds_max,int(e.get("wounds_current",0) or 0)))
                 shock_max=max(1,int(e.get("shock_max",1) or 1)); shock_cur=max(0,min(shock_max,int(e.get("shock_current",0) or 0)))
@@ -8449,66 +8467,67 @@ def _inc_render_combat(run, ch, node):
                     label="UNLOCK" if e["uid"] in selected_targets else "LOCK TARGET"
                     if st.button(label,key=f"inc_target_{run['id']}_{e['uid']}",use_container_width=True):
                         current=list(st.session_state.get(target_key,[])); current.remove(e["uid"]) if e["uid"] in current else current.append(e["uid"]); st.session_state[target_key]=current; st.rerun()
-    with right_col:
-        if node.get("resolved"):
-            if st.button("CONTINUE",key="inc_combat_continue",use_container_width=True): _inc_combat_continue(run,ch); st.rerun()
-            return
-        pending=node.get("pending_talent_triggers") or []
-        if pending:
-            tr=pending[0]; choices=[int(i) for i in tr.get("dice_indices",[])]
-            st.markdown(f"<div class='inc-talent-reaction'><div class='inc-kicker'>TALENT TRIGGER</div><div class='inc-title'>Blood Must Die</div><div class='inc-flavor'>Choose 6s to apply Bleeding to {html.escape(str(tr.get('target_name','the target')))}.</div></div>",unsafe_allow_html=True)
-            picked=st.session_state.get(f"inc_bmd_{run['id']}",[])
-            for i in choices:
-                key=f"inc_bmd_btn_{run['id']}_{i}"; active=i in picked
-                if st.button(("SELECTED" if active else "SELECT")+f" · DIE {i+1}",key=key,use_container_width=True):
-                    picked=list(picked); picked.remove(i) if i in picked else picked.append(i); st.session_state[f"inc_bmd_{run['id']}"]=picked; st.rerun()
-            if st.button("APPLY BLOOD",key=f"inc_bmd_apply_{run['id']}",disabled=not picked,use_container_width=True): _inc_resolve_pending_talent(run,ch,picked); st.rerun()
-            return
-        action=st.radio("",["ATTACK","FLEE","HEAL"],key=f"inc_action_{run['id']}",horizontal=True,label_visibility="collapsed")
-        with st.container(border=True):
-            if action=="ATTACK":
-                weapons=_inc_usable_weapons(ch,run); keys=[w["key"] for w in weapons]; wk=f"inc_weapon_{run['id']}"
-                if st.session_state.get(wk) not in keys: st.session_state[wk]=keys[0]
-                def wl(k):
-                    w=next(w for w in weapons if w["key"]==k); icon="⚔" if w.get("melee") else "▸"
-                    return f"{icon} {w['name']} · {w['damage']} DMG · DUR {int(w.get('durability_current',0))}/{int(w.get('durability_max',0))} · +{int(w.get('ed',0) or 0)} ED · AP {int(w.get('ap',0) or 0)}"
-                c1,c2=st.columns([2,1]); c1.selectbox("⚔ Weapon",keys,key=wk,format_func=wl); c2.markdown(f"<div class='inc-mini-readout'><b>{len(selected_targets)}</b><span>LOCKED</span></div>",unsafe_allow_html=True)
-                spend=0
-                if int(run.get("wrath_current",0))>0:
-                    spend=_inc_wrath_spend_control(run['id'],int(run.get('wrath_current',0)),"inc_attack_wrath","WRATH TO DICE")
-                shock_full = int(run.get("shock_current",0) or 0) >= int(run.get("shock_max",0) or 0)
-                if not shock_full and int(run.get("wrath_current",0))>0:
-                    st.markdown("<div class='inc-shock-action'><span>ALTERNATIVE WRATH USE</span><b>Recover Rank + Tier Shock</b><small>Costs exactly 1 Wrath and still attacks. No bonus attack die.</small></div>",unsafe_allow_html=True)
-                a1,a2=st.columns(2)
-                with a1:
-                    if st.button("⚔ STRIKE",key="inc_attack",use_container_width=True,disabled=not selected_targets):
-                        try: _inc_combat_attack(run,ch,selected_targets,st.session_state.get(wk),bonus_die=int(spend),restore_shock=False)
-                        except ValueError as exc: st.error(str(exc).replace('_',' ').title())
-                        st.session_state[target_key]=[]; st.rerun()
-                with a2:
-                    can_shock=(not shock_full and int(run.get("wrath_current",0))>0)
-                    if st.button("STRIKE + RECOVER SHOCK",key="inc_attack_shock",use_container_width=True,disabled=(not selected_targets or not can_shock)):
-                        try: _inc_combat_attack(run,ch,selected_targets,st.session_state.get(wk),bonus_die=0,restore_shock=True)
-                        except ValueError as exc: st.error(str(exc).replace('_',' ').title())
-                        st.session_state[target_key]=[]; st.rerun()
-            elif action=="FLEE":
-                target=st.selectbox("Target",[e["uid"] for e in live],key=f"inc_fl_{run['id']}",format_func=lambda uid:next(e['name'] for e in live if e['uid']==uid))
-                if int(run.get("wrath_current",0))>0:
-                    spend=_inc_wrath_spend_control(run['id'],int(run.get('wrath_current',0)),"inc_flee_wrath","WRATH TO DICE")
-                else: spend=0
-                if st.button("BREAK CONTACT",key="inc_flee",use_container_width=True):
-                    try: _inc_combat_flee(run,ch,target,bonus_die=int(spend))
+    if node.get("resolved"):
+        if st.button("CONTINUE",key="inc_combat_continue",use_container_width=True): _inc_combat_continue(run,ch); st.rerun()
+        return
+    pending=node.get("pending_talent_triggers") or []
+    if pending:
+        tr=pending[0]; choices=[int(i) for i in tr.get("dice_indices",[])]
+        st.markdown(f"<div class='inc-talent-reaction'><div class='inc-kicker'>TALENT TRIGGER</div><div class='inc-title'>Blood Must Die</div><div class='inc-flavor'>Choose 6s to apply Bleeding to {html.escape(str(tr.get('target_name','the target')))}.</div></div>",unsafe_allow_html=True)
+        picked=st.session_state.get(f"inc_bmd_{run['id']}",[])
+        for i in choices:
+            key=f"inc_bmd_btn_{run['id']}_{i}"; active=i in picked
+            if st.button(("SELECTED" if active else "SELECT")+f" · DIE {i+1}",key=key,use_container_width=True):
+                picked=list(picked); picked.remove(i) if i in picked else picked.append(i); st.session_state[f"inc_bmd_{run['id']}"]=picked; st.rerun()
+        if st.button("APPLY BLOOD",key=f"inc_bmd_apply_{run['id']}",disabled=not picked,use_container_width=True): _inc_resolve_pending_talent(run,ch,picked); st.rerun()
+        return
+    # Action row spans the full width; ATTACK packs weapon select + both
+    # STRIKE buttons into one horizontal row instead of stacking each on
+    # its own line - this is what actually keeps total page height down
+    # now that the layout is full-width again instead of a 50/50 split.
+    action=st.radio("",["ATTACK","FLEE","HEAL"],key=f"inc_action_{run['id']}",horizontal=True,label_visibility="collapsed")
+    with st.container(border=True):
+        if action=="ATTACK":
+            weapons=_inc_usable_weapons(ch,run); keys=[w["key"] for w in weapons]; wk=f"inc_weapon_{run['id']}"
+            if st.session_state.get(wk) not in keys: st.session_state[wk]=keys[0]
+            def wl(k):
+                w=next(w for w in weapons if w["key"]==k); icon="⚔" if w.get("melee") else "▸"
+                return f"{icon} {w['name']} · {w['damage']} DMG · DUR {int(w.get('durability_current',0))}/{int(w.get('durability_max',0))} · +{int(w.get('ed',0) or 0)} ED · AP {int(w.get('ap',0) or 0)}"
+            shock_full = int(run.get("shock_current",0) or 0) >= int(run.get("shock_max",0) or 0)
+            can_shock=(not shock_full and int(run.get("wrath_current",0))>0)
+            c1,c2,c3=st.columns([3,2,2])
+            c1.selectbox("⚔ Weapon",keys,key=wk,format_func=wl,label_visibility="collapsed")
+            with c2:
+                if st.button("⚔ STRIKE",key="inc_attack",use_container_width=True,disabled=not selected_targets):
+                    spend=int(st.session_state.get(f"inc_attack_wrath_{run['id']}",0) or 0)
+                    try: _inc_combat_attack(run,ch,selected_targets,st.session_state.get(wk),bonus_die=spend,restore_shock=False)
                     except ValueError as exc: st.error(str(exc).replace('_',' ').title())
-                    st.rerun()
-            else:
-                if int(run.get("wrath_current",0))>0:
-                    spend=_inc_wrath_spend_control(run['id'],min(1,int(run.get('wrath_current',0))),"inc_heal_wrath","WRATH TO SHOCK")
-                else: spend=0
-                st.caption(f"Medicae charges {run['heal_charges']} · Restore Wounds and Shock")
-                if st.button("MEDICAE",key="inc_heal",disabled=run['heal_charges']<1,use_container_width=True):
-                    try: _inc_combat_heal(run,ch,spend_wrath=int(spend))
+                    st.session_state[target_key]=[]; st.rerun()
+            with c3:
+                if st.button("+SHOCK",key="inc_attack_shock",use_container_width=True,disabled=(not selected_targets or not can_shock)):
+                    try: _inc_combat_attack(run,ch,selected_targets,st.session_state.get(wk),bonus_die=0,restore_shock=True)
                     except ValueError as exc: st.error(str(exc).replace('_',' ').title())
-                    st.rerun()
+                    st.session_state[target_key]=[]; st.rerun()
+            if int(run.get("wrath_current",0))>0:
+                _inc_wrath_spend_control(run['id'],int(run.get('wrath_current',0)),"inc_attack_wrath","WRATH TO DICE")
+        elif action=="FLEE":
+            target=st.selectbox("Target",[e["uid"] for e in live],key=f"inc_fl_{run['id']}",format_func=lambda uid:next(e['name'] for e in live if e['uid']==uid))
+            if int(run.get("wrath_current",0))>0:
+                spend=_inc_wrath_spend_control(run['id'],int(run.get('wrath_current',0)),"inc_flee_wrath","WRATH TO DICE")
+            else: spend=0
+            if st.button("BREAK CONTACT",key="inc_flee",use_container_width=True):
+                try: _inc_combat_flee(run,ch,target,bonus_die=int(spend))
+                except ValueError as exc: st.error(str(exc).replace('_',' ').title())
+                st.rerun()
+        else:
+            if int(run.get("wrath_current",0))>0:
+                spend=_inc_wrath_spend_control(run['id'],min(1,int(run.get('wrath_current',0))),"inc_heal_wrath","WRATH TO SHOCK")
+            else: spend=0
+            st.caption(f"Medicae charges {run['heal_charges']} · Restore Wounds and Shock")
+            if st.button("MEDICAE",key="inc_heal",disabled=run['heal_charges']<1,use_container_width=True):
+                try: _inc_combat_heal(run,ch,spend_wrath=int(spend))
+                except ValueError as exc: st.error(str(exc).replace('_',' ').title())
+                st.rerun()
 
 
 def _inc_render_loot(run, ch, node):

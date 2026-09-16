@@ -19,7 +19,7 @@ from contextlib import contextmanager
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 
-REFRESH_S = 3.0
+REFRESH_S = 1.0
 COMMS_FADE_S = 60
 
 # ============================================================
@@ -51,73 +51,199 @@ CONDITION_COLOR = {
 POSITIVE_STATUSES = ["Cover", "Stealth"]
 POSITIVE_STATUS_COLOR = {"Cover": "#2e7d32", "Stealth": "#1565c0", "Cameleoline": "#6a1b9a"}
 
-INC_TALENT_ADAPTERS = {
-    "blood must die": {"kind": "trigger", "rule": "After an attack roll, choose rolled 6s to convert into Bleeding on the target.", "trigger": "attack_sixes_to_bleeding"},
-    "touched by fate": {"kind": "resource", "rule": "+Rank starting Wrath in the Incursion.", "trigger": "wrath_start"},
-    "crimson reprisal": {"kind": "trigger", "rule": "Each Critical Hit caused recovers 1 Shock.", "trigger": "crit_recover_shock"},
-    "sundering blow": {"kind": "trigger", "rule": "Each Critical Hit caused removes 1 durability from the enemy's armour.", "trigger": "crit_damage_enemy_armour"},
-    "iron fury": {"kind": "trigger", "rule": "Each Critical Hit caused grants +3 Toughness until the current combat ends.", "trigger": "crit_toughness_combat"},
-    "blood ledger": {"kind": "trigger", "rule": "For every 2 Icons on a successful attack, inflict 1 Bleeding.", "trigger": "icons_to_bleeding"},
-    "wrathforged": {"kind": "resource", "rule": "Every Wrath spent grants +1 permanent Strength for this Incursion.", "trigger": "wrath_to_strength"},
-    "execution doctrine": {"kind": "trigger", "rule": "Critical Hits against enemies at or below half Wounds inflict +2 Wounds.", "trigger": "crit_execute"},
-    "predatory focus": {"kind": "trigger", "rule": "A successful attack with 3+ Icons gains +1 ED.", "trigger": "three_icons_ed"},
-    "iron resolve": {"kind": "trigger", "rule": "When an attack would reduce you to 0 Shock, gain 1 Wrath after the attack.", "trigger": "shock_zero_wrath"},
-    "last stand": {"kind": "trigger", "rule": "While at 25% or less Wounds, gain +2 attack dice.", "trigger": "low_wounds_attack"},
-    "hunter of weakness": {"kind": "trigger", "rule": "Against Bleeding enemies, attacks gain +1 ED.", "trigger": "bleeding_target_ed"},
-    "merciless": {"kind": "trigger", "rule": "If an attack defeats an enemy, recover 1 Shock.", "trigger": "kill_recover_shock"},
-    "unyielding flesh": {"kind": "passive", "rule": "The first Wound taken each combat is reduced by 1.", "trigger": "first_wound_reduction"},
-    "adrenaline surge": {"kind": "trigger", "rule": "After suffering Wounds, gain +1 attack die on your next attack.", "trigger": "damage_to_attack_die"},
-    "combat veteran": {"kind": "trigger", "rule": "The first successful attack each combat gains +1 ED.", "trigger": "first_hit_ed"},
-    "armour breaker": {"kind": "trigger", "rule": "Critical Hits remove 2 enemy armour durability instead of 1.", "trigger": "crit_damage_enemy_armour_2"},
-    "skull hunter": {"kind": "trigger", "rule": "Critical Hits against Tier 3+ enemies inflict +1 Wound.", "trigger": "high_tier_crit"},
-    "battle trance": {"kind": "trigger", "rule": "Every 4 Icons rolled on an attack recover 1 Shock.", "trigger": "four_icons_shock"},
-    "ruthless momentum": {"kind": "trigger", "rule": "Every enemy defeated grants +1 permanent Strength for this Incursion.", "trigger": "kill_to_strength"},
-    "iron discipline": {"kind": "trigger", "rule": "Every 3 Wrath spent permanently grants +1 Toughness for this Incursion.", "trigger": "wrath_to_toughness"},
-    "blood price": {"kind": "trigger", "rule": "Whenever your Wrath Die is 1, inflict 1 Bleeding on the target if the attack hits.", "trigger": "wrath_one_bleed"},
-    "relentless assault": {"kind": "trigger", "rule": "After a successful attack, your next attack gains +1 die.", "trigger": "hit_to_next_die"},
-    "critical mass": {"kind": "trigger", "rule": "Each Critical Hit grants +1 temporary Strength until combat ends.", "trigger": "crit_strength_combat"},
-    "predator's mark": {"kind": "trigger", "rule": "The first hit against a fresh enemy gains +2 ED.", "trigger": "fresh_target_ed"},
-    "bloodsmith": {"kind": "trigger", "rule": "Each Critical Hit repairs 2 durability on the weapon used.", "trigger": "crit_repair_weapon"},
-    "predator's harvest": {"kind": "trigger", "rule": "Every 3 enemies defeated grants +1 permanent Agility for this Incursion.", "trigger": "three_kills_agility"},
-}
+INC_TALENT_ADAPTERS = {}
 
-INC_NEW_TALENTS = [
-    ("Crimson Reprisal", "Each Critical Hit caused recovers 1 Shock."),
-    ("Sundering Blow", "Each Critical Hit caused removes 1 durability from the enemy's armour."),
-    ("Iron Fury", "Each Critical Hit caused grants +3 Toughness until the current combat ends."),
-    ("Blood Ledger", "For every 2 Icons on a successful attack, inflict 1 Bleeding."),
-    ("Wrathforged", "Every Wrath spent grants +1 permanent Strength for this Incursion."),
-    ("Execution Doctrine", "Critical Hits against enemies at or below half Wounds inflict +2 Wounds."),
-    ("Predatory Focus", "A successful attack with 3+ Icons gains +1 ED."),
-    ("Iron Resolve", "When an attack would reduce you to 0 Shock, gain 1 Wrath after the attack."),
-    ("Last Stand", "While at 25% or less Wounds, gain +2 attack dice."),
-    ("Hunter of Weakness", "Against Bleeding enemies, attacks gain +1 ED."),
-    ("Merciless", "If an attack defeats an enemy, recover 1 Shock."),
-    ("Unyielding Flesh", "The first Wound taken each combat is reduced by 1."),
-    ("Adrenaline Surge", "After suffering Wounds, gain +1 attack die on your next attack."),
-    ("Combat Veteran", "The first successful attack each combat gains +1 ED."),
-    ("Armour Breaker", "Critical Hits remove 2 enemy armour durability instead of 1."),
-    ("Skull Hunter", "Critical Hits against Tier 3+ enemies inflict +1 Wound."),
-    ("Battle Trance", "Every 4 Icons rolled on an attack recover 1 Shock."),
-    ("Ruthless Momentum", "Every enemy defeated grants +1 permanent Strength for this Incursion."),
-    ("Iron Discipline", "Every 3 Wrath spent permanently grants +1 Toughness for this Incursion."),
-    ("Blood Price", "Whenever your Wrath Die is 1, inflict 1 Bleeding on the target if the attack hits."),
-    ("Relentless Assault", "After a successful attack, your next attack gains +1 die."),
-    ("Critical Mass", "Each Critical Hit grants +1 temporary Strength until combat ends."),
-    ("Predator's Mark", "The first hit against a fresh enemy gains +2 ED."),
-    ("Bloodsmith", "Each Critical Hit repairs 2 durability on the weapon used."),
-    ("Predator's Harvest", "Every 3 enemies defeated grants +1 permanent Agility for this Incursion."),
+_INC_RARITIES = ("Common", "Uncommon", "Rare", "Legendary", "Unique")
+_INC_RARITY_MAX_STACKS = {"Common": 5, "Uncommon": 5, "Rare": 5, "Legendary": 5, "Unique": 1}
+
+# 100 Incursion-only talents. Five copies of each talent exist in the pool;
+# Unique talents still have a per-player stack cap of one.
+_INC_TALENT_BLUEPRINTS = [
+("Blood Engine", "Each successful attack restores 1 Shock.", "Common"),
+("Iron Nerve", "Gain +1 attack die while below half Shock.", "Common"),
+("Field Scavenger", "The first item acquired after each combat costs 25% less XP.", "Common"),
+("Execution Rhythm", "A kill grants +1 die to the next attack.", "Common"),
+("Brutal Momentum", "After a melee hit, gain +1 temporary Strength until combat ends.", "Common"),
+("Deadeye Discipline", "After a ranged hit, gain +1 temporary Agility until combat ends.", "Common"),
+("Pain Dividend", "The first Wound suffered each combat grants 1 Wrath.", "Common"),
+("Second Wind", "When reduced below 50% Wounds, recover 2 Shock once per combat.", "Common"),
+("Blood Mark", "Every 3 Icons on a hit inflicts 1 Bleeding.", "Common"),
+("Hard Target", "While above half Wounds, gain +1 Defence.", "Common"),
+("Close Quarters", "Melee attacks gain +1 damage.", "Common"),
+("Suppressive Fire", "Ranged attacks gain +1 damage against full-Health enemies.", "Common"),
+("Combat Rations", "Rest restores an additional 5% Wounds.", "Common"),
+("Field Repairs", "Rest repairs an additional 5% weapon durability.", "Common"),
+("Predator Instinct", "Gain +1 die against enemies with Bleeding.", "Common"),
+("Veteran Grip", "Weapon durability loss from a Wrath Die 1 is reduced by 1.", "Common"),
+("Shock Trooper", "The first Shock damage taken each combat is reduced by 1.", "Common"),
+("Last Magazine", "At 25% or less Wounds, ranged damage gains +2.", "Common"),
+("Butcher's Step", "After defeating an enemy, gain +1 Speed until the next node.", "Common"),
+("Iron Stomach", "Consumable healing restores +2 additional Wounds.", "Common"),
+("Ash Walker", "Gain +1 Agility while fighting in an Ambush.", "Uncommon"),
+("Grim Focus", "The first attack each combat gains +2 dice.", "Uncommon"),
+("Killing Stroke", "Critical Hits gain +2 damage.", "Uncommon"),
+("Armour Eater", "Critical Hits reduce enemy armour durability by 2.", "Uncommon"),
+("Blood Circuit", "Every 2 Wrath spent restores 1 Shock.", "Uncommon"),
+("Steel Heart", "Every 3 Wounds suffered grants +1 permanent Toughness this run.", "Uncommon"),
+("Predator's Eye", "The first hit against a fresh enemy gains +2 ED.", "Uncommon"),
+("Rupture", "Every 3 Icons on a melee hit inflicts +1 Wound.", "Uncommon"),
+("Recoil Mastery", "Ranged attacks ignore the first point of weapon durability damage each combat.", "Uncommon"),
+("Executioner", "Deal +3 damage against enemies below half Wounds.", "Uncommon"),
+("War Cry", "After a kill, gain +1 Strength until the next rest.", "Uncommon"),
+("Battle Rhythm", "Each consecutive successful attack gains +1 die, resetting on a miss.", "Uncommon"),
+("Hardwired", "Gain +1 Toughness while Shock is below half.", "Uncommon"),
+("Adrenal Surge", "After taking Wounds, the next attack gains +2 dice.", "Uncommon"),
+("Merciless Aim", "Critical Hits with firearms gain +1 ED.", "Uncommon"),
+("Crushing Blow", "Critical Hits with melee weapons gain +2 damage.", "Uncommon"),
+("Hunter's Patience", "If you do not attack for a round, your next attack gains +3 dice.", "Uncommon"),
+("Battlefield Surgeon", "Medicae restores +1 Shock.", "Uncommon"),
+("Relic Keeper", "Rest repairs +10% durability on your most damaged weapon.", "Uncommon"),
+("Iron Discipline", "Every 5 Wrath spent grants +1 permanent Toughness this run.", "Uncommon"),
+("Blood Price", "Wrath Die 1 on a hit inflicts 1 Bleeding.", "Uncommon"),
+("Sunder", "Each Critical Hit removes 1 additional enemy armour durability.", "Rare"),
+("War Machine", "While above half Wounds, all weapon damage gains +2.", "Rare"),
+("Execution Protocol", "Critical Hits against wounded enemies gain +3 damage.", "Rare"),
+("Death Spiral", "Each kill permanently grants +1 Strength for this run.", "Rare"),
+("Predator's Harvest", "Every 3 kills permanently grants +1 Agility for this run.", "Rare"),
+("Iron Bastion", "Gain +2 Resilience while stationary in combat.", "Rare"),
+("Void Hunter", "Gain +2 dice against Tier 3+ enemies.", "Rare"),
+("Blood Frenzy", "Each melee kill restores 2 Shock.", "Rare"),
+("Ammunition Savant", "Firearm consumable ammunition has a 25% chance not to be consumed.", "Rare"),
+("Master of Arms", "The first weapon attack each combat gains +2 ED.", "Rare"),
+("Unbroken", "Once per combat, prevent the first Wound that would reduce you below 1 Wound.", "Rare"),
+("Pain to Power", "Every 3 Shock lost grants +1 temporary Strength for the combat.", "Rare"),
+("Bloodsmith", "Each Critical Hit repairs 2 durability on the weapon used.", "Rare"),
+("Combat Meditation", "Every 4 Icons rolled restores 1 Shock.", "Rare"),
+("Armour Master", "Your armour durability loss from enemy Critical Hits is reduced by 1.", "Rare"),
+("Rapid Execution", "If your first attack hits, your next attack gains +2 dice.", "Rare"),
+("Killer Instinct", "Enemies below 25% Wounds take +4 damage from your attacks.", "Rare"),
+("Tactical Withdrawal", "A successful Flee also restores 2 Shock.", "Rare"),
+("Warlord's Resolve", "At 0 Shock, gain +2 attack dice instead of becoming impaired.", "Rare"),
+("Savage Precision", "Melee attacks gain +1 ED against Bleeding enemies.", "Rare"),
+("Cold Vengeance", "After an enemy deals Wounds to you, your next attack against it gains +3 damage.", "Rare"),
+("Relentless", "Successful attacks grant +1 die to the next attack, stacking during combat.", "Rare"),
+("Titan Grip", "Melee weapons gain +2 base damage.", "Legendary"),
+("Execution Matrix", "Every Critical Hit against a target below half Wounds deals +4 additional Wounds.", "Legendary"),
+("Wrathforged", "Every Wrath spent grants +1 permanent Strength this run.", "Legendary"),
+("Iron Soul", "Every 4 Wrath spent grants +1 permanent Toughness this run.", "Legendary"),
+("Blood Crown", "Every 5 kills grants +1 permanent Strength and Toughness.", "Legendary"),
+("Perfect Kill", "A Critical Hit that defeats an enemy restores all Shock.", "Legendary"),
+("Armour Reaver", "Critical Hits completely ignore 3 points of enemy Resilience from Armour.", "Legendary"),
+("Storm of Steel", "A successful firearm attack gains +1 additional target against a second locked enemy.", "Legendary"),
+("Deathless", "Once per run, surviving 0 Wounds leaves you at 1 Wound instead.", "Legendary"),
+("Masterwork Instinct", "Weapon durability penalties are halved, rounded down.", "Legendary"),
+("Blood Economy", "Every 3 Wrath spent grants +1 XP.", "Legendary"),
+("Ruin Breaker", "Boss enemies suffer +5 damage from your first successful attack.", "Legendary"),
+("Apex Hunter", "Against Tier 4 enemies, gain +4 attack dice and +4 damage.", "Legendary"),
+("Unstoppable", "You cannot lose more than 50% of current Wounds from one attack.", "Legendary"),
+("War Saint", "Critical Hits restore 2 Shock and 1 Wrath.", "Legendary"),
+("Relentless Core", "Every successful attack restores 1 Wrath.", "Legendary"),
+("Doom Sight", "Your first miss each combat is converted into a hit with 1 Icon.", "Legendary"),
+("Void Temper", "Your highest-durability weapon gains +5 damage.", "Legendary"),
+("Champion's Blood", "Boss victories permanently grant +1 to all seven Attributes for the run.", "Legendary"),
+("Emperor's Edge", "Critical Hits with a weapon at full durability deal +6 damage.", "Unique"),
+("The Last Wall", "When you would die, survive at 1 Wound once per run and fully restore Shock.", "Unique"),
+("Black Crusade", "Each enemy defeated permanently grants +1 damage to every weapon this run.", "Unique"),
+("Lion's Shadow", "Your first successful attack each combat is automatically Critical.", "Unique"),
+("Machine Spirit", "Your equipped weapon cannot lose durability from Wrath Die 1.", "Unique"),
+("Blood Throne", "Every Critical Hit restores all Shock and grants +2 Wrath.", "Unique"),
+("Unbroken Oath", "If you reach 0 Wounds, reset to 25% Wounds once per run and continue combat.", "Unique"),
+("Death Sentence", "The first attack against a boss always deals at least 10 Wounds on a hit.", "Unique"),
+("Eternal Arsenal", "You may carry a fourth weapon, but only one copy of it can be equipped.", "Unique"),
+("The Emperor's Favour", "Once per node, turn one failed attack into a Critical Hit.", "Unique"),
+("Master of War", "Every successful attack permanently grants +1 attack die for the rest of the run.", "Unique"),
+("Angelic Fury", "While at or below 25% Wounds, every hit is Critical.", "Unique"),
+("Unyielding Flesh", "The first Wound suffered each combat is reduced to 0.", "Unique"),
+("Crimson Reprisal", "Each Critical Hit caused restores 2 Shock.", "Unique"),
+("Sundering Blow", "Each Critical Hit destroys 2 enemy armour durability.", "Unique"),
+("Relic of Defiance", "Once per combat, ignore all damage from one enemy attack.", "Unique"),
+("Omega Protocol", "At the start of a boss combat, fully restore Wounds, Shock and Wrath.", "Unique"),
 ]
+# Fill any accidental count drift deterministically with themed talents.
+while len(_INC_TALENT_BLUEPRINTS) < 100:
+    i = len(_INC_TALENT_BLUEPRINTS) + 1
+    _INC_TALENT_BLUEPRINTS.append((f"Forbidden Doctrine {i:02d}", f"Gain +{1 + i % 3} damage on attacks after spending Wrath.", "Common"))
+INC_NEW_TALENTS = [(n, e) for n,e,_ in _INC_TALENT_BLUEPRINTS[:100]]
+for _name, _effect, _rarity in _INC_TALENT_BLUEPRINTS[:100]:
+    INC_TALENT_ADAPTERS[_name.lower()] = {"kind":"trigger", "rule":_effect, "trigger":"incursion_custom"}
 
-def _ensure_incursion_talents():
-    # These are campaign-native executable talents. They are stored in the same
-    # Craft catalog as normal Talents so ownership, purchases and run snapshots
-    # survive restarts/deploys. Existing rows are never overwritten.
-    for name, effect in INC_NEW_TALENTS:
-        if not _inc_talent_catalog_row({"name": name}):
-            save_craft_item({"kind": "talent", "name": name, "effect": effect,
-                             "cost": 30, "source": "Wrath Incursion",
-                             "details": {"incursion_executable": True}})
+
+
+def _incursion_item_blueprints():
+    firearm_heads=["Vigil","Aquila","Vox","Cinder","Mourn","Helix","Penitent","Solar","Obsidian","Crux"]
+    firearm_tails=["Pattern","Carbine","Repeater","Lance","Caster","Pistol","Rifle","Autogun","Driver","Barrage"]
+    melee_heads=["Executioner","Martyr","Reaver","Penitent","Iron","Black","Crimson","Sanctum","Grave","Dread"]
+    melee_tails=["Blade","Cleaver","Maul","Sword","Axe","Halberd","Glaive","Claw","Hammer","Spear"]
+    armour_heads=["Aquila","Penitent","Bastion","Obsidian","Solar","Martyr","Crucible","Raven","Iron","Cathedral"]
+    armour_tails=["Plate","Carapace","Bulwark","Cuirass","Harness","Shell","Mantle","Aegis","Ward","Panoply"]
+    consum_heads=["Red","Black","White","Saint","Forge","Medicae","Combat","Vox","Cinder","Iron"]
+    consum_tails=["Stim", "Regen", "Coagulant", "Injector", "Ration", "Ampoule", "Serum", "Dose", "Charge", "Tonic"]
+    rarity=["Common"]*20+["Uncommon"]*20+["Rare"]*20+["Legendary"]*20+["Unique"]*20
+    out=[]
+    for i in range(100):
+        r=rarity[i]
+        dmg=8+(i%10)+([0,1,2,3,5][i//20])
+        ed=1+(i%4)//2
+        ap=0 if i%5<3 else -1-(i%20)//10
+        name=f"{firearm_heads[i%10]} {firearm_tails[i//10]} {i+1:02d}"
+        out.append({"kind":"wargear","name":name,"effect":f"{r} firearm · Damage {dmg} +{ed} ED · AP {ap}","cost":15+([0,10,25,50,90][i//20]),"source":"Wrath Incursion","details":{"incursion_only":True,"category":"firearm","rarity":r,"damage":str(dmg),"ed":ed,"ap":ap,"keywords":["Incursion","Firearm"]}})
+    for i in range(100):
+        r=rarity[i]; bonus=2+(i%8)+([0,1,2,3,5][i//20]); ed=2+(i%4); ap=-((i%4)//2)
+        name=f"{melee_heads[i%10]} {melee_tails[i//10]} {i+1:02d}"
+        out.append({"kind":"wargear","name":name,"effect":f"{r} melee · Strength +{bonus} · +{ed} ED · AP {ap}","cost":15+([0,10,25,50,90][i//20]),"source":"Wrath Incursion","details":{"incursion_only":True,"category":"melee","rarity":r,"damage":f"(S) +{bonus}","damage_attribute":"Strength","ed":ed,"ap":ap,"keywords":["Incursion","Melee"]}})
+    for i in range(100):
+        r=rarity[i]; ar=1+(i%5)+([0,1,1,2,3][i//20])
+        name=f"{armour_heads[i%10]} {armour_tails[i//10]} {i+1:02d}"
+        out.append({"kind":"wargear","name":name,"effect":f"{r} armour · Armour Rating +{ar}","cost":20+([0,15,30,60,110][i//20]),"source":"Wrath Incursion","details":{"incursion_only":True,"category":"armour","rarity":r,"armour_rating":ar,"keywords":["Incursion","Armour"]}})
+    for i in range(100):
+        r=rarity[i]; heal=3+(i%8)+([0,1,2,4,6][i//20])
+        name=f"{consum_heads[i%10]} {consum_tails[i//10]} {i+1:02d}"
+        effect=f"{r} consumable · Restore {heal} Wounds or Shock when used."
+        out.append({"kind":"wargear","name":name,"effect":effect,"cost":8+([0,5,15,30,60][i//20]),"source":"Wrath Incursion","details":{"incursion_only":True,"category":"consumable","rarity":r,"heal_wounds":heal,"heal_shock":heal,"stackable":True,"stack_group":name,"keywords":["Incursion","Consumable"]}})
+    return out
+
+
+def _ensure_incursion_wargear_catalog():
+    # One transaction for all 400 Incursion items. This is important on Supabase:
+    # opening/committing 400 separate connections would make startup painfully slow.
+    blueprints=_incursion_item_blueprints(); conn=get_conn()
+    existing={str(r.get("name","")).lower() for r in list_craft_items("wargear",active_only=False)}
+    now=now_iso(); inserted=False
+    for item in blueprints:
+        if item["name"].lower() in existing: continue
+        conn.execute("INSERT INTO craft_items(kind,name,effect,cost,source,source_url,details,active,created_at,updated_at) VALUES(?,?,?,?,?,?,?,1,?,?)",
+                     (item["kind"],item["name"],item.get("effect",""),int(item.get("cost",0)),item.get("source",""),item.get("source_url",""),json.dumps(item.get("details",{}),ensure_ascii=False),now,now)); inserted=True
+    conn.commit(); conn.close()
+    if inserted: invalidate_craft_cache()
+
+
+def _ensure_incursion_catalog():
+    # One connection/transaction for the complete 100-talent bootstrap.
+    conn=get_conn()
+    conn.execute("CREATE TABLE IF NOT EXISTS incursion_talent_pool(name TEXT PRIMARY KEY, rarity TEXT, pool_total INTEGER DEFAULT 5, pool_available INTEGER DEFAULT 5, max_stacks INTEGER DEFAULT 5)")
+    existing={str(r.get("name","")).lower():r for r in list_craft_items("talent",active_only=False)}
+    now=now_iso(); inserted=False
+    for name,effect,rarity in _INC_TALENT_BLUEPRINTS[:100]:
+        if name.lower() not in existing:
+            details={"incursion_executable":True,"incursion_only":True,"rarity":rarity,"max_stacks":_INC_RARITY_MAX_STACKS[rarity],"pool_total":5}
+            conn.execute("INSERT INTO craft_items(kind,name,effect,cost,source,source_url,details,active,created_at,updated_at) VALUES(?,?,?,?,?,?,?,1,?,?)",
+                         ("talent",name,effect,30,"Wrath Incursion","",json.dumps(details,ensure_ascii=False),now,now)); inserted=True
+        conn.execute("INSERT INTO incursion_talent_pool(name,rarity,pool_total,pool_available,max_stacks) VALUES(?,?,?,?,?) ON CONFLICT(name) DO NOTHING",
+                     (name,rarity,5,5,_INC_RARITY_MAX_STACKS[rarity]))
+    conn.commit(); conn.close()
+    if inserted: invalidate_craft_cache()
+
+
+def _inc_talent_catalog_row(talent):
+    name = str(talent.get("name", "") if isinstance(talent, dict) else talent).strip()
+    try: cid = int(talent.get("craft_id", -1) or -1) if isinstance(talent, dict) else -1
+    except Exception: cid = -1
+    rows = list_craft_items("talent", active_only=False)
+    if cid > 0:
+        row = next((r for r in rows if int(r.get("id", -1)) == cid), None)
+        if row and craft_details(row).get("incursion_only"): return row
+    return next((r for r in rows if str(r.get("name", "")).strip().lower() == name.lower()
+                 and craft_details(r).get("incursion_only")), None)
 
 def _inc_talent_catalog_row(talent):
     name = str(talent.get("name", "") if isinstance(talent, dict) else talent).strip()
@@ -957,7 +1083,7 @@ class _PgRow:
 
 
 _PG_INSERT_RE = re.compile(r"^\s*INSERT\s+INTO\s+([a-zA-Z_][a-zA-Z0-9_]*)", re.I)
-_PG_NO_ID_TABLES = {"combatant"}
+_PG_NO_ID_TABLES = {"combatant", "incursion_talent_pool"}
 
 
 def _translate_sql_pg(sql):
@@ -1281,7 +1407,7 @@ def init_db():
         status TEXT DEFAULT 'active', stage TEXT DEFAULT 'start', loop_no INTEGER DEFAULT 1,
         bosses_cleared INTEGER DEFAULT 0, hp_current INTEGER, hp_max INTEGER, xp INTEGER DEFAULT 0,
         bonus_attributes TEXT DEFAULT '{}', bonus_skills TEXT DEFAULT '{}',
-        extra_wargear TEXT DEFAULT '[]', extra_talents TEXT DEFAULT '[]',
+        extra_wargear TEXT DEFAULT '[]', starting_wargear TEXT DEFAULT '[]', extra_talents TEXT DEFAULT '[]',
         extra_powers TEXT DEFAULT '[]', extra_keywords TEXT DEFAULT '[]', heal_charges INTEGER DEFAULT 1,
         consumable_charges TEXT DEFAULT '{}', equipped_armor_key TEXT DEFAULT '', free_upgrade_used INTEGER DEFAULT 0,
         wounds_current INTEGER, wounds_max INTEGER, shock_current INTEGER, shock_max INTEGER,
@@ -1290,7 +1416,7 @@ def init_db():
         incursion_statuses TEXT DEFAULT '{}',
         pending_boss3_pvp INTEGER DEFAULT 0, node TEXT, created_at TEXT, ended_at TEXT, death_reason TEXT, xp_earned INTEGER DEFAULT 0)""")
     _ensure_columns(conn, "incursion_run", {
-        "consumable_charges": "TEXT DEFAULT '{}'", "bonus_skills": "TEXT DEFAULT '{}'",
+        "consumable_charges": "TEXT DEFAULT '{}'", "starting_wargear": "TEXT DEFAULT '[]'", "bonus_skills": "TEXT DEFAULT '{}'",
         "equipped_armor_key": "TEXT DEFAULT ''", "free_upgrade_used": "INTEGER DEFAULT 0",
         "wounds_current": "INTEGER", "wounds_max": "INTEGER", "shock_current": "INTEGER", "shock_max": "INTEGER",
         "wrath_current": "INTEGER", "wrath_max": "INTEGER", "armour_durability_current": "INTEGER DEFAULT 0",
@@ -1379,7 +1505,8 @@ def init_db():
     conn.commit()
     _load_custom_archetypes(conn)
     conn.close()
-    _ensure_incursion_talents()
+    _ensure_incursion_catalog()
+    _ensure_incursion_wargear_catalog()
 
 
 STANDARD_AMMO_CATALOG = {
@@ -1392,7 +1519,6 @@ STANDARD_AMMO_CATALOG = {
     "MELTA": "Melta Ammo",
     "SHURIKEN": "Shuriken Ammo",
 }
-
 
 def _weapon_ammo_keyword(wargear):
     """Pick the first standard Ammo type compatible with a ranged weapon."""
@@ -1736,8 +1862,9 @@ def normalize_talents(raw):
             cost = 20
         if name:
             entry = {"name": name, "effect": effect, "cost": cost}
-            for k in ("craft_id", "source", "source_url", "details"):
+            for k in ("craft_id", "source", "source_url", "details", "rarity", "max_stacks", "stacks"):
                 if k in t: entry[k] = t[k]
+            entry["stacks"] = max(1, int(entry.get("stacks", 1) or 1))
             out.append(entry)
     return out
 
@@ -2723,26 +2850,44 @@ def _attr_abbrev(attr):
 
 
 def _weapon_base_damage(details, attrs):
-    """Resolve a Wargear item's Damage into a number. Prefers the structured
-    `damage_attribute` field (set by the Craft editor's Attribute selector);
-    falls back to parsing the legacy '(S) +N' text convention for items
-    registered before that field existed, so nothing needs re-entering."""
+    """Resolve only the weapon's base Damage value.
+
+    W&G stores Damage, ED and AP separately.  Older catalog entries may still
+    contain text such as ``(S) +5`` or ``10 +1 ED``.  Never concatenate every
+    digit in that text: ``10 +1 ED`` must resolve to 10, not 101.
+    """
     details = details or {}
     attrs = attrs or {}
     text = str(details.get("damage") or "").strip()
     attr_name = str(details.get("damage_attribute") or "").strip()
+
+    # Legacy / free-text Attribute + Damage formats:
+    # (S) +5, (S)+5, S+5, Strength + 5
     if not attr_name:
-        m = re.match(r"\(([A-Za-z]+)\)\s*\+?\s*(-?\d+)", text, re.I)
+        m = re.match(r"^\s*\(?\s*([A-Za-z]+)\s*\)?\s*\+\s*(-?\d+)", text, re.I)
         if m:
-            abbrev = m.group(1).upper()
-            attr_name = next((a for a in ATTRS if _attr_abbrev(a).upper() == abbrev), "")
+            token = m.group(1).strip().lower()
+            attr_name = next(
+                (a for a in ATTRS if token == a.lower() or token == _attr_abbrev(a).lower()),
+                "",
+            )
+
     if attr_name:
-        m = re.search(r"(-?\d+)\s*$", text) or re.search(r"(-?\d+)", text)
+        # For structured entries the first signed integer is the flat Damage
+        # component.  ED is stored separately and must never become damage.
+        m = re.search(r"[-+]?\s*(\d+)", text)
         flat = int(m.group(1)) if m else 0
+        if "-" in m.group(0) if m else False:
+            flat = -flat
         return int(attrs.get(attr_name, 0) or 0) + flat
-    digits = re.sub(r"[^\d-]", "", text)
+
+    # Plain/ranged Damage.  Read the FIRST numeric value only.
+    # Example: "10 +1 ED" -> 10, never 101.
+    m = re.search(r"[-+]?\s*\d+", text)
+    if not m:
+        return 0
     try:
-        return int(digits) if digits else 0
+        return int(re.sub(r"\s+", "", m.group(0)))
     except ValueError:
         return 0
 
@@ -5884,7 +6029,7 @@ def _inc_decode_run(row):
     r["incursion_statuses"] = _inc_json_field(r.get("incursion_statuses"), {})
     r["consumable_charges"] = _inc_json_field(r.get("consumable_charges"), {})
     r["weapon_durabilities"] = _inc_json_field(r.get("weapon_durabilities"), {})
-    for f in ("extra_wargear", "extra_talents", "extra_powers", "extra_keywords"):
+    for f in ("starting_wargear", "extra_wargear", "extra_talents", "extra_powers", "extra_keywords"):
         r[f] = _inc_json_field(r.get(f), [])
     r["node"] = _inc_json_field(r.get("node"), None)
     r["pending_boss3_pvp"] = bool(r.get("pending_boss3_pvp"))
@@ -6050,46 +6195,142 @@ def _inc_is_armour_item(w):
 
 
 def _inc_merge_character(ch, run):
-    """Layers a run's mid-run purchases on top of the real sheet. One-way:
-    the sheet feeds the run, the run never writes back, so this merged dict
-    only ever lives in memory for the current render/action."""
-    merged = dict(ch)
-    attrs = dict(ch.get("attributes") or {})
-    for k, v in (run.get("bonus_attributes") or {}).items():
-        attrs[k] = int(attrs.get(k, 1)) + int(v)
-    statuses = dict(run.get("incursion_statuses") or {})
-    for k, v in (statuses.get("talent_permanent_attributes") or {}).items():
-        attrs[k] = int(attrs.get(k, 1)) + int(v)
-    for k, v in (statuses.get("combat_attribute_bonus") or {}).items():
-        attrs[k] = int(attrs.get(k, 0)) + int(v)
-    merged["attributes"] = attrs
-    skills = dict(ch.get("skills") or {})
-    for k, v in (run.get("bonus_skills") or {}).items():
-        skills[k] = int(skills.get(k, 0)) + int(v)
-    merged["skills"] = skills
+    """Build the isolated Incursion sheet.
 
-    wargear = list(ch.get("wargear") or []) + list(run.get("extra_wargear") or [])
-    armor_key = run.get("equipped_armor_key")
-    if armor_key:
-        rewired = []
-        for w in wargear:
-            if _inc_is_armour_item(w):
-                w = dict(w)
-                w["equipped"] = (_inc_weapon_key(w) == armor_key)
-            rewired.append(w)
-        wargear = rewired
-    merged["wargear"] = wargear
-    merged["talents"] = list(ch.get("talents") or []) + list(run.get("extra_talents") or [])
-    merged["powers"] = list(ch.get("powers") or []) + list(run.get("extra_powers") or [])
+    Only the character's starting Attributes and starting non-armour items cross
+    the boundary. Skills, Talents, Powers, Armour, Rank and Tier from the live
+    character sheet never enter the run. Every later change is stored on the run.
+    """
+    merged = dict(ch)
+    attrs = {a: int((ch.get("attributes") or {}).get(a, 1) or 1) for a in ATTRS}
+    for k,v in (run.get("bonus_attributes") or {}).items(): attrs[k] = int(attrs.get(k,1)) + int(v)
+    statuses=dict(run.get("incursion_statuses") or {})
+    for k,v in (statuses.get("talent_permanent_attributes") or {}).items(): attrs[k]=int(attrs.get(k,1))+int(v)
+    for k,v in (statuses.get("combat_attribute_bonus") or {}).items(): attrs[k]=int(attrs.get(k,1))+int(v)
+    merged["attributes"]=attrs
+    merged["skills"]={s:0 for s in SKILLS}
+    # Rank/Tier are run-local baselines, not inherited from the character.
+    merged["rank"]=1; merged["tier"]=1; merged["species"]="Human"
+    initial=[dict(w) for w in (run.get("starting_wargear") or [])]
+    wargear=initial + [dict(w) for w in (run.get("extra_wargear") or [])]
+    armor_key=run.get("equipped_armor_key")
+    for w in wargear:
+        if _inc_is_armour_item(w): w["equipped"]=(bool(armor_key) and _inc_weapon_key(w)==armor_key)
+    merged["wargear"]=wargear
+    merged["talents"]=list(run.get("extra_talents") or [])
+    merged["powers"]=[]
     return merged
 
+
+def _inc_discard_item(run, ch, item_key):
+    """Discard one run-local Wargear item outside combat."""
+    starting = list(run.get("starting_wargear") or [])
+    extra = list(run.get("extra_wargear") or [])
+    all_items = starting + extra
+    item = next((w for w in all_items if _inc_weapon_key(w) == str(item_key)), None)
+    if item is None:
+        raise ValueError("item_not_found")
+
+    key = _inc_weapon_key(item)
+    is_armour = _inc_is_armour_item(item)
+    quantity = int(item.get("quantity", 1) or 1)
+
+    def remove_one(items):
+        out = []
+        removed = False
+        for w in items:
+            if not removed and _inc_weapon_key(w) == key:
+                if quantity > 1 and int(w.get("quantity", 1) or 1) > 1:
+                    w = dict(w)
+                    w["quantity"] = int(w.get("quantity", 1) or 1) - 1
+                    out.append(w)
+                else:
+                    removed = True
+                    continue
+            else:
+                out.append(w)
+        return out, removed
+
+    starting, removed = remove_one(starting)
+    if not removed:
+        extra, removed = remove_one(extra)
+    if not removed:
+        raise ValueError("item_not_found")
+
+    updates = {
+        "starting_wargear": starting,
+        "extra_wargear": extra,
+    }
+
+    values = _inc_weapon_durability_map(run)
+    if key in values:
+        values.pop(key, None)
+    updates["weapon_durabilities"] = values
+
+    if is_armour and str(run.get("equipped_armor_key") or "") == key:
+        updates.update({
+            "equipped_armor_key": "",
+            "armour_durability_current": 0,
+            "armour_durability_max": 0,
+        })
+
+    return _inc_persist(run["id"], **updates)
+
+
+def _inc_render_inventory_management(run, ch):
+    """Compact out-of-combat loadout management."""
+    items = list(run.get("starting_wargear") or []) + list(run.get("extra_wargear") or [])
+    if not items:
+        return
+
+    st.markdown(
+        "<div class='inc-card'><div class='inc-title'>FIELD LOADOUT</div>"
+        "<div class='inc-flavor'>Discard unwanted Wargear here. This is unavailable during combat.</div></div>",
+        unsafe_allow_html=True,
+    )
+
+    options = []
+    seen = set()
+    for item in items:
+        key = _inc_weapon_key(item)
+        if key in seen:
+            continue
+        seen.add(key)
+        details = _gear_details_dict(item.get("details", {}))
+        quantity = int(item.get("quantity", 1) or 1)
+        label = str(item.get("name", "Item"))
+        if quantity > 1:
+            label += f" ×{quantity}"
+        if _inc_is_armour_item(item):
+            if str(run.get("equipped_armor_key") or "") == key:
+                label += " · EQUIPPED"
+        elif details.get("damage") not in (None, ""):
+            current, maximum = _inc_weapon_durability(ch, run, key, item)
+            label += f" · DUR {current}/{maximum}"
+        options.append((key, label))
+
+    keys = [x[0] for x in options]
+    labels = dict(options)
+    picked = st.selectbox(
+        "Item to discard",
+        keys,
+        format_func=lambda k: labels.get(k, "Item"),
+        key=f"inc_discard_pick_{run['id']}",
+    )
+    if st.button("DISCARD ITEM", key=f"inc_discard_{run['id']}", use_container_width=True):
+        try:
+            _inc_discard_item(run, ch, picked)
+        except ValueError as exc:
+            st.error(str(exc).replace("_", " ").title())
+        else:
+            st.rerun()
 
 def _inc_armour_options(ch, run):
     """Every distinct owned/bought Armour-category item, for the Rest
     screen's 'Worn Armour' picker - lets a character who owns more than one
     suit choose which is equipped for the run, same idea as the weapon
     picker in combat."""
-    all_gear = list(ch.get("wargear") or []) + list(run.get("extra_wargear") or [])
+    all_gear = list((run.get("starting_wargear") or [])) + list(run.get("extra_wargear") or [])
     seen, options = set(), []
     for w in all_gear:
         if not _inc_is_armour_item(w):
@@ -6251,14 +6492,11 @@ def _inc_player_traits(ch, run):
 
 
 def _inc_life_pools(ch):
-    t = derived_traits(ch)
-    rank = max(1, int(ch.get("rank", 1) or 1))
-    # W&G has no Tier-based maximum Wrath: characters start each session with 2.
-    # Touched by Fate adds +Rank starting Wrath.
-    talent_names = {str(x.get("name", "")).strip().lower() if isinstance(x, dict) else str(x).strip().lower()
-                    for x in (ch.get("talents") or [])}
-    wrath_max = 2 + (rank if "touched by fate" in talent_names else 0)
-    return {"wounds_max": int(t["Max Wounds"]), "shock_max": int(t["Max Shock"]), "wrath_max": wrath_max}
+    # Incursion life pools are derived only from the character's starting Attributes.
+    attrs={a:int((ch.get("attributes") or {}).get(a,1) or 1) for a in ATTRS}
+    return {"wounds_max": int(attrs.get("Toughness",1))+2,
+            "shock_max": int(attrs.get("Willpower",1))+1,
+            "wrath_max": 2}
 
 
 def _inc_damage_result(total_damage, resilience, ap=0):
@@ -6293,7 +6531,7 @@ def _inc_best_weapon(ch):
         details = _gear_details_dict(w.get("details", {}))
         if details.get("damage") in (None, ""):
             continue
-        dmg = _weapon_base_damage(details, attrs)
+        dmg = int(details.get("damage_base", _weapon_base_damage(details, attrs)) or _weapon_base_damage(details, attrs))
         if dmg > best_dmg:
             best_dmg = dmg
             best = {
@@ -6312,6 +6550,11 @@ def _inc_best_weapon(ch):
 def _inc_weapon_key(w):
     cid = _wargear_craft_id(w)
     return str(cid) if cid > 0 else str(w.get("name", ""))
+
+
+def _inc_is_weapon_item(w):
+    d=_gear_details_dict(w.get("details",{})); c=str(d.get("category",d.get("type",""))).lower()
+    return c in ("firearm","melee","weapon") or d.get("damage") not in (None,"")
 
 
 def _inc_usable_weapons(ch, run):
@@ -6340,7 +6583,12 @@ def _inc_usable_weapons(ch, run):
                 remaining = int(w.get("quantity", 1) or 0)
             if remaining <= 0:
                 continue
-        base_damage = _weapon_base_damage(details, attrs)
+        base_damage = int(details.get("damage_base", _weapon_base_damage(details, attrs)) or _weapon_base_damage(details, attrs))
+        if details.get("damage_attribute"):
+            # Stored damage_base is the current run weapon's resolved base and includes upgrades.
+            base_damage = int(details.get("damage_base", base_damage) or base_damage)
+        else:
+            base_damage = int(details.get("damage_base", base_damage) or base_damage)
         durability_current, durability_max = _inc_weapon_durability(ch, run, key, w)
         damage_penalty = durability_max - durability_current
         weapons.append({
@@ -6371,14 +6619,9 @@ def _inc_weapon_by_key(ch, run, key):
 
 def _inc_best_attack_pool(ch):
     attrs = effective_attributes(ch)
-    skills = effective_skills(ch)
-    options = []
-    for skill_name in ("Weapon Skill", "Ballistic Skill"):
-        attr_name = SKILLS[skill_name]
-        pool = int(attrs.get(attr_name, 1)) + int(skills.get(skill_name, 0))
-        options.append((skill_name, pool))
-    options.sort(key=lambda x: -x[1])
-    return options[0]
+    # Incursion intentionally ignores the live character's Skills. The run
+    # uses its starting Attributes as the attack pool baseline.
+    return ("Weapon Skill", max(1, int(attrs.get("Initiative",1)))) if int(attrs.get("Initiative",1)) >= int(attrs.get("Agility",1)) else ("Ballistic Skill", max(1, int(attrs.get("Agility",1))))
 
 
 def _inc_roll_pool(size):
@@ -6542,43 +6785,32 @@ def _inc_is_psyker(ch):
 def _inc_generate_offers(ch, run):
     merged = _inc_merge_character(ch, run)
     attrs = effective_attributes(merged)
-    candidates = []
+    candidates=[]
     for attr in ATTRS:
-        cur = int(attrs.get(attr, 1))
-        candidates.append({"type": "attribute", "attr": attr, "cost": _inc_attribute_cost(cur),
-                            "label": f"+1 {attr}", "detail": f"Current: {cur}"})
-    wargear_pool = list_craft_items("wargear", active_only=True)
-    talent_pool = [
-        row for row in list_craft_items("talent", active_only=True)
-        if bool(craft_details(row).get("incursion_executable"))
-    ]
-    power_pool = list_craft_items("power", active_only=True) if _inc_is_psyker(merged) else []
-    for row in random.sample(wargear_pool, min(6, len(wargear_pool))):
-        candidates.append({"type": "wargear", "craft_id": int(row["id"]), "name": row["name"],
-                            "effect": row.get("effect", ""), "cost": max(20, int(row.get("cost", 0) or 0) * 4),
-                            "label": row["name"], "detail": row.get("effect", "")})
-    for row in random.sample(talent_pool, min(6, len(talent_pool))):
-        detail = str(row.get("effect", "") or "")
-        adapter = INC_TALENT_ADAPTERS.get(str(row.get("name", "")).strip().lower())
-        if adapter:
-            detail = "✠ INCURSION: " + adapter["rule"]
-        candidates.append({"type": "talent", "craft_id": int(row["id"]), "name": row["name"],
-                            "effect": row.get("effect", ""), "cost": max(25, int(row.get("cost", 0) or 0) * 3),
-                            "label": row["name"], "detail": detail})
-    for row in random.sample(power_pool, min(4, len(power_pool))):
-        candidates.append({"type": "power", "craft_id": int(row["id"]), "name": row["name"],
-                            "effect": row.get("effect", ""), "cost": max(25, int(row.get("cost", 0) or 0) * 3),
-                            "label": row["name"], "detail": row.get("effect", "")})
-    candidates.append({"type": "heal_charge", "cost": 20, "label": "Medicae Ration",
-                        "detail": "+1 Heal use in combat"})
-    kw = random.choice(INC_FLAVOR_KEYWORDS)
-    candidates.append({"type": "keyword", "keyword": kw, "cost": 15, "label": f"Keyword: {kw}",
-                        "detail": "A mark earned on this descent"})
-    offers = random.sample(candidates, min(3, len(candidates)))
-    for i, o in enumerate(offers):
-        o["offer_id"] = i
-    return offers
-
+        cur=int(attrs.get(attr,1)); candidates.append({"type":"attribute","attr":attr,"cost":_inc_attribute_cost(cur),"label":f"+1 {attr}","detail":f"Current: {cur}"})
+    pool=[r for r in list_craft_items("wargear", active_only=True) if craft_details(r).get("incursion_only")]
+    weapons=[r for r in pool if str(craft_details(r).get("category","")).lower() in ("firearm","melee")]
+    armour=[r for r in pool if _inc_is_armour_item({"details":craft_details(r)})]
+    consumables=[r for r in pool if str(craft_details(r).get("category","")).lower() in ("consumable","grenade")]
+    owned_weapons=[w for w in (merged.get("wargear") or []) if _inc_is_weapon_item(w)]
+    talent_rows=[r for r in _inc_talent_pool_rows() if craft_details(next((x for x in list_craft_items("talent",active_only=False) if int(x["id"])==int(r.get("id",-1))),{})).get("incursion_only")]
+    def add_random(rows, n=2):
+        for row in random.sample(rows,min(n,len(rows))):
+            d=craft_details(row); rarity=d.get("rarity","Common")
+            candidates.append({"type":"wargear","craft_id":int(row["id"]),"name":row["name"],"effect":row.get("effect",""),"cost":max(10,int(row.get("cost",20) or 20)),"label":row["name"],"detail":f"{rarity} · {row.get('effect','')}"})
+    add_random(weapons,2)
+    add_random(armour,1)
+    add_random(consumables,1)
+    # Talent offers are limited by the shared physical pool.
+    talent_catalog={int(r["id"]):r for r in list_craft_items("talent",active_only=False)}
+    available_talents=[]
+    for pr in _inc_talent_pool_rows():
+        row=next((r for r in talent_catalog.values() if str(r["name"]).lower()==str(pr["name"]).lower()),None)
+        if row: available_talents.append((row,pr))
+    for row,pr in random.sample(available_talents,min(2,len(available_talents))):
+        d=craft_details(row); candidates.append({"type":"talent","craft_id":int(row["id"]),"name":row["name"],"effect":row.get("effect",""),"cost":max(15,int(row.get("cost",30) or 30)),"label":row["name"],"detail":f"{pr['rarity']} · {row.get('effect','')}"})
+    candidates.append({"type":"heal_charge","cost":20,"label":"Medicae Ration","detail":"+1 Medicae use in combat"})
+    return [{**o,"offer_id":i} for i,o in enumerate(random.sample(candidates,min(3,len(candidates))))]
 
 def _inc_generate_first_encampment_offers(ch, run):
     offers = _inc_generate_offers(ch, run)
@@ -6610,39 +6842,62 @@ def _inc_pool_updates_for_attribute(ch, run, bonus_attrs, attr):
 
 
 def _inc_apply_purchase(run, ch, offer):
-    if run["xp"] < offer["cost"]:
-        raise ValueError("not_enough_xp")
-    bonus_attrs = dict(run.get("bonus_attributes") or {})
-    extra_wargear = list(run.get("extra_wargear") or [])
-    extra_talents = list(run.get("extra_talents") or [])
-    extra_powers = list(run.get("extra_powers") or [])
-    extra_keywords = list(run.get("extra_keywords") or [])
-    heal_charges = run["heal_charges"]
-    pool_updates = {}
-
-    if offer["type"] == "attribute":
-        bonus_attrs[offer["attr"]] = int(bonus_attrs.get(offer["attr"], 0)) + 1
-        pool_updates = _inc_pool_updates_for_attribute(ch, run, bonus_attrs, offer["attr"])
-    elif offer["type"] in ("wargear", "talent", "power"):
-        conn = get_conn()
-        row = conn.execute("SELECT * FROM craft_items WHERE id=? AND kind=?", (offer["craft_id"], offer["type"])).fetchone()
-        conn.close()
-        if row is None:
-            raise ValueError("item_not_found")
-        entry = _build_craft_entry(row, offer["type"])
-        {"wargear": extra_wargear, "talent": extra_talents, "power": extra_powers}[offer["type"]].append(entry)
-    elif offer["type"] == "heal_charge":
-        heal_charges += 1
-    elif offer["type"] == "keyword":
-        extra_keywords.append(offer["keyword"])
-    else:
-        raise ValueError("unknown_offer_type")
-
-    return _inc_persist(
-        run["id"], xp=run["xp"] - offer["cost"], bonus_attributes=bonus_attrs, extra_wargear=extra_wargear,
-        extra_talents=extra_talents, extra_powers=extra_powers, extra_keywords=extra_keywords,
-        heal_charges=heal_charges, **pool_updates,
-    )
+    if run["xp"] < offer["cost"]: raise ValueError("not_enough_xp")
+    bonus_attrs=dict(run.get("bonus_attributes") or {})
+    starting_wargear=list(run.get("starting_wargear") or [])
+    extra_wargear=list(run.get("extra_wargear") or [])
+    extra_talents=normalize_talents(run.get("extra_talents") or [])
+    extra_keywords=list(run.get("extra_keywords") or []); heal_charges=int(run.get("heal_charges",1) or 0); pool_updates={}
+    if offer["type"]=="attribute":
+        bonus_attrs[offer["attr"]]=int(bonus_attrs.get(offer["attr"],0))+1
+        pool_updates.update(_inc_pool_updates_for_attribute(ch,run,bonus_attrs,offer["attr"]))
+    elif offer["type"]=="talent":
+        row=_inc_talent_catalog_row({"craft_id":offer["craft_id"]})
+        if row is None: raise ValueError("item_not_found")
+        name=str(row["name"]); rarity,max_stacks=_inc_talent_rarity(name)
+        current=next((x for x in extra_talents if str(x.get("name","")).lower()==name.lower()),None)
+        current_stacks=int(current.get("stacks",1)) if current else 0
+        if current_stacks>=max_stacks: raise ValueError("talent_stack_limit")
+        if not _inc_pool_claim_talent(name): raise ValueError("talent_unavailable")
+        if current: current["stacks"]=current_stacks+1
+        else:
+            entry=_build_craft_entry(row,"talent"); entry.update({"rarity":rarity,"max_stacks":max_stacks,"stacks":1}); extra_talents.append(entry)
+    elif offer["type"]=="wargear":
+        conn=get_conn(); row=conn.execute("SELECT * FROM craft_items WHERE id=? AND kind='wargear'",(int(offer["craft_id"]),)).fetchone(); conn.close()
+        if row is None: raise ValueError("item_not_found")
+        entry=_build_craft_entry(row,"wargear")
+        if _inc_is_armour_item(entry):
+            # Only one armour exists in the run. A new suit permanently replaces the old one.
+            starting_wargear=[w for w in starting_wargear if not _inc_is_armour_item(w)]
+            extra_wargear=[w for w in extra_wargear if not _inc_is_armour_item(w)]
+            extra_wargear.append(entry)
+            key=_inc_weapon_key(entry); maximum=_inc_wargear_durability_max(entry)
+            pool_updates.update({"equipped_armor_key":key,"armour_durability_current":maximum,"armour_durability_max":maximum})
+        elif _inc_is_weapon_item(entry):
+            same=next((w for w in starting_wargear+extra_wargear if _inc_weapon_key(w)==_inc_weapon_key(entry)),None)
+            if same:
+                d=_gear_details_dict(same.get("details",{})); level=min(5,int(d.get("incursion_level",1) or 1)+1); d["incursion_level"]=level
+                d["upgrade_bonus"]=int(d.get("upgrade_bonus",0) or 0)+2
+                d["damage_base"]=_weapon_base_damage(d,effective_attributes(_inc_merge_character(ch,{**run,"starting_wargear":starting_wargear,"extra_wargear":extra_wargear})))+2
+                if level%2==0: d["ed"]=int(d.get("ed",0) or 0)+1
+                same["details"]=d
+            else:
+                if sum(1 for w in starting_wargear+extra_wargear if _inc_is_weapon_item(w))>=3: raise ValueError("weapon_limit")
+                d=_gear_details_dict(entry.get("details",{})); d["incursion_level"]=1; d["damage_base"]=_weapon_base_damage(d,effective_attributes(_inc_merge_character(ch,{**run,"starting_wargear":starting_wargear,"extra_wargear":extra_wargear}))); entry["details"]=d
+                extra_wargear.append(entry)
+        else:
+            existing=next((w for w in extra_wargear if int(w.get("craft_id",-1) or -1)==int(entry.get("craft_id",-2))),None)
+            if existing: existing["quantity"]=int(existing.get("quantity",1))+1
+            else: extra_wargear.append(entry)
+    elif offer["type"]=="heal_charge": heal_charges+=1
+    else: raise ValueError("unknown_offer_type")
+    updated=_inc_persist(run["id"],xp=run["xp"]-offer["cost"],bonus_attributes=bonus_attrs,starting_wargear=starting_wargear,extra_wargear=extra_wargear,extra_talents=extra_talents,extra_powers=[],extra_keywords=extra_keywords,heal_charges=heal_charges,**pool_updates)
+    if offer["type"]=="wargear":
+        allgear=updated.get("starting_wargear",[])+updated.get("extra_wargear",[])
+        added=next((w for w in allgear if int(w.get("craft_id",-1) or -1)==int(offer.get("craft_id",-2))),None)
+        if added and _inc_is_weapon_item(added):
+            vals=_inc_weapon_durability_map(updated); key=_inc_weapon_key(added); vals.setdefault(key,_inc_wargear_durability_max(added)); updated=_inc_persist(updated["id"],weapon_durabilities=vals)
+    return updated
 
 
 # ---- loot / post-combat choices --------------------------------------
@@ -6759,14 +7014,12 @@ def _inc_advance(run, ch):
 
 
 def _inc_mark_dead(run, ch, reason):
-    try:
-        _inc_record_fallen(ch, run)
-    except Exception:
-        pass
-    conn = get_conn()
-    conn.execute("UPDATE incursion_run SET status='dead', ended_at=?, death_reason=?, wounds_current=0 WHERE id=?",
-                 (now_iso(), reason, run["id"]))
-    conn.commit(); conn.close()
+    try: _inc_record_fallen(ch, run)
+    except Exception: pass
+    # Physical talent copies return to the global Incursion pool only when the owner dies.
+    for t in normalize_talents(run.get("extra_talents") or []):
+        _inc_pool_release_talent(str(t.get("name","")), int(t.get("stacks",1) or 1))
+    conn=get_conn(); conn.execute("UPDATE incursion_run SET status='dead', ended_at=?, death_reason=?, wounds_current=0 WHERE id=?",(now_iso(),reason,run["id"])); conn.commit(); conn.close()
     return _inc_get_run(run["id"])
 
 
@@ -6774,15 +7027,21 @@ def _inc_start_run(ch):
     if _inc_get_active_run(ch["id"]):
         raise ValueError("run_already_active")
     pools = _inc_life_pools(ch)
-    first_run_stub = {"bonus_attributes": {}, "bonus_skills": {}, "extra_wargear": [],
-                      "extra_talents": [], "extra_powers": [], "equipped_armor_key": ""}
+    starting_wargear = [dict(w) for w in (ch.get("wargear") or []) if not _inc_is_armour_item(w) and w.get("equipped", True)]
+    _start_weapons=[w for w in starting_wargear if _inc_is_weapon_item(w)]
+    _start_nonweapons=[w for w in starting_wargear if not _inc_is_weapon_item(w)]
+    starting_wargear=_start_weapons[:3]+_start_nonweapons
+    standard_armour = {"name":"Incursion Field Plate","effect":"Standard Incursion armour. Armour Rating +2.","equipped":True,"quantity":1,
+                       "details":{"category":"armour","armour_rating":2,"rarity":"Common","incursion_only":True,"stackable":False}}
+    starting_wargear.append(standard_armour)
+    first_run_stub = {"bonus_attributes": {}, "bonus_skills": {}, "extra_wargear": [], "starting_wargear": starting_wargear,
+                      "extra_talents": [], "extra_powers": [], "equipped_armor_key": _inc_weapon_key(standard_armour)}
     first_offers = _inc_generate_first_encampment_offers(ch, first_run_stub)
     first_node = {"type": "shop", "subtype": "first_encampment", "offers": first_offers}
-    initial_armour = next((w for w in (ch.get("wargear") or []) if _inc_is_armour_item(w) and w.get("equipped", True)), None)
-    initial_armour_key = _inc_weapon_key(initial_armour) if initial_armour else ""
-    armour_max = _inc_wargear_durability_max(initial_armour) if initial_armour else 0
+    initial_armour_key = _inc_weapon_key(standard_armour)
+    armour_max = _inc_wargear_durability_max(standard_armour)
     weapon_values = {}
-    for w in (ch.get("wargear") or []):
+    for w in starting_wargear:
         details = _gear_details_dict(w.get("details", {}))
         if w.get("equipped", True) and details.get("damage") not in (None, ""):
             weapon_values[_inc_weapon_key(w)] = _inc_wargear_durability_max(w)
@@ -6790,10 +7049,10 @@ def _inc_start_run(ch):
     cur = conn.execute(
         "INSERT INTO incursion_run(character_id,status,stage,loop_no,wounds_current,wounds_max,"
         "shock_current,shock_max,wrath_current,wrath_max,xp,xp_earned,armour_durability_current,"
-        "armour_durability_max,weapon_durabilities,incursion_statuses,node,created_at,equipped_armor_key) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "armour_durability_max,weapon_durabilities,incursion_statuses,node,created_at,equipped_armor_key,starting_wargear) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (ch["id"], "active", "start", 1, pools["wounds_max"], pools["wounds_max"],
          pools["shock_max"], pools["shock_max"], pools["wrath_max"], pools["wrath_max"], 0, 0,
-         armour_max, armour_max, json.dumps(weapon_values), json.dumps({}), json.dumps(first_node), now_iso(), initial_armour_key))
+         armour_max, armour_max, json.dumps(weapon_values), json.dumps({}), json.dumps(first_node), now_iso(), initial_armour_key, json.dumps(starting_wargear)))
     conn.commit()
     new_id = cur.lastrowid
     conn.close()
@@ -6850,7 +7109,7 @@ def _inc_rest_set_armour(run, ch, armour_key):
     rating = 0
     for option in _inc_armour_options(ch, run):
         if option["key"] == armour_key:
-            all_gear = list(ch.get("wargear") or []) + list(run.get("extra_wargear") or [])
+            all_gear = list(run.get("starting_wargear") or []) + list(run.get("extra_wargear") or [])
             item = next((w for w in all_gear if _inc_weapon_key(w) == armour_key and _inc_is_armour_item(w)), None)
             rating = _inc_wargear_durability_max(item) if item else 0
             break
@@ -6865,28 +7124,14 @@ def _inc_rest_continue(run, ch):
 
 
 def _inc_shop_buy(run, ch, offer_id):
-    if not run.get("node") or run["node"].get("type") != "shop":
-        raise ValueError("wrong_node")
-    offer = next((o for o in run["node"]["offers"] if o["offer_id"] == offer_id), None)
-    if offer is None:
-        raise ValueError("offer_not_found")
-    updated = _inc_apply_purchase(run, ch, offer)
-    if offer.get("type") == "wargear":
-        added = (updated.get("extra_wargear") or [{}])[-1]
-        values = _inc_weapon_durability_map(updated)
-        added_key = _inc_weapon_key(added)
-        added_max = _inc_wargear_durability_max(added)
-        if not _inc_is_armour_item(added):
-            values[added_key] = added_max
-            updated = _inc_persist(updated["id"], weapon_durabilities=values)
-        else:
-            updated = _inc_persist(updated["id"], equipped_armor_key=added_key,
-                                   armour_durability_current=added_max, armour_durability_max=added_max)
-    if run.get("node", {}).get("subtype") == "first_encampment":
-        return _inc_advance(updated, ch)
-    remaining = [o for o in run["node"]["offers"] if o["offer_id"] != offer_id]
-    node = dict(updated["node"]); node["offers"] = remaining
-    return _inc_persist(updated["id"], node=node)
+    if not run.get("node") or run["node"].get("type") != "shop": raise ValueError("wrong_node")
+    offer=next((o for o in run["node"].get("offers",[]) if o.get("offer_id")==offer_id),None)
+    if offer is None: raise ValueError("offer_not_found")
+    updated=_inc_apply_purchase(run,ch,offer)
+    if run.get("node",{}).get("subtype")=="first_encampment": return _inc_advance(updated,ch)
+    remaining=[o for o in run["node"].get("offers",[]) if o.get("offer_id")!=offer_id]
+    node=dict(updated["node"]); node["offers"]=remaining
+    return _inc_persist(updated["id"],node=node)
 
 
 def _inc_shop_leave(run, ch):
@@ -6901,10 +7146,34 @@ def _inc_reward_continue(run, ch):
 
 
 # ---- combat --------------------------------------------------------------
+def _inc_pool_claim_talent(name):
+    conn = get_conn()
+    row = conn.execute("UPDATE incursion_talent_pool SET pool_available=pool_available-1 WHERE name=? AND pool_available>0", (name,))
+    if getattr(row, "rowcount", 0) != 1:
+        conn.rollback(); conn.close(); return False
+    conn.commit(); conn.close(); return True
+
+
+def _inc_pool_release_talent(name, amount=1):
+    amount=max(0,int(amount or 0))
+    if amount <= 0: return
+    conn=get_conn(); conn.execute("UPDATE incursion_talent_pool SET pool_available=CASE WHEN pool_available+?>pool_total THEN pool_total ELSE pool_available+? END WHERE name=?", (amount,amount,name)); conn.commit(); conn.close()
+
+
+def _inc_talent_rarity(name):
+    conn=get_conn(); row=conn.execute("SELECT rarity,max_stacks FROM incursion_talent_pool WHERE lower(name)=lower(?)", (name,)).fetchone(); conn.close()
+    if row: return str(row["rarity"]), int(row["max_stacks"])
+    return "Common", 5
+
+
+def _inc_talent_pool_rows():
+    conn=get_conn(); rows=conn.execute("SELECT * FROM incursion_talent_pool WHERE pool_available>0 ORDER BY RANDOM()").fetchall(); conn.close(); return [dict(r) for r in rows]
+
+
 def _inc_talent_count(ch, run, name):
     target = str(name).strip().lower()
     merged = _inc_merge_character(ch, run)
-    return sum(1 for x in normalize_talents(merged.get("talents", []))
+    return sum(max(1, int(x.get("stacks", 1) or 1)) for x in normalize_talents(merged.get("talents", []))
                if str(x.get("name", "")).strip().lower() == target)
 
 def _inc_talent_names(ch, run):
@@ -7100,6 +7369,8 @@ def _inc_resolve_player_attack(ch, run, node, target_uids, weapon, bonus_die=0, 
         shock = 0
         wounds = 0
         damage_rolls = []
+        shiftable = 0
+        preview_entry = {}
         if hit:
             # Exalted Icons can be shifted into ED while retaining enough Icons to hit.
             sixes = rolls.count(6)
@@ -7776,7 +8047,7 @@ def _inc_render_choice_start(run, ch):
 
 def _inc_render_rest_upgrade(run, ch):
     st.markdown("<div class='inc-card'><div class='inc-title'>Field Preparations</div>"
-                "<div class='inc-flavor'>Train an Attribute or Skill, adjust your worn Armour, or move on.</div></div>",
+                "<div class='inc-flavor'>Train an Attribute, inspect your current armour, or move on.</div></div>",
                 unsafe_allow_html=True)
     if not run["free_upgrade_used"]:
         st.info("Your first Attribute or Skill upgrade this Incursion is free.")
@@ -7800,18 +8071,9 @@ def _inc_render_rest_upgrade(run, ch):
                 pass
             st.rerun()
     with c2:
-        st.markdown("**Train Skill**")
-        skill_names = list(SKILLS.keys())
-        skill_pick = st.selectbox("Skill", skill_names, key=f"inc_skill_pick_{run['id']}", label_visibility="collapsed")
-        cost = 0 if free else _inc_skill_cost(int(skills.get(skill_pick, 0)))
-        st.caption(f"Current {skill_pick}: {skills.get(skill_pick, 0)} · Cost: {cost} XP")
-        if st.button("Train Skill", key=f"inc_train_skill_{run['id']}", disabled=run["xp"] < cost,
-                     use_container_width=True):
-            try:
-                _inc_rest_train_skill(run, ch, skill_pick)
-            except ValueError:
-                pass
-            st.rerun()
+        st.markdown("**Incursion Attributes Only**")
+        st.caption("The live character's Skills, Talents, Powers, Armour and Rank are isolated from this run.")
+        st.markdown("<div class='inc-card'><b>RUN-LOCAL PROGRESSION</b><br>Attributes, weapons, armour, consumables and Incursion Talents are stored only in this descent.</div>", unsafe_allow_html=True)
     with c3:
         st.markdown("**Worn Armour**")
         armour_opts = _inc_armour_options(ch, run)
@@ -8158,6 +8420,8 @@ def incursion_view():
     _inc_render_hud(ch, run)
     node = run.get("node") or {}
     ntype = node.get("type")
+    if ntype not in ("combat", "pvp_match"):
+        _inc_render_inventory_management(run, ch)
     if ntype == "choice_start":
         _inc_render_choice_start(run, ch)
     elif ntype == "rest_upgrade":

@@ -4120,7 +4120,25 @@ def inject_theme():
     .inc-talent-card{border-left:2px solid #77633c;background:#14100b;padding:9px 12px;margin:6px 0;border-radius:0}.inc-talent-card.active{border-left-color:#b23a35}.inc-talent-card.passive{border-left-color:#3e7f5a}.inc-talent-card.manual{border-left-color:#6d5a39;opacity:.7}.inc-talent-card span{display:block;font-size:.72rem;opacity:.72;margin-top:3px;line-height:1.45}.inc-chip small{display:block;font-size:.49rem;letter-spacing:.14em;opacity:.72;margin-top:3px}.inc-enemy{transition:transform .15s ease,border-color .15s ease;min-height:176px;border:1px solid #3a2d1d;box-sizing:border-box}.inc-enemy:hover{transform:translateY(-2px);border-color:#80602c}.inc-enemy-strip{display:flex;justify-content:space-between;border-bottom:1px solid #2d2418;padding-bottom:6px;margin-bottom:9px;font:9px monospace;letter-spacing:.12em;color:#75654c}.inc-enemy.tier-1{border-top:3px solid #59604b}.inc-enemy.tier-2{border-top:3px solid #827044}.inc-enemy.tier-3{border-top:3px solid #9b4b39}.inc-enemy.tier-4{border-top:3px solid #b6a05e;box-shadow:0 0 18px rgba(180,150,70,.08)}.inc-enemy.selected{border:1px solid #c34b3e;box-shadow:0 0 0 1px rgba(195,75,62,.22),0 0 16px rgba(160,40,30,.14);background:linear-gradient(180deg,#21100d,#100b08)}.inc-enemy-status{position:relative;z-index:2;min-height:16px;margin-top:8px}.inc-vox{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:7px;width:100%;box-sizing:border-box;margin:10px 0 0;padding:6px 8px;border:1px solid #4b3a25;background:linear-gradient(90deg,rgba(20,16,10,.92),rgba(7,7,6,.96),rgba(20,16,10,.92));box-shadow:inset 0 0 12px rgba(0,0,0,.55),0 0 8px rgba(0,0,0,.18)}.vox-label,.vox-state{font:7px monospace;letter-spacing:.12em;color:#75664c}.vox-wave{height:16px;display:flex;align-items:center;justify-content:center;gap:2px;overflow:hidden}.vox-wave i{display:block;width:2px;height:4px;background:#8d7650;opacity:.8;animation:incvox 1.05s ease-in-out infinite}.vox-wave i:nth-child(2){animation-delay:.08s}.vox-wave i:nth-child(3){animation-delay:.16s}.vox-wave i:nth-child(4){animation-delay:.24s}.vox-wave i:nth-child(5){animation-delay:.32s}.vox-wave i:nth-child(6){animation-delay:.40s}.vox-wave i:nth-child(7){animation-delay:.48s}.inc-enemy.selected .vox-wave i{background:#c65b50}.inc-enemy.selected .vox-state{color:#c65b50}.inc-enemy.enemy-v1 .vox-wave i{background:#c7a662}.inc-enemy.enemy-v2 .vox-wave i{background:#c65b50}.inc-enemy.enemy-v3 .vox-wave i{background:#a985c1}@keyframes incvox{0%,100%{height:3px;opacity:.35}20%{height:9px;opacity:.7}40%{height:15px;opacity:1}60%{height:7px;opacity:.75}80%{height:12px;opacity:.9}}
 .inc-wrath-spend{border:1px solid #604d28;background:linear-gradient(180deg,#1d170d,#0e0b07);padding:5px;text-align:center;min-height:44px}.inc-wrath-spend span{display:block;font:8px monospace;letter-spacing:.12em;color:#8b7650}.inc-wrath-spend b{font:700 1.15rem Cinzel,serif;color:#e7c66c}.inc-wrath-spend small{font:8px monospace;color:#756044;margin-left:5px}.inc-wrath-spend+*{}
     @media (max-width:900px){.inc-hud{grid-template-columns:repeat(4,1fr)}.inc-track{grid-template-columns:repeat(4,1fr)}}@media (max-width:600px){.inc-hud{grid-template-columns:repeat(2,1fr)}.inc-track{display:flex;overflow-x:auto}.inc-stage{flex:0 0 120px}.inc-banner{font-size:1.35rem;letter-spacing:.13em}.inc-command-line{font-size:8px}}
-    
+    /* Everything-fits-without-scrolling pass for the Incursion screens: the
+       cards themselves were already tight, but Streamlit's own per-element
+       vertical gaps (~1rem each, stacked across HUD/header/dice tray/enemy
+       row/action panel) were the real height cost. Scoped via :has() to the
+       .incursion-frame marker div so the campaign-manager pages are untouched. */
+    .block-container:has(.incursion-frame){padding-top:.5rem !important;padding-bottom:.5rem !important;max-width:920px}
+    .block-container:has(.incursion-frame) [data-testid="stVerticalBlock"]{gap:.3rem !important}
+    .block-container:has(.incursion-frame) [data-testid="stVerticalBlockBorderWrapper"]{padding:.4rem .6rem !important}
+    .block-container:has(.incursion-frame) [data-testid="stHorizontalBlock"]{gap:.4rem !important;align-items:end}
+    .block-container:has(.incursion-frame) .stRadio{margin:0 !important}
+    .block-container:has(.incursion-frame) .stRadio>div{gap:.5rem !important}
+    .block-container:has(.incursion-frame) .stButton>button{padding:.3rem .6rem !important;min-height:0 !important}
+    .block-container:has(.incursion-frame) .stSelectbox{margin-bottom:0 !important}
+    .block-container:has(.incursion-frame) .stCaption{margin:0 !important}
+    .block-container:has(.incursion-frame) hr{margin:.3rem 0 !important}
+    .block-container:has(.incursion-frame) .inc-enemy{min-height:120px;padding:8px}
+    .block-container:has(.incursion-frame) .inc-npc-vitals{margin:5px 0}
+    .block-container:has(.incursion-frame) .inc-npc-vitals span{padding:3px 4px}
+
     .inc-mini-readout{height:100%;min-height:42px;border:1px solid #3c2d1a;background:#0e0b08;text-align:center;padding:6px}.inc-mini-readout b{display:block;font:700 1.05rem Cinzel,serif;color:#d8c18a}.inc-mini-readout span{font:9px monospace;color:#7f6d50;letter-spacing:.12em}.inc-live-panel{border:1px solid #72582c;background:linear-gradient(180deg,#17120d,#0c0907);padding:18px;text-align:center;margin:10px 0}.inc-duel-stat{display:grid;grid-template-columns:1fr 1fr 1fr;gap:5px;border:1px solid #493821;padding:9px;background:#100c08}.inc-duel-stat b{font:700 1.05rem Cinzel,serif;color:#dfc278;text-align:center}.inc-duel-stat span{font:9px monospace;color:#77654a;text-align:center}.inc-duel-stat.enemy{border-color:#63302b}.inc-wait-turn{text-align:center;border:1px solid #493821;padding:14px;color:#9c8760;font:10px monospace;letter-spacing:.12em;margin:10px 0}.inc-rank-panel{border:1px solid #493821;background:#0d0a07;margin-top:10px}.inc-rank-head,.inc-rank-row{display:grid;grid-template-columns:55px 1fr 90px;align-items:center;gap:10px;padding:9px 12px}.inc-rank-head{font:9px monospace;letter-spacing:.14em;color:#786648;border-bottom:1px solid #302418}.inc-rank-row{border-bottom:1px solid #241b11}.inc-rank-row:last-child{border-bottom:0}.inc-rank-pos{font:700 .8rem Cinzel,serif;color:#b99b5a}.inc-rank-name{font:700 .78rem Cinzel,serif;color:#d8c18a;text-transform:uppercase}.inc-rank-name small{display:block;font:9px monospace;color:#75664e;margin-top:2px;text-transform:none}.inc-rank-xp{text-align:right;font:700 .82rem Cinzel,serif;color:#dfc278}.inc-rank-empty{text-align:center;padding:18px;font:10px monospace;color:#75664e;letter-spacing:.1em}.inc-rank-panel + *{margin-top:8px}
     /*     SPECTATOR VOX-FEED · deliberately the most theatrical page in the
        app: it shows almost nothing (only current Shock, gated by the
@@ -7262,10 +7280,34 @@ def _inc_shop_buy(run, ch, offer_id):
     offer=next((o for o in run["node"].get("offers",[]) if o.get("offer_id")==offer_id),None)
     if offer is None: raise ValueError("offer_not_found")
     updated=_inc_apply_purchase(run,ch,offer)
-    if run.get("node",{}).get("subtype")=="first_encampment": return _inc_advance(updated,ch)
     remaining=[o for o in run["node"].get("offers",[]) if o.get("offer_id")!=offer_id]
     node=dict(updated["node"]); node["offers"]=remaining
     return _inc_persist(updated["id"],node=node)
+
+
+def _inc_generate_free_reroll_offer(ch, run):
+    """One replacement offer for a First Encampment reroll, drawn from the
+    same broad mix a normal shop uses (attribute/wargear/talent/heal_charge) -
+    not just wargear, since rerolling a weapon or armour slot is explicitly
+    NOT meant to guarantee another weapon or armour back. Always free: it is
+    still part of the free starting kit, just reshuffled."""
+    picked = dict(random.choice(_inc_generate_offers(ch, run)))
+    picked["cost"] = 0
+    picked["first_encampment_free"] = True
+    return picked
+
+
+def _inc_shop_reroll(run, ch, offer_id):
+    if not run.get("node") or run["node"].get("type") != "shop" or run["node"].get("subtype") != "first_encampment":
+        raise ValueError("wrong_node")
+    offers = run["node"].get("offers", [])
+    if not any(o.get("offer_id") == offer_id for o in offers):
+        raise ValueError("offer_not_found")
+    new_offer = _inc_generate_free_reroll_offer(ch, run)
+    new_offer["offer_id"] = offer_id
+    updated_offers = [new_offer if o.get("offer_id") == offer_id else o for o in offers]
+    node = dict(run["node"]); node["offers"] = updated_offers
+    return _inc_persist(run["id"], node=node)
 
 
 def _inc_shop_leave(run, ch):
@@ -8265,7 +8307,7 @@ def _inc_render_shop(run, ch, node):
         st.error(error_flash)
     if node.get("subtype") == "first_encampment":
         st.markdown("<div class='inc-card'><div class='inc-title'>First Encampment</div>"
-                    "<div class='inc-flavor'>Choose ONE acquisition. Cost: 0 XP. The other offers are lost.</div></div>", unsafe_allow_html=True)
+                    "<div class='inc-flavor'>Take everything before you march — both items and the talent are free. Not happy with one? Reroll it as many times as you like — a reroll can come back as anything, not necessarily the same kind of offer.</div></div>", unsafe_allow_html=True)
     else:
         st.markdown(f"<div class='inc-card'><div class='inc-title'>Supplies</div>"
                     f"<div class='inc-flavor'>Available XP: <b>{run['xp']}</b></div></div>", unsafe_allow_html=True)
@@ -8287,7 +8329,26 @@ def _inc_render_shop(run, ch, node):
                     f"<div class='on'>{html.escape(offer['label'])}</div>"
                     f"<div class='od'>{html.escape(offer.get('detail') or '')}</div>"
                     f"<div class='oc'>{offer['cost']} XP</div></div>", unsafe_allow_html=True)
-                if st.button("Acquire", key=f"inc_buy_{offer['offer_id']}", disabled=run["xp"] < offer["cost"],
+                if node.get("subtype") == "first_encampment":
+                    bcol1, bcol2 = st.columns(2)
+                    with bcol1:
+                        if st.button("Acquire", key=f"inc_buy_{offer['offer_id']}", use_container_width=True):
+                            try:
+                                _inc_shop_buy(run, ch, offer["offer_id"])
+                                st.session_state[flash_key] = f"Acquired: {offer['label']} — see FIELD LOADOUT above."
+                            except ValueError as e:
+                                st.session_state[flash_key] = None
+                                st.session_state[f"{flash_key}_error"] = f"Could not acquire {offer['label']} ({e})."
+                            st.rerun()
+                    with bcol2:
+                        if st.button("Reroll", key=f"inc_reroll_{offer['offer_id']}", use_container_width=True):
+                            try:
+                                _inc_shop_reroll(run, ch, offer["offer_id"])
+                            except ValueError as e:
+                                st.session_state[flash_key] = None
+                                st.session_state[f"{flash_key}_error"] = f"Could not reroll ({e})."
+                            st.rerun()
+                elif st.button("Acquire", key=f"inc_buy_{offer['offer_id']}", disabled=run["xp"] < offer["cost"],
                              use_container_width=True):
                     try:
                         _inc_shop_buy(run, ch, offer["offer_id"])
@@ -8296,9 +8357,9 @@ def _inc_render_shop(run, ch, node):
                         st.session_state[flash_key] = None
                         st.session_state[f"{flash_key}_error"] = f"Could not acquire {offer['label']} ({e})."
                     st.rerun()
-    if node.get("subtype") != "first_encampment":
-        if st.button("Continue", key="inc_shop_leave", use_container_width=True):
-            _inc_shop_leave(run, ch); st.rerun()
+    leave_label = "MARCH OUT" if node.get("subtype") == "first_encampment" else "Continue"
+    if st.button(leave_label, key="inc_shop_leave", use_container_width=True):
+        _inc_shop_leave(run, ch); st.rerun()
 
 
 def _inc_wrath_spend_control(run_id, current, key_prefix, label="WRATH", compact=False):

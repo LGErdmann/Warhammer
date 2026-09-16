@@ -4197,6 +4197,21 @@ def inject_theme():
     .block-container:has(.incursion-frame) .stCaption{margin:0 !important}
     .block-container:has(.incursion-frame) hr{margin:.3rem 0 !important}
     .block-container:has(.incursion-frame) .inc-enemy{min-height:0;padding:8px}
+    /* Minion combat cards reuse the enemy card's internal layout classes
+       (.inc-enemy-strip/.inc-npc-vitals/.inc-vital) but never .inc-enemy
+       itself, and get a cool teal/steel palette instead of the enemy's
+       earthy reds/browns - "os minions ficam visualmente mais separados
+       dos inimigos" - so an ally card is unmistakable from a threat card
+       at a glance, not just readable by name. */
+    .inc-minion-card{position:relative;border:1px solid #2a5c5e;border-radius:0;padding:13px;background:linear-gradient(155deg,#0a1a1c 0%,#081012 55%,#0a1a1c 100%);min-height:160px;overflow:hidden;box-sizing:border-box;transition:transform .15s ease,border-color .15s ease,box-shadow .15s ease;border-left:4px solid #3d9aa0}
+    .inc-minion-card:hover{transform:translateY(-2px);border-left-color:#5ad0d6}
+    .inc-minion-card .inc-enemy-strip{color:#7fc9cd;border-bottom-color:#1f4547}
+    .inc-ally-tag{display:inline-block;margin-right:6px;padding:1px 5px;font:800 .56rem monospace;letter-spacing:.08em;color:#06181a;background:#5ad0d6;border-radius:3px;vertical-align:middle}
+    .inc-minion-card.rarity-uncommon{border-color:#4c9a5b}
+    .inc-minion-card.rarity-rare{border-color:#3d78c9}
+    .inc-minion-card.rarity-legendary{border-color:#c9922e;box-shadow:0 0 14px rgba(201,146,46,.2)}
+    .inc-minion-card.rarity-unique{border-color:#b23ad0;box-shadow:0 0 16px rgba(178,58,208,.25)}
+    .block-container:has(.incursion-frame) .inc-minion-card{min-height:0;padding:8px}
     .block-container:has(.incursion-frame) .inc-npc-vitals{margin:5px 0}
     .block-container:has(.incursion-frame) .inc-npc-vitals span{padding:3px 4px}
 
@@ -6740,12 +6755,21 @@ def _inc_life_pools(ch, origin=None, minions=None):
     # _inc_sync_human_shock's delta so a stacked Talent's flat Shock bonus
     # is never wiped by a from-scratch recompute.
     attrs={a:int((ch.get("attributes") or {}).get(a,1) or 1) for a in ATTRS}
+    is_astartes_origin = is_astartes(str(origin or ""))
     if origin == "Tyranid-Pattern":
         wounds_max = 5 + _inc_apex_tyranid_wounds_bonus(minions)
+    elif is_astartes_origin:
+        # "Eles começam com 100 de vida base" - 100 flat base (at the
+        # origin's baseline Attribute) instead of the usual +22, same
+        # +1-per-point-of-Toughness growth above that on top.
+        wounds_max = 100 + (int(attrs.get("Toughness",1)) - INC_ORIGIN_BASE_ATTR)
     else:
         wounds_max = int(attrs.get("Toughness",1))+22
     if origin == "Human":
         shock_max = _inc_human_shock_from_dreadnought(minions)
+    elif is_astartes_origin:
+        # "e 100 de shock base" - same idea, mirrored for Shock/Willpower.
+        shock_max = 100 + (int(attrs.get("Willpower",1)) - INC_ORIGIN_BASE_ATTR)
     else:
         shock_max = int(attrs.get("Willpower",1))+12
     return {"wounds_max": wounds_max,
@@ -7005,6 +7029,23 @@ def _inc_roll_pool(size):
     wrath_crit = rolls[-1] == 6
     return rolls, icons, wrath_crit
 
+
+def _inc_agility_pool_double(pool, agility):
+    """Every point of Agility gives a 2% chance to double the dice pool
+    for this roll. Past 50 Agility (where that chance is already capped
+    at 100%), each additional point instead has its own 2% chance to add
+    ONE extra die on top of the double, for that same roll."""
+    agility = max(0, int(agility or 0))
+    if agility <= 0:
+        return pool
+    chance = min(1.0, agility * 0.02)
+    if random.random() >= chance:
+        return pool
+    doubled = pool * 2
+    excess = max(0, agility - 50)
+    extra_dice = sum(1 for _ in range(excess) if random.random() < 0.02)
+    return doubled + extra_dice
+
 def _inc_roll_icons(size):
     rolls = [random.randint(1, 6) for _ in range(max(1, int(size)))]
     icons = sum(2 if r == 6 else (1 if r >= 4 else 0) for r in rolls)
@@ -7261,6 +7302,22 @@ def _inc_generate_offers(ch, run):
         minion_offer = _inc_generate_minion_offer(origin)
         if picked: picked[0] = minion_offer
         else: picked = [minion_offer]
+        # Minion Talents (the ones that make weapons/talents actually boost
+        # the Dreadnought/Apex - Requisitioned Reinforcements, Voice of
+        # Command, etc.) were previously just one candidate lost among a
+        # dozen others, and could ALSO be the one the minion offer above
+        # overwrote - in practice a player almost never saw one to buy, even
+        # though the purchase path behind it works fine. Guarantee a second
+        # slot so they're reliably obtainable, same as the Minion itself.
+        origin_talents = INC_MINION_TALENTS.get(origin, [])
+        if origin_talents:
+            mt = random.choice(origin_talents)
+            talent_offer = {"type": "talent_minion", "name": mt["name"], "effect": mt["effect"],
+                            "cost": max(15, INC_MINION_RARITY_STATS[mt["rarity"]]["cost"]),
+                            "label": mt["name"], "detail": f"{mt['rarity']} · {mt['effect']}", "rarity": mt["rarity"]}
+            if len(picked) > 1: picked[1] = talent_offer
+            elif picked: picked.append(talent_offer)
+            else: picked = [talent_offer]
     return [{**o,"offer_id":i} for i,o in enumerate(picked[:3])]
 
 def _inc_generate_first_encampment_offers(ch, run):
@@ -7395,7 +7452,10 @@ def _inc_apply_purchase(run, ch, offer):
     extra_talents=normalize_talents(run.get("extra_talents") or [])
     extra_keywords=list(run.get("extra_keywords") or []); heal_charges=int(run.get("heal_charges",1) or 0); pool_updates={}
     if offer["type"]=="attribute":
-        bonus_attrs[offer["attr"]]=int(bonus_attrs.get(offer["attr"],0))+1
+        # An Astartes' gene-seed amplifies an Attribute purchase 15x - a
+        # transhuman body turns ordinary training into something else.
+        gain = 15 if is_astartes(str(run.get("origin") or "")) else 1
+        bonus_attrs[offer["attr"]]=int(bonus_attrs.get(offer["attr"],0))+gain
         pool_updates.update(_inc_pool_updates_for_attribute(ch,run,bonus_attrs,offer["attr"]))
     elif offer["type"]=="talent":
         row=_inc_talent_catalog_row({"craft_id":offer["craft_id"]})
@@ -7560,6 +7620,59 @@ def _inc_apply_purchase(run, ch, offer):
         extra_wargear.append(entry)
         key=_inc_weapon_key(entry); maximum=_inc_wargear_durability_max(entry)
         pool_updates.update({"equipped_armor_key":key,"armour_durability_current":maximum,"armour_durability_max":maximum})
+    elif offer["type"]=="astartes_implant":
+        attr=offer["attr"]
+        statuses=dict(run.get("incursion_statuses") or {})
+        tripled=list(statuses.get("tripled_attrs") or [])
+        if attr in tripled or statuses.get("primaris"): raise ValueError("already_implanted")
+        current_val=int(effective_attributes(_inc_merge_character(ch,run)).get(attr,INC_ORIGIN_BASE_ATTR))
+        perm=dict(statuses.get("talent_permanent_attributes") or {})
+        perm[attr]=int(perm.get(attr,0) or 0)+current_val*2  # takes it to 3x
+        tripled.append(attr)
+        statuses["tripled_attrs"]=tripled
+        became_primaris=False
+        if len(tripled)>=3 and not statuses.get("primaris"):
+            became_primaris=True
+            statuses["primaris"]=True
+            statuses["primaris_attrs"]=tripled[:3]
+            for a in tripled[:3]: perm[a]=int(perm.get(a,0) or 0)+10
+            primaris=INC_ASTARTES_PRIMARIS_TALENTS.get(run.get("origin"))
+            if primaris:
+                # One of 35 possible Attribute trios x 10 Chapters = 350
+                # distinct outcomes - see INC_PRIMARIS_ATTR_CLAUSE.
+                clauses="; ".join(f"{a} (+10, {INC_PRIMARIS_ATTR_CLAUSE.get(a,'a permanent boost')})" for a in tripled[:3])
+                extra_talents.append({"name":primaris["name"],"effect":f"{primaris['effect']} Primaris gene-seed: {clauses}.",
+                                       "rarity":"Unique","stacks":1,"max_stacks":1,"cost":0})
+        statuses["talent_permanent_attributes"]=perm
+        pool_updates["incursion_statuses"]=statuses
+        if attr in ("Toughness","Willpower"):
+            merged_before=_inc_merge_character(ch,run); pools_before=_inc_life_pools(merged_before,run.get("origin"),run.get("minions"))
+            merged_after=_inc_merge_character(ch,{**run,"incursion_statuses":statuses}); pools_after=_inc_life_pools(merged_after,run.get("origin"),run.get("minions"))
+            if attr=="Toughness":
+                gain=max(0,pools_after["wounds_max"]-pools_before["wounds_max"])
+                pool_updates["wounds_max"]=int(run.get("wounds_max",0) or 0)+gain
+                pool_updates["wounds_current"]=min(pool_updates["wounds_max"],int(run.get("wounds_current",0) or 0)+gain)
+            else:
+                gain=max(0,pools_after["shock_max"]-pools_before["shock_max"])
+                pool_updates["shock_max"]=int(run.get("shock_max",0) or 0)+gain
+                pool_updates["shock_current"]=min(pool_updates["shock_max"],int(run.get("shock_current",0) or 0)+gain)
+    elif offer["type"]=="astartes_weapon_implant":
+        stat=offer["stat"]
+        statuses=dict(run.get("incursion_statuses") or {})
+        tripled_w=list(statuses.get("tripled_weapon_stats") or [])
+        if stat in tripled_w: raise ValueError("already_implanted")
+        equipped=next((w for w in starting_wargear+extra_wargear if _inc_is_weapon_item(w) and w.get("equipped",True)),None)
+        if equipped is None: raise ValueError("no_weapon_equipped")
+        d=_gear_details_dict(equipped.get("details",{}))
+        if stat=="Damage":
+            base=int(d.get("damage_base",_weapon_base_damage(d,effective_attributes(_inc_merge_character(ch,run)))) or 0)
+            d["damage_base"]=base*3
+        else:
+            d["ed"]=int(d.get("ed",0) or 0)*3
+        equipped["details"]=d
+        tripled_w.append(stat)
+        statuses["tripled_weapon_stats"]=tripled_w
+        pool_updates["incursion_statuses"]=statuses
     else: raise ValueError("unknown_offer_type")
     updated=_inc_persist(run["id"],xp=run["xp"]-offer["cost"],bonus_attributes=bonus_attrs,starting_wargear=starting_wargear,extra_wargear=extra_wargear,extra_talents=extra_talents,extra_powers=[],extra_keywords=extra_keywords,heal_charges=heal_charges,**pool_updates)
     if offer["type"]=="wargear":
@@ -7598,6 +7711,7 @@ def _inc_generate_post_combat_offers(ch, run, node):
     enemy_count = len(node.get("enemies", []) or [])
     origin = run.get("origin")
     is_tyranid = (origin == "Tyranid-Pattern")
+    is_astartes_origin = is_astartes(str(origin or ""))
     talent_catalog = {int(r["id"]): r for r in list_craft_items("talent", active_only=False)}
 
     def talent_candidates(min_rank):
@@ -7638,6 +7752,20 @@ def _inc_generate_post_combat_offers(ch, run, node):
             module_offer = dict(_inc_generate_dreadnought_module_offer())
             module_offer["cost"] = 0
             candidates.append(module_offer)
+        if is_astartes_origin:
+            # "quando um astartes ganha um combate contra boss ele pode
+            # aprimorar um implante" - a guaranteed free gene-implant
+            # (triples one Attribute) or, once every Attribute is already
+            # tripled, a relic weapon implant (triples Damage or ED) -
+            # re-offered on every later boss kill until actually bought.
+            candidates = candidates[:2]
+            remaining_attrs = _inc_astartes_available_implants(run)
+            if remaining_attrs:
+                candidates.append(_inc_astartes_implant_offer(random.choice(remaining_attrs)))
+            else:
+                remaining_stats = _inc_astartes_available_weapon_implants(run)
+                if remaining_stats:
+                    candidates.append(_inc_astartes_weapon_implant_offer(random.choice(remaining_stats)))
         return [{**o, "offer_id": i} for i, o in enumerate(candidates)]
 
     min_rank = _inc_reward_min_rarity(difficulty, enemy_count)
@@ -7682,6 +7810,8 @@ def _inc_post_combat_loot(run, ch, node):
     subtype = "boss" if node.get("difficulty") == "boss" else "combat"
     return _inc_persist(run["id"], node={"type": "reward_choice", "subtype": subtype, "offers": offers,
                                           "reward_xp": int(node.get("reward_xp", 0) or 0)})
+
+
 
 
 def _inc_reward_choice_take(run, ch, offer_id):
@@ -7958,7 +8088,7 @@ def _inc_start_run(ch, origin=None):
         # for the whole Incursion, reviving normally on Rest.
         helper = INC_ORIGIN_HELPER_MINION[origin]
         fellowship = int(_inc_origin_attributes(origin).get("Fellowship", INC_ORIGIN_BASE_ATTR))
-        helper_minion = _inc_minion_stats(helper["name"], helper.get("icon", ""), origin, "Uncommon", 1, fellowship)
+        helper_minion = _inc_minion_stats(helper["name"], helper.get("icon", ""), origin, "Uncommon", 1, fellowship, bulk=bool(helper.get("bulk")))
         helper_minion["ability"] = helper.get("ability", "")
         helper_minion["growth_profile"] = helper.get("growth", "standard")
         starting_minions = [helper_minion]
@@ -8594,6 +8724,7 @@ def _inc_resolve_player_attack(ch, run, node, target_uids, weapon, bonus_die=0, 
     # both defence AND offence, and losing it in a fight costs you both.
     shock_bonus = shock_now
     per_target_pool = max(1, pool - (len(targets) - 1) + int(bonus_die or 0) + extra_pool + shock_bonus)
+    agility = int(merged.get("attributes", {}).get("Agility", 1) or 1)
     log = []
     wrath_gained = 0
     reroll_uses = 0
@@ -8601,7 +8732,8 @@ def _inc_resolve_player_attack(ch, run, node, target_uids, weapon, bonus_die=0, 
     if _inc_talent_has(ch, run, "Shield of Faith"): reroll_uses = max(reroll_uses, 1)
     if _inc_talent_has(ch, run, "Tactical Doctrine"): reroll_uses = max(reroll_uses, 2)
     for target in targets:
-        rolls, icons, wrath_die_6 = _inc_roll_pool(per_target_pool)
+        roll_pool = _inc_agility_pool_double(per_target_pool, agility)
+        rolls, icons, wrath_die_6 = _inc_roll_pool(roll_pool)
         hit = bool(guaranteed_hit) or icons >= target["defence"]
         if not hit and reroll_uses:
             reroll_status = _inc_talent_status(run)
@@ -8666,7 +8798,7 @@ def _inc_resolve_player_attack(ch, run, node, target_uids, weapon, bonus_die=0, 
                 statuses = _inc_talent_status(run); statuses["next_attack_bonus_dice"] = int(statuses.get("next_attack_bonus_dice", 0) or 0) + _inc_talent_count(ch, run, "Relentless Assault")
                 run = _inc_talent_persist_status(run, statuses)
         log.append({"actor": "player", "action": "attack", "target_name": target["name"], "target_uid": target["uid"],
-                    "skill": skill_name, "pool": per_target_pool, "rolls": rolls, "icons": icons,
+                    "skill": skill_name, "pool": len(rolls), "rolls": rolls, "icons": icons,
                     "weapon": weapon["name"], "hit": hit, "damage": total_damage, "shock": shock, "wounds": wounds,
                     "damage_rolls": damage_rolls, "target_defeated": not target["alive"],
                     "wrath_crit": critical, "shifted_ed": shiftable if hit else 0,
@@ -8871,12 +9003,14 @@ def _inc_finish_combat_round(run, ch, node, round_log, wrath_gained=0, minions=N
             bosses_cleared += 1
             if bosses_cleared % 3 == 0:
                 pending_boss3 = True
-        updated = _inc_persist(run["id"], shock_current=new_shock, wounds_current=new_wounds, wrath_current=new_wrath,
-                               xp=run["xp"] + node["reward_xp"], xp_earned=run.get("xp_earned", 0) + node["reward_xp"], node=node,
-                               bosses_cleared=bosses_cleared, pending_boss3_pvp=pending_boss3,
-                               **({"minions": minions} if minions is not None else {}))
-        loot_node = _inc_post_combat_loot(updated, ch, node)
-        return loot_node if loot_node is not None else updated
+        # Stop here, still on the resolved combat node - the last roll and
+        # the now-dead enemies stay on screen until the player presses NEXT
+        # (see _inc_render_combat/_inc_combat_claim_victory), instead of
+        # jumping straight to the reward screen the same instant they win.
+        return _inc_persist(run["id"], shock_current=new_shock, wounds_current=new_wounds, wrath_current=new_wrath,
+                            xp=run["xp"] + node["reward_xp"], xp_earned=run.get("xp_earned", 0) + node["reward_xp"], node=node,
+                            bosses_cleared=bosses_cleared, pending_boss3_pvp=pending_boss3,
+                            **({"minions": minions} if minions is not None else {}))
 
     return _inc_persist(run["id"], shock_current=new_shock, wounds_current=new_wounds, wrath_current=new_wrath, node=node,
                          **({"minions": minions} if minions is not None else {}))
@@ -9004,8 +9138,16 @@ def _inc_combat_flee(run, ch, target_uid, bonus_die=0):
 
 
 def _inc_combat_continue(run, ch):
-    if not run.get("node") or run["node"].get("type") != "combat" or not run["node"].get("resolved"):
+    """The NEXT button on a resolved combat node. A win stops here first
+    with the enemies dead and the last roll still on screen (see
+    _inc_finish_combat_round's all_dead branch) - pressing NEXT is what
+    actually moves on to the reward screen. A Flee has nothing to show
+    off, so it goes straight to the next stage as before."""
+    node = run.get("node") or {}
+    if node.get("type") != "combat" or not node.get("resolved"):
         raise ValueError("wrong_node")
+    if node.get("victory"):
+        return _inc_post_combat_loot(run, ch, node)
     return _inc_advance(run, ch)
 
 
@@ -9350,8 +9492,8 @@ def _inc_render_minion_status(run, node):
             ability_html = f"<div class='inc-minion-ability'>{html.escape(ability)}</div>" if ability else ""
             bulk_badge = "<span class='inc-bulk-badge' title='Always draws every enemy attack while alive'>BULK</span>" if minion.get("bulk") else ""
             st.markdown(
-                f"<div class='inc-enemy {rarity_cls}'>"
-                f"<div class='inc-enemy-strip'><span>{_inc_minion_glyph_html(minion.get('origin'))}{html.escape(str(minion.get('name','Minion')))}{bulk_badge}</span><span>{status}</span></div>"
+                f"<div class='inc-minion-card {rarity_cls}'>"
+                f"<div class='inc-enemy-strip'><span><span class='inc-ally-tag'>ALLY</span>{_inc_minion_glyph_html(minion.get('origin'))}{html.escape(str(minion.get('name','Minion')))}{bulk_badge}</span><span>{status}</span></div>"
                 f"<div class='inc-npc-vitals'>"
                 f"<span class='inc-vital wounds' style='--vital-pct:{wounds_pct:.1f}%;--vital-pct-num:{wounds_pct/100:.3f};--vital-color:#b23a35'><b>{wounds_cur}/{wounds_max}</b><span class='inc-vital-label'>WOUNDS</span></span>"
                 f"<span class='inc-vital shock' style='--vital-pct:{shock_pct:.1f}%;--vital-color:#9b72c2'><b>{shock_cur}/{shock_max}</b><span class='inc-vital-label'>SHOCK</span></span>"
@@ -9778,7 +9920,7 @@ def _inc_render_combat(run, ch, node):
                     if st.button(label,key=f"inc_target_{run['id']}_{e['uid']}",use_container_width=True):
                         current=list(st.session_state.get(target_key,[])); current.remove(e["uid"]) if e["uid"] in current else current.append(e["uid"]); st.session_state[target_key]=current; st.rerun()
     if node.get("resolved"):
-        if st.button("CONTINUE",key="inc_combat_continue",use_container_width=True): _inc_combat_continue(run,ch); st.rerun()
+        if st.button("NEXT",key="inc_combat_continue",use_container_width=True): _inc_combat_continue(run,ch); st.rerun()
         return
     pending=node.get("pending_talent_triggers") or []
     if pending:
@@ -10136,6 +10278,81 @@ def _inc_origin_attributes(origin):
     return attrs
 
 
+# ---- Astartes gene-implants / Primaris ascension -----------------------
+# "Quando um astartes ganha um combate contra boss ele pode aprimorar um
+# implante que vai triplicar um atributo" - a free Gene-Implant offer
+# (triples one Attribute) shows up in every boss reward from here on,
+# cycling through whichever Attributes haven't been implanted yet; declining
+# it costs nothing - it just comes back on the next boss kill. At 3 implants
+# the Astartes becomes Primaris: a permanent +10 bonus on top of each of
+# those 3 Attributes, plus a Chapter-specific named Talent (see
+# INC_ASTARTES_PRIMARIS_TALENTS) whose text names the 3 chosen Attributes.
+# "o mesmo aplica para as armas" mirrors the same triple-and-reoffer
+# mechanic for the equipped weapon's Damage and ED, tracked independently
+# and NOT required for (or blocked by) Primaris ascension.
+#
+# "faça as 350 combinações possíveis (10 capítulos × 35 combinações)":
+# there are C(7,3)=35 ways to pick which 3 of the 7 Attributes get
+# tripled, times 10 Chapters = 350 distinct outcomes. Rather than 350
+# hand-authored one-off talents (which would just restate the same handful
+# of ideas 35 times each), every outcome is built from two real,
+# independent parts that combine: the Chapter (which of the 10 named
+# Talents below is granted) and the 3 chosen Attributes (each already
+# feeds a genuinely different real system - see INC_PRIMARIS_ATTR_CLAUSE -
+# so the +10 bonus lands somewhere mechanically different for every one of
+# the 35 combinations, not just a bigger number). _inc_apply_purchase's
+# astartes_implant branch composes the final Talent text from both parts.
+INC_PRIMARIS_ATTR_CLAUSE = {
+    "Strength": "raw melee power - every (S)-based weapon hits harder",
+    "Toughness": "a deeper reserve of Wounds",
+    "Agility": "a far higher chance to double its own dice pool on every roll (see the Agility doubling rule)",
+    "Initiative": "an even stronger claim on striking first each round",
+    "Willpower": "a deep well of Shock - both a bigger buffer and more bonus hit dice",
+    "Intellect": "sharper battlefield instincts feeding its trained Skills",
+    "Fellowship": "a far stronger bond with its companion Minion's own Damage and Shock",
+}
+INC_ASTARTES_PRIMARIS_TALENTS = {
+    "Ultramarines Astartes": {"name": "Primaris Ultramarine", "effect": "Doctrina wafers rewritten: Tactical Doctrine now rerolls THREE missed attacks per fight (not two)."},
+    "Blood Angels Astartes": {"name": "Primaris Sanguinary Guard", "effect": "The Red Thirst mastered: while below half Wounds, all attacks (not just melee) gain +2 bonus dice."},
+    "Dark Angels Astartes": {"name": "Primaris Deathwing", "effect": "Secrets of the Rock deepened: avoid one Wound entirely TWICE per fight (not once)."},
+    "Space Wolves Astartes": {"name": "Primaris Wulfen", "effect": "The Wulfen curse embraced: melee Critical Hits deal +6 damage (not +3) and inflict 2 Bleeding."},
+    "Imperial Fists Astartes": {"name": "Primaris Firstborn", "effect": "Bolter Drill perfected: ranged attacks gain +4 ED (not +2)."},
+    "Salamanders Astartes": {"name": "Primaris Salamander", "effect": "Flame-Touched intensified: +6 Medicae charges (not +3) per Incursion, immune to Bleeding."},
+    "Raven Guard Astartes": {"name": "Primaris Raven", "effect": "Shadow Strike sharpened: the first attack against each new enemy group gains +6 bonus dice (not +3)."},
+    "White Scars Astartes": {"name": "Primaris Scar", "effect": "Hit and Run mastered: may Flee without triggering an enemy turn any number of times per fight (not just twice)."},
+    "Iron Hands Astartes": {"name": "Primaris Iron Father", "effect": "The Flesh is Weak completed: Weapon and Armour durability loss reduced by 4 per hit (not 2)."},
+    "Black Templars Astartes": {"name": "Primaris Templar", "effect": "Vow of the Crusade fulfilled: while below half Wounds, all attacks gain +4 bonus dice (not +2)."},
+}
+
+
+def _inc_astartes_available_implants(run):
+    statuses = run.get("incursion_statuses") or {}
+    if statuses.get("primaris"):
+        return []
+    tripled = set(statuses.get("tripled_attrs") or [])
+    return [a for a in ATTRS if a not in tripled]
+
+
+def _inc_astartes_available_weapon_implants(run):
+    statuses = run.get("incursion_statuses") or {}
+    tripled = set(statuses.get("tripled_weapon_stats") or [])
+    return [s for s in ("Damage", "ED") if s not in tripled]
+
+
+def _inc_astartes_implant_offer(attr):
+    return {"type": "astartes_implant", "attr": attr, "rarity": "Unique", "cost": 0,
+            "name": f"{attr} Gene-Implant", "label": f"{attr} Gene-Implant",
+            "effect": f"Permanently triples your {attr}.",
+            "detail": f"Unique · Gene-seed surgery permanently triples your {attr}."}
+
+
+def _inc_astartes_weapon_implant_offer(stat):
+    return {"type": "astartes_weapon_implant", "stat": stat, "rarity": "Unique", "cost": 0,
+            "name": f"Relic Weapon Implant ({stat})", "label": f"Relic Weapon Implant ({stat})",
+            "effect": f"Permanently triples your equipped weapon's {stat}.",
+            "detail": f"Unique · Permanently triples your equipped weapon's {stat}."}
+
+
 # ---- Minions: exclusive to Human and Tyranid-Pattern Origins -----------
 # Minions are cumulative - buying a DIFFERENT Minion adds it alongside any
 # others; buying the SAME Minion again levels the existing one up (full
@@ -10191,26 +10408,30 @@ INC_ORIGIN_HELPER_MINION = {
                              "ability": "Psychically attuned - its Shock grows with its Grey Knight's own."},
     "Chaos-Pattern": {"name": "Chaos Familiar", "icon": "", "growth": "kill_fed",
                        "ability": "Feeds on the souls of the fallen - Damage grows with Bosses defeated."},
-    "Ultramarines Astartes": {"name": "Cogitator Servo-Skull", "icon": "", "growth": "standard",
-                               "ability": "Tactical cogitator - steady, even growth every Loop."},
-    "Blood Angels Astartes": {"name": "Sanguinary Servitor", "icon": "", "growth": "berserker",
-                               "ability": "The Red Thirst runs deep - grows almost entirely into raw Damage."},
-    "Dark Angels Astartes": {"name": "Deathwing Servitor", "icon": "", "growth": "bulwark",
-                              "ability": "Terminator-pattern plating - grows into a wall of Wounds and Resilience."},
-    "Space Wolves Astartes": {"name": "Fenrisian Wolf", "icon": "", "growth": "berserker",
-                               "ability": "A predator's hunger - grows almost entirely into raw Damage."},
-    "Imperial Fists Astartes": {"name": "Bastion Servitor", "icon": "", "growth": "bulwark",
-                                 "ability": "Never breaks, never falls back - grows into a wall of Wounds and Resilience."},
-    "Salamanders Astartes": {"name": "Promethean Servitor", "icon": "", "growth": "swarm",
-                              "ability": "Forge-tempered - broad, balanced growth every Loop."},
-    "Raven Guard Astartes": {"name": "Shadow Scout", "icon": "", "growth": "kill_fed",
-                              "ability": "Marks its prey before the kill - Damage grows with Bosses defeated."},
-    "White Scars Astartes": {"name": "Attack Bike Rider", "icon": "", "growth": "berserker",
-                              "ability": "Hit and run - grows almost entirely into raw Damage."},
-    "Iron Hands Astartes": {"name": "Servitor Cyborg", "icon": "", "growth": "bulwark",
-                             "ability": "The flesh is weak, the machine is eternal - grows into a wall of Wounds and Resilience."},
-    "Black Templars Astartes": {"name": "Neophyte Squire", "icon": "", "growth": "swarm",
-                                 "ability": "Eager and unblooded - broad, balanced growth every Loop."},
+    # Every Astartes Chapter's companion is Bulk (always draws every enemy
+    # attack while alive - normally a Human/Tyranid-only trait, Astartes is
+    # the one deliberate exception) and scales almost entirely into Damage
+    # ("seus companheiros escalam com dano"), regardless of Chapter flavour.
+    "Ultramarines Astartes": {"name": "Cogitator Servo-Skull", "icon": "", "growth": "berserker", "bulk": True,
+                               "ability": "Tactical cogitator, Bulk - draws every attack, grows almost entirely into raw Damage."},
+    "Blood Angels Astartes": {"name": "Sanguinary Servitor", "icon": "", "growth": "berserker", "bulk": True,
+                               "ability": "The Red Thirst runs deep, Bulk - draws every attack, grows almost entirely into raw Damage."},
+    "Dark Angels Astartes": {"name": "Deathwing Servitor", "icon": "", "growth": "berserker", "bulk": True,
+                              "ability": "Terminator-pattern plating, Bulk - draws every attack, grows almost entirely into raw Damage."},
+    "Space Wolves Astartes": {"name": "Fenrisian Wolf", "icon": "", "growth": "berserker", "bulk": True,
+                               "ability": "A predator's hunger, Bulk - draws every attack, grows almost entirely into raw Damage."},
+    "Imperial Fists Astartes": {"name": "Bastion Servitor", "icon": "", "growth": "berserker", "bulk": True,
+                                 "ability": "Never breaks, never falls back, Bulk - draws every attack, grows almost entirely into raw Damage."},
+    "Salamanders Astartes": {"name": "Promethean Servitor", "icon": "", "growth": "berserker", "bulk": True,
+                              "ability": "Forge-tempered, Bulk - draws every attack, grows almost entirely into raw Damage."},
+    "Raven Guard Astartes": {"name": "Shadow Scout", "icon": "", "growth": "berserker", "bulk": True,
+                              "ability": "Marks its prey before the kill, Bulk - draws every attack, grows almost entirely into raw Damage."},
+    "White Scars Astartes": {"name": "Attack Bike Rider", "icon": "", "growth": "berserker", "bulk": True,
+                              "ability": "Hit and run, Bulk - draws every attack, grows almost entirely into raw Damage."},
+    "Iron Hands Astartes": {"name": "Servitor Cyborg", "icon": "", "growth": "berserker", "bulk": True,
+                             "ability": "The flesh is weak, the machine is eternal, Bulk - draws every attack, grows almost entirely into raw Damage."},
+    "Black Templars Astartes": {"name": "Neophyte Squire", "icon": "", "growth": "berserker", "bulk": True,
+                                 "ability": "Eager and unblooded, Bulk - draws every attack, grows almost entirely into raw Damage."},
 }
 INC_MINION_RARITY_STATS = {
     "Common":    {"wounds": 8,  "shock": 4,  "resilience": 2, "damage": 3,  "ed": 1, "cost": 15},

@@ -7054,12 +7054,12 @@ def _inc_player_shock_bonus(origin, shock_now):
     Wounds) and can run into the hundreds - giving the PLAYER's own attack
     a 1-die-per-point bonus on top of that would double-dip the same
     growth twice, so theirs is 1 die per 10 Shock, capped at +10. Every
-    other Origin (Astartes included) instead gets 1 die per 10 Shock too,
-    but rounded UP and never capped."""
+    other Origin instead gets a flat +10 dice plus 1 more per 20 Shock
+    (rounded up), uncapped."""
     shock_now = max(0, int(shock_now or 0))
     if origin in ("Tyranid-Pattern", "Human"):
         return min(10, shock_now // 10)
-    return math.ceil(shock_now / 10)
+    return 10 + math.ceil(shock_now / 20)
 
 
 def _inc_roll_icons(size):

@@ -8360,14 +8360,19 @@ def _inc_record_wrath_spend(run, ch, amount):
     amount = max(0, int(amount or 0))
     if amount <= 0:
         return run
-    if is_astartes(str(run.get("origin") or "")):
-        # Post-human physiology: every Wrath spent floods an Astartes with
-        # adrenaline - +10 Shock recovered right now, +5 max Shock forever,
-        # per point of Wrath spent.
-        new_shock_max = int(run.get("shock_max", 0) or 0) + 5 * amount
-        new_shock_current = min(new_shock_max, int(run.get("shock_current", 0) or 0) + 10 * amount)
-        run = _inc_persist(run["id"], shock_max=new_shock_max, shock_current=new_shock_current)
-    if run.get("origin") == "Human":
+    origin = run.get("origin")
+    if origin not in ("Tyranid-Pattern", "Human"):
+        # "consumir wrath recupera o shock em 5x a inteligencia" - universal
+        # for every Origin except Tyranid-Pattern (its Wrath instead grows
+        # Apex Tyranid, see the loop-end consume) and Human (heals the
+        # Dreadnought instead, right below). Supersedes the old
+        # Astartes-only +10-Shock/+5-max-Shock formula.
+        merged = _inc_merge_character(ch, run)
+        intellect = int(effective_attributes(merged).get("Intellect", 1) or 1)
+        recover = 5 * intellect * amount
+        new_shock_current = min(int(run.get("shock_max", 0) or 0), int(run.get("shock_current", 0) or 0) + recover)
+        run = _inc_persist(run["id"], shock_current=new_shock_current)
+    if origin == "Human":
         # Dreadnought's own species trait: a permanent attack die AND a
         # wound repair (15% of its own max Wounds + 20, flat) for every
         # Wrath the pilot spends, scaled by how much Wrath was spent.
@@ -8757,19 +8762,20 @@ def _inc_resolve_player_attack(ch, run, node, target_uids, weapon, bonus_die=0, 
         pre_log = _inc_enemy_turn(node["enemies"], player_traits, shock_now, minions, talent_mods)
         enemy_shock_dealt = sum(int(e.get("shock", 0) or 0) for e in pre_log if e.get("action") == "attack")
         shock_now = max(0, shock_now - enemy_shock_dealt)
-    # Every point of Shock still standing adds a hit die - Shock is now the
-    # buffer that eats damage before Wounds do, so keeping it topped up is
-    # both defence AND offence, and losing it in a fight costs you both.
-    # Tyranid-Pattern and Human are the exception: their Shock pool is tied
-    # to an already-strong Minion (Apex Tyranid's Wounds / the
-    # Dreadnought's current Wounds) and can run into the hundreds - giving
-    # the PLAYER's own attack a 1-die-per-point bonus on top of that would
-    # double-dip the same growth twice. Their Shock instead only contributes
-    # 1 die per 10 Shock, capped at +10, so the Minion stays the powerhouse.
+    # Shock still standing adds hit dice - Shock is now the buffer that eats
+    # damage before Wounds do, so keeping it topped up is both defence AND
+    # offence, and losing it in a fight costs you both. Tyranid-Pattern and
+    # Human are a special case: their Shock pool is tied to an already-
+    # strong Minion (Apex Tyranid's Wounds / the Dreadnought's current
+    # Wounds) and can run into the hundreds - giving the PLAYER's own
+    # attack a 1-die-per-point bonus on top of that would double-dip the
+    # same growth twice, so theirs is 1 die per 10 Shock, capped at +10.
+    # Every other Origin (Astartes included) instead gets 1 die per 10
+    # Shock too, but rounded UP and never capped.
     if run.get("origin") in ("Tyranid-Pattern", "Human"):
         shock_bonus = min(10, shock_now // 10)
     else:
-        shock_bonus = shock_now
+        shock_bonus = math.ceil(shock_now / 10)
     per_target_pool = max(1, pool - (len(targets) - 1) + int(bonus_die or 0) + extra_pool + shock_bonus)
     agility = int(merged.get("attributes", {}).get("Agility", 1) or 1)
     log = []

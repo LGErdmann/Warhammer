@@ -6745,11 +6745,16 @@ def _inc_best_attack_pool(ch):
     # so leaving it out here made enemies relatively far more accurate too.
     ws_pool = int(attrs.get("Initiative", 1)) + int(skills.get("Weapon Skill", 0) or 0)
     bs_pool = int(attrs.get("Agility", 1)) + int(skills.get("Ballistic Skill", 0) or 0)
-    # Floor of 3, not 1: a real sheet that never invested in either combat
-    # skill (an unfinished character, or one built for a totally different
-    # role) would otherwise be stuck rolling a single die forever - which
-    # can never compete with even a tier-1 threat and isn't fun to play.
-    return ("Weapon Skill", max(3, ws_pool)) if ws_pool >= bs_pool else ("Ballistic Skill", max(3, bs_pool))
+    # Floor of 5, not 3: _inc_merge_character() deliberately zeroes every
+    # Incursion character's Skills (real or self-registered), so the Skill
+    # term above is ALWAYS 0 for a player - only enemies (built straight
+    # from Bestiary sheets, which keep their real skill_map) ever benefit
+    # from the Attribute+Skill fix. A book tier-1 threat's printed pool
+    # bakes in a skill component of roughly +2 to +5 on top of its
+    # Attribute; without an equivalent for players, everyone was stuck at
+    # bare Initiative/Agility (often 3, sometimes only the one Origin that
+    # happens to buff it) while every enemy rolled meaningfully more dice.
+    return ("Weapon Skill", max(5, ws_pool)) if ws_pool >= bs_pool else ("Ballistic Skill", max(5, bs_pool))
 
 
 def _inc_roll_pool(size):
@@ -8781,9 +8786,32 @@ def mode_chooser_page():
 ## same login here instead, unaffected by any of this.
 INC_ORIGINS = {
     "Human": {"Fellowship": 1, "Intellect": 1},
-    "Astartes-Pattern": {"Strength": 2, "Toughness": 2},
     "Aeldari-Pattern": {"Agility": 2, "Initiative": 2},
     "Ork-Pattern": {"Strength": 2, "Toughness": 2},
+    "Necron-Pattern": {"Toughness": 2, "Initiative": 2},
+    "Tau-Pattern": {"Agility": 2, "Intellect": 2},
+    "Ogryn-Pattern": {"Strength": 3, "Toughness": 1},
+    "Custodes-Pattern": {"Strength": 2, "Initiative": 2},
+    "Sororitas-Pattern": {"Willpower": 2, "Agility": 2},
+    "Kroot-Pattern": {"Agility": 2, "Initiative": 2},
+    "Genestealer-Cultist-Pattern": {"Strength": 2, "Agility": 2},
+    "Death-Guard-Pattern": {"Toughness": 3, "Strength": 1},
+    "Grey-Knight-Pattern": {"Willpower": 2, "Initiative": 2},
+    "Chaos-Pattern": {"Strength": 2, "Willpower": 2},
+    # Space Marine Chapters - each a distinct Astartes sub-origin rather
+    # than one generic "Astartes-Pattern". Named with "Astartes" in the
+    # string so is_astartes()/species_speed() still grant the Speed 7
+    # bonus that being a Space Marine implies.
+    "Ultramarines Astartes": {"Strength": 2, "Willpower": 2},
+    "Blood Angels Astartes": {"Strength": 2, "Initiative": 2},
+    "Dark Angels Astartes": {"Willpower": 2, "Initiative": 2},
+    "Space Wolves Astartes": {"Strength": 2, "Toughness": 2},
+    "Imperial Fists Astartes": {"Toughness": 2, "Willpower": 2},
+    "Salamanders Astartes": {"Toughness": 2, "Fellowship": 2},
+    "Raven Guard Astartes": {"Agility": 2, "Initiative": 2},
+    "White Scars Astartes": {"Agility": 2, "Strength": 2},
+    "Iron Hands Astartes": {"Toughness": 2, "Intellect": 2},
+    "Black Templars Astartes": {"Willpower": 2, "Strength": 2},
 }
 INC_ORIGIN_BASE_ATTR = 3
 
@@ -8793,9 +8821,28 @@ INC_ORIGIN_BASE_ATTR = 3
 # choice, not locked to the account - see _inc_render_origin_select.
 INC_ORIGIN_TALENTS = {
     "Human": {"name": "Indomitable", "effect": "Once per Incursion, reroll any one failed Test."},
-    "Astartes-Pattern": {"name": "Angel of Death", "effect": "Once per fight, add your current Loop in bonus ED to a single melee attack."},
     "Aeldari-Pattern": {"name": "Battle Precognition", "effect": "Once per fight, reroll your Wrath Die."},
     "Ork-Pattern": {"name": "WAAAGH!", "effect": "While below half Wounds, add +1 bonus die to all melee attacks."},
+    "Necron-Pattern": {"name": "Reanimation Protocols", "effect": "Once per Incursion, if you would be reduced to 0 Wounds, instead remain at 1."},
+    "Tau-Pattern": {"name": "For the Greater Good", "effect": "Once per fight, add +2 bonus dice to a ranged attack."},
+    "Ogryn-Pattern": {"name": "Bone 'Ead", "effect": "Reduce all Shock damage taken by 1 (minimum 0)."},
+    "Custodes-Pattern": {"name": "Guardian Eternal", "effect": "Once per fight, negate one hit entirely before damage is rolled."},
+    "Sororitas-Pattern": {"name": "Shield of Faith", "effect": "Once per Incursion, reroll any one failed Test."},
+    "Kroot-Pattern": {"name": "Pack Hunter", "effect": "+1 bonus die on the first attack against any target no one has attacked yet this fight."},
+    "Genestealer-Cultist-Pattern": {"name": "The Stars Are Right", "effect": "Once per fight, gain an extra attack action after a Critical Hit."},
+    "Death-Guard-Pattern": {"name": "Nurgle's Gift", "effect": "Immune to Bleeding; recover 1 Wound whenever you inflict Bleeding."},
+    "Grey-Knight-Pattern": {"name": "Aegis of the Emperor", "effect": "Once per fight, reduce incoming damage from a single hit by your Willpower."},
+    "Chaos-Pattern": {"name": "Dark Blessing", "effect": "Wrath spent on bonus attack dice grants +2 dice instead of +1."},
+    "Ultramarines Astartes": {"name": "Tactical Doctrine", "effect": "Once per fight, reroll a missed attack."},
+    "Blood Angels Astartes": {"name": "Red Thirst", "effect": "While below half Wounds, add +1 bonus die to melee attacks."},
+    "Dark Angels Astartes": {"name": "Secrets of the Rock", "effect": "Once per Incursion, avoid one Wound entirely."},
+    "Space Wolves Astartes": {"name": "Curse of the Wulfen", "effect": "Melee Critical Hits deal +1 damage."},
+    "Imperial Fists Astartes": {"name": "Bolter Drill", "effect": "Ranged attacks gain +1 ED."},
+    "Salamanders Astartes": {"name": "Flame-Touched", "effect": "+1 Medicae charge per Incursion; immune to Bleeding."},
+    "Raven Guard Astartes": {"name": "Shadow Strike", "effect": "The first attack each fight gains +1 bonus die."},
+    "White Scars Astartes": {"name": "Hit and Run", "effect": "May Flee without triggering an enemy turn, once per fight."},
+    "Iron Hands Astartes": {"name": "The Flesh is Weak", "effect": "Weapon and Armour durability loss is reduced by 1 per hit."},
+    "Black Templars Astartes": {"name": "Vow of the Crusade", "effect": "While below half Wounds, add +1 bonus die to all attacks."},
 }
 
 

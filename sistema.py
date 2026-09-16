@@ -7106,63 +7106,88 @@ def _inc_apply_purchase(run, ch, offer):
     return updated
 
 
-# ---- loot / post-combat choices --------------------------------------
-def _inc_generate_free_item_offer(ch, run):
-    pool = list_craft_items("wargear", active_only=True)
-    if not pool:
-        return None
-    row = random.choice(pool)
-    return {"type": "wargear", "craft_id": int(row["id"]), "name": row["name"],
-            "effect": row.get("effect", ""), "label": row["name"],
-            "detail": row.get("effect", ""), "cost": 0, "offer_id": 0, "free_loot": True}
+# ---- post-combat reward choice -----------------------------------------
+_INC_RARITY_RANK = {"Common": 0, "Uncommon": 1, "Rare": 2, "Legendary": 3, "Unique": 4}
 
-def _inc_claim_free_item(run, ch, offer):
-    if not offer or offer.get("type") != "wargear":
-        raise ValueError("invalid_loot")
-    conn = get_conn()
-    row = conn.execute("SELECT * FROM craft_items WHERE id=? AND kind='wargear'", (int(offer["craft_id"]),)).fetchone()
-    conn.close()
-    if row is None:
-        raise ValueError("item_not_found")
-    item = _build_craft_entry(row, "wargear")
-    extra = list(run.get("extra_wargear") or [])
-    extra.append(item)
-    updated = _inc_persist(run["id"], extra_wargear=extra)
-    key = _inc_weapon_key(item)
-    if _inc_is_armour_item(item):
-        maximum = _inc_wargear_durability_max(item)
-        updated = _inc_persist(updated["id"], equipped_armor_key=key, armour_durability_current=maximum, armour_durability_max=maximum)
-    else:
-        values = _inc_weapon_durability_map(updated); values[key] = _inc_wargear_durability_max(item)
-        updated = _inc_persist(updated["id"], weapon_durabilities=values)
-    return updated
+
+def _inc_reward_min_rarity(difficulty, enemy_count):
+    """Reward quality floor for the post-combat choice: scales with how
+    hard the fight was - its Difficulty tier, bumped a notch further if it
+    was a multi-enemy fight."""
+    tier = {"easy": 0, "medium": 1, "hard": 2, "boss": 3}.get(difficulty, 0)
+    if int(enemy_count or 0) >= 2:
+        tier += 1
+    return min(3, tier)
+
+
+def _inc_generate_post_combat_offers(ch, run, node):
+    """Exactly 3 FREE reward options after any combat victory - quality
+    floor scales with the difficulty just cleared and the enemy count. A
+    boss kill instead offers 3 Talents to choose from (a free Talent for
+    downing a Champion), never wargear or attributes."""
+    difficulty = str(node.get("difficulty", "easy"))
+    enemy_count = len(node.get("enemies", []) or [])
+    talent_catalog = {int(r["id"]): r for r in list_craft_items("talent", active_only=False)}
+
+    def talent_candidates(min_rank):
+        out = []
+        for pr in _inc_talent_pool_rows():
+            row = next((r for r in talent_catalog.values() if str(r["name"]).lower() == str(pr["name"]).lower()), None)
+            if row and craft_details(row).get("incursion_only") and _INC_RARITY_RANK.get(pr["rarity"], 0) >= min_rank:
+                out.append((row, pr))
+        return out
+
+    if difficulty == "boss":
+        available = talent_candidates(0)
+        candidates = []
+        for row, pr in random.sample(available, min(3, len(available))):
+            candidates.append({"type": "talent", "craft_id": int(row["id"]), "name": row["name"],
+                                "effect": row.get("effect", ""), "cost": 0, "label": row["name"],
+                                "detail": f"{pr['rarity']} · {row.get('effect', '')}", "rarity": pr["rarity"]})
+        return [{**o, "offer_id": i} for i, o in enumerate(candidates)]
+
+    min_rank = _inc_reward_min_rarity(difficulty, enemy_count)
+    pool = [r for r in list_craft_items("wargear", active_only=True) if craft_details(r).get("incursion_only")]
+    def rank_of(row):
+        return _INC_RARITY_RANK.get(craft_details(row).get("rarity", "Common"), 0)
+    filtered = [r for r in pool if rank_of(r) >= min_rank] or pool
+    wargear_candidates = filtered
+
+    available_talents = talent_candidates(min_rank) or talent_candidates(0)
+
+    candidates = []
+    attrs = effective_attributes(_inc_merge_character(ch, run))
+    for row in random.sample(wargear_candidates, min(2, len(wargear_candidates))):
+        d = craft_details(row); rarity = d.get("rarity", "Common")
+        candidates.append({"type": "wargear", "craft_id": int(row["id"]), "name": row["name"],
+                            "effect": row.get("effect", ""), "cost": 0, "label": row["name"],
+                            "detail": f"{rarity} · {row.get('effect', '')}", "rarity": rarity})
+    if available_talents:
+        row, pr = random.choice(available_talents)
+        candidates.append({"type": "talent", "craft_id": int(row["id"]), "name": row["name"],
+                            "effect": row.get("effect", ""), "cost": 0, "label": row["name"],
+                            "detail": f"{pr['rarity']} · {row.get('effect', '')}", "rarity": pr["rarity"]})
+    while len(candidates) < 3:
+        attr = random.choice(ATTRS); cur = int(attrs.get(attr, 1))
+        candidates.append({"type": "attribute", "attr": attr, "cost": 0, "label": f"+1 {attr}",
+                            "detail": f"Current: {cur}", "rarity": "Common"})
+    return [{**o, "offer_id": i} for i, o in enumerate(candidates[:3])]
+
 
 def _inc_post_combat_loot(run, ch, node):
-    difficulty = str(node.get("difficulty", ""))
-    item = _inc_generate_free_item_offer(ch, run)
-    if difficulty == "boss":
-        return _inc_persist(run["id"], node={"type":"loot", "subtype":"boss", "offer":item, "reward_xp":int(node.get("reward_xp",0) or 0)})
-    if node.get("subtype") == "ambush":
-        return _inc_persist(run["id"], node={"type":"loot_choice", "subtype":"ambush", "offer":item, "reward_xp":int(node.get("reward_xp",0) or 0)})
-    return None
+    offers = _inc_generate_post_combat_offers(ch, run, node)
+    subtype = "boss" if node.get("difficulty") == "boss" else "combat"
+    return _inc_persist(run["id"], node={"type": "reward_choice", "subtype": subtype, "offers": offers,
+                                          "reward_xp": int(node.get("reward_xp", 0) or 0)})
 
-def _inc_loot_take(run, ch):
+
+def _inc_reward_choice_take(run, ch, offer_id):
     node = run.get("node") or {}
-    offer = node.get("offer")
-    updated = _inc_claim_free_item(run, ch, offer)
+    if node.get("type") != "reward_choice": raise ValueError("wrong_node")
+    offer = next((o for o in node.get("offers", []) if o.get("offer_id") == offer_id), None)
+    if offer is None: raise ValueError("offer_not_found")
+    updated = _inc_apply_purchase(run, ch, offer)
     return _inc_advance(updated, ch)
-
-def _inc_loot_rest(run, ch):
-    node = run.get("node") or {}
-    if node.get("type") != "loot_choice": raise ValueError("wrong_node")
-    heal = max(1, round(run["wounds_max"] * INC_REST_HEAL_FRACTION))
-    updated, _, _ = _inc_recover_rest_durability(run, ch)
-    updated = _inc_persist(updated["id"], wounds_current=min(updated["wounds_max"], updated["wounds_current"] + heal),
-                           shock_current=updated["shock_max"])
-    return _inc_advance(updated, ch)
-
-def _inc_loot_take_and_continue(run, ch):
-    return _inc_loot_take(run, ch)
 
 # ---- node/stage state machine -----------------------------------------
 INC_RUN_ESCALATION_PER_ATTEMPT = 0.35  # extra "loops" worth of scaling per attempt past the grace window
@@ -8726,33 +8751,31 @@ def _inc_render_combat(run, ch, node):
                 st.rerun()
 
 
-def _inc_render_loot(run, ch, node):
-    offer = node.get("offer") or {}
-    title = "Champion Spoils" if node.get("subtype") == "boss" else "Ambush Spoils"
-    st.markdown(f"<div class='inc-card'><div class='inc-title'>{title}</div>"
-                f"<div class='inc-flavor'>A usable item remains among the battlefield wreckage.</div>"
-                f"<div class='inc-offer'><div class='ot'>Wargear</div><div class='on'>{html.escape(str(offer.get('name','Item')))}</div>"
-                f"<div class='od'>{html.escape(str(offer.get('detail','')))}</div><div class='oc'>FREE</div></div></div>", unsafe_allow_html=True)
-    if st.button("TAKE ITEM", key=f"inc_take_loot_{run['id']}", use_container_width=True):
-        try: _inc_loot_take(run, ch)
-        except ValueError as exc: st.error(str(exc).replace('_',' ').title())
-        st.rerun()
-
-def _inc_render_loot_choice(run, ch, node):
-    offer = node.get("offer") or {}
-    st.markdown("<div class='inc-card'><div class='inc-title'>Ambush Aftermath</div>"
-                "<div class='inc-flavor'>The field is quiet. Recover now, or take what the ambushers left behind.</div></div>", unsafe_allow_html=True)
-    c1, c2 = st.columns(2)
-    with c1:
-        st.markdown("<div class='inc-card'><b>REST</b><br><span style='font-size:.8rem;opacity:.75'>Recover 25% Wounds, all Shock, and repair durability.</span></div>", unsafe_allow_html=True)
-        if st.button("REST", key=f"inc_ambush_rest_{run['id']}", use_container_width=True):
-            _inc_loot_rest(run, ch); st.rerun()
-    with c2:
-        st.markdown(f"<div class='inc-card'><b>ITEM</b><br><span style='font-size:.8rem;opacity:.75'>{html.escape(str(offer.get('name','Item')))}</span></div>", unsafe_allow_html=True)
-        if st.button("TAKE ITEM", key=f"inc_ambush_item_{run['id']}", use_container_width=True):
-            try: _inc_loot_take_and_continue(run, ch)
-            except ValueError as exc: st.error(str(exc).replace('_',' ').title())
-            st.rerun()
+def _inc_render_reward_choice(run, ch, node):
+    is_boss = node.get("subtype") == "boss"
+    title = "Champion's Due" if is_boss else "Spoils of War"
+    flavor = "Choose one free Talent for downing the Champion." if is_boss else "Choose one reward, free - the other two are lost."
+    st.markdown(f"<div class='inc-card'><div class='inc-title'>{title}</div><div class='inc-flavor'>{flavor}</div></div>", unsafe_allow_html=True)
+    offers = node.get("offers") or []
+    type_label = {"attribute": "Attribute", "wargear": "Wargear", "talent": "Talent", "power": "Psychic Power"}
+    if not offers:
+        st.caption("Nothing to claim here.")
+        if st.button("Continue", key=f"inc_reward_choice_skip_{run['id']}", use_container_width=True):
+            _inc_advance(run, ch); st.rerun()
+        return
+    cols = st.columns(len(offers))
+    for col, offer in zip(cols, offers):
+        with col:
+            rarity_cls = f"rarity-{str(offer.get('rarity') or 'Common').lower()}"
+            st.markdown(
+                f"<div class='inc-offer {rarity_cls}'><div class='ot'>{type_label.get(offer['type'], offer['type'].title())}</div>"
+                f"<div class='on'>{html.escape(offer['label'])}</div>"
+                f"<div class='od'>{html.escape(offer.get('detail') or '')}</div>"
+                f"<div class='oc'>FREE</div></div>", unsafe_allow_html=True)
+            if st.button("TAKE", key=f"inc_reward_take_{run['id']}_{offer['offer_id']}", use_container_width=True):
+                try: _inc_reward_choice_take(run, ch, offer["offer_id"])
+                except ValueError as exc: st.error(str(exc).replace('_',' ').title())
+                st.rerun()
 
 def _inc_render_reward(run, ch, node):
     st.markdown(f"<div class='inc-card'><div class='inc-title'>Spoils</div>"
@@ -9028,10 +9051,8 @@ def incursion_view():
             _inc_render_combat(run, ch, node)
         elif ntype == "reward":
             _inc_render_reward(run, ch, node)
-        elif ntype == "loot":
-            _inc_render_loot(run, ch, node)
-        elif ntype == "loot_choice":
-            _inc_render_loot_choice(run, ch, node)
+        elif ntype == "reward_choice":
+            _inc_render_reward_choice(run, ch, node)
         elif ntype == "pvp_choice":
             _inc_render_pvp_choice(run, ch, node)
         elif ntype == "pvp_waiting":

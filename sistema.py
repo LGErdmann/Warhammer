@@ -4152,6 +4152,7 @@ def inject_theme():
     .inc-pack-item .pack-sub{font:8px monospace;color:#8f8065;white-space:nowrap}
     .inc-pack-item .pack-ability{margin-left:auto;padding-left:8px;font-size:.62rem;color:#d8a8ff;text-align:right;font-style:italic}
     .inc-minion-ability{margin-top:5px;text-align:right;font-size:.62rem;color:#d8a8ff;font-style:italic;opacity:.9}
+    .inc-bulk-badge{margin-left:6px;padding:1px 5px;font:800 .58rem monospace;letter-spacing:.05em;color:#1a1006;background:#d8a23a;border-radius:3px;vertical-align:middle}
     .inc-pack-item.rarity-uncommon{border-color:#4c9a5b}.inc-pack-item.rarity-uncommon .pack-name{color:#8fd98f}
     .inc-pack-item.rarity-rare{border-color:#3d78c9}.inc-pack-item.rarity-rare .pack-name{color:#8fc0ff}
     .inc-pack-item.rarity-legendary{border-color:#c9922e;box-shadow:0 0 10px rgba(201,146,46,.25)}.inc-pack-item.rarity-legendary .pack-name{color:#ffcf6b}
@@ -6457,9 +6458,10 @@ def _inc_render_backpack(run, ch):
         lvl_tag = f" · Lv{level}" if level > 1 else ""
         ability = str(minion.get("ability") or "").strip()
         ability_html = f"<span class='pack-ability'>{html.escape(ability)}</span>" if ability else ""
+        bulk_badge = "<span class='inc-bulk-badge' title='Always draws every enemy attack while alive'>BULK</span>" if minion.get("bulk") else ""
         st.markdown(
             f"<div class='inc-pack-item {rarity_cls}'><span class='pack-icon'>{_inc_minion_glyph_html(minion.get('origin'))}</span>"
-            f"<span class='pack-name'>{html.escape(str(minion.get('name','Minion')))}{lvl_tag}</span>"
+            f"<span class='pack-name'>{html.escape(str(minion.get('name','Minion')))}{lvl_tag}{bulk_badge}</span>"
             f"<span class='pack-sub'>{int(minion.get('wounds_current',0))}/{int(minion.get('wounds_max',0))}W · "
             f"{int(minion.get('shock_current',0))}/{int(minion.get('shock_max',0))}S · {status}</span>{ability_html}</div>",
             unsafe_allow_html=True)
@@ -7176,7 +7178,7 @@ def _inc_generate_first_encampment_offers(ch, run):
         # Tyranid-Pattern never sees generic Imperium gear or combat
         # Talents, not even here at the very first choice of the run.
         weapon = INC_TYRANID_WARGEAR["Common"][0]
-        armour = INC_TYRANID_ARMOUR["Common"]
+        armour = INC_TYRANID_ARMOUR["Common"][0]
         candidates = [
             {"type": "tyranid_wargear", "rarity": "Common", "name": weapon["name"], "icon": weapon["icon"],
              "melee": weapon["melee"], "damage": weapon["damage"], "ed": weapon["ed"], "ap": weapon["ap"],
@@ -7311,13 +7313,14 @@ def _inc_apply_purchase(run, ch, offer):
         existing=next((m for m in current_minions if m.get("name")==offer["name"]),None)
         icon=offer.get("icon","🐾")
         fellowship=int(effective_attributes(_inc_merge_character(ch,run)).get("Fellowship",INC_ORIGIN_BASE_ATTR))
+        bulk=bool(offer.get("bulk"))
         if existing:
             new_level=int(existing.get("level",1) or 1)+1
-            leveled=_inc_minion_stats(offer["name"],icon,offer["origin"],offer["rarity"],new_level,fellowship)
+            leveled=_inc_minion_stats(offer["name"],icon,offer["origin"],offer["rarity"],new_level,fellowship,bulk)
             current_minions=[leveled if m.get("name")==offer["name"] else m for m in current_minions]
         else:
             if len(current_minions)>=INC_MINION_MAX: raise ValueError("minion_limit")
-            current_minions.append(_inc_minion_stats(offer["name"],icon,offer["origin"],offer["rarity"],1,fellowship))
+            current_minions.append(_inc_minion_stats(offer["name"],icon,offer["origin"],offer["rarity"],1,fellowship,bulk))
         pool_updates["minions"]=current_minions
     elif offer["type"]=="talent_minion":
         name=offer["name"]; rarity=offer.get("rarity","Common")
@@ -7329,15 +7332,27 @@ def _inc_apply_purchase(run, ch, offer):
         pool_updates.update({"shock_max":new_shock_max,"shock_current":min(new_shock_max,int(run.get("shock_current",0) or 0)+shock_bonus)})
     elif offer["type"]=="tyranid_wargear":
         # Tyranid bio-weapons are grown, not carried - only one at a time.
-        # Buying another replaces (never stacks alongside) the old one.
-        starting_wargear=[w for w in starting_wargear if not _inc_is_weapon_item(w)]
-        extra_wargear=[w for w in extra_wargear if not _inc_is_weapon_item(w)]
-        entry={"name":offer["name"],"effect":offer.get("effect",""),"equipped":True,"quantity":1,
-               "details":{"category":"melee weapon" if offer.get("melee") else "firearm",
-                          "damage":str(offer["damage"]),"ed":int(offer.get("ed",0) or 0),"ap":int(offer.get("ap",0) or 0),
-                          "rarity":offer["rarity"],"incursion_only":True,"stackable":False,
-                          "minion_support":offer.get("minion_support"),"support_value":int(offer.get("support_value",0) or 0)}}
-        extra_wargear.append(entry)
+        # Buying the SAME one again upgrades it in place (like normal
+        # wargear levelling); buying a DIFFERENT one replaces the old one
+        # instead of stacking alongside it.
+        existing=next((w for w in starting_wargear+extra_wargear if _inc_is_weapon_item(w) and w.get("name")==offer["name"]),None)
+        if existing:
+            d=_gear_details_dict(existing.get("details",{})); level=min(5,int(d.get("incursion_level",1) or 1)+1); d["incursion_level"]=level
+            d["upgrade_bonus"]=int(d.get("upgrade_bonus",0) or 0)+2
+            base=int(d.get("damage_base",_weapon_base_damage(d,effective_attributes(_inc_merge_character(ch,run)))) or offer["damage"])
+            d["damage_base"]=base+2
+            if level%2==0: d["ed"]=int(d.get("ed",0) or 0)+1
+            existing["details"]=d
+        else:
+            starting_wargear=[w for w in starting_wargear if not _inc_is_weapon_item(w)]
+            extra_wargear=[w for w in extra_wargear if not _inc_is_weapon_item(w)]
+            entry={"name":offer["name"],"effect":offer.get("effect",""),"equipped":True,"quantity":1,
+                   "details":{"category":"melee weapon" if offer.get("melee") else "firearm",
+                              "damage":str(offer["damage"]),"damage_base":int(offer["damage"]),"incursion_level":1,
+                              "ed":int(offer.get("ed",0) or 0),"ap":int(offer.get("ap",0) or 0),
+                              "rarity":offer["rarity"],"incursion_only":True,"stackable":False,
+                              "minion_support":offer.get("minion_support"),"support_value":int(offer.get("support_value",0) or 0)}}
+            extra_wargear.append(entry)
     elif offer["type"]=="tyranid_armour":
         entry={"name":offer["name"],"effect":offer.get("effect","Tyranid bio-armour."),"equipped":True,"quantity":1,
                "details":{"category":"armour","armour_rating":int(offer["armour_rating"]),"rarity":offer["rarity"],
@@ -7623,13 +7638,14 @@ def _inc_start_run(ch, origin=None):
             tw = INC_TYRANID_WARGEAR["Common"][0]
             _start_weapons = [{"name": tw["name"], "effect": tw["effect"], "equipped": True, "quantity": 1,
                                 "details": {"category": "melee weapon" if tw["melee"] else "firearm", "damage": str(tw["damage"]),
+                                            "damage_base": tw["damage"], "incursion_level": 1,
                                             "ed": tw["ed"], "ap": tw["ap"], "rarity": "Common", "incursion_only": True, "stackable": False,
                                             "minion_support": tw["minion_support"], "support_value": tw["support_value"]}}]
         else:
             _start_weapons = [dict(INC_STANDARD_WEAPON)]
     starting_wargear=_start_weapons[:3]+_start_nonweapons
     if origin == "Tyranid-Pattern":
-        ta = INC_TYRANID_ARMOUR["Common"]
+        ta = INC_TYRANID_ARMOUR["Common"][0]
         standard_armour = {"name": ta["name"], "effect": "Tyranid bio-armour.", "equipped": True, "quantity": 1,
                             "details": {"category": "armour", "armour_rating": ta["armour_rating"], "rarity": "Common",
                                         "incursion_only": True, "stackable": False}}
@@ -7976,10 +7992,18 @@ def _inc_enemy_turn(enemies, player_traits, player_shock_current=0, minions=None
         rolls,icons,wrath_die_6=_inc_roll_pool(attack_pool); hit=icons>=player_traits["Defence"]; total_damage=0; shock=0; wounds=0; damage_rolls=[]; critical=bool(hit and wrath_die_6)
         if critical: enemy["wrath_current"]+=1
         debuff_attr=None; debuff_amount=0; minion_damage=0; minion_name=None
-        # Minions "levam o dano na frente" - the first still-standing one
-        # soaks hits meant for the player (own Shock first, then Wounds,
-        # same rule as the player), in list order, until it goes down.
-        target_minion=next((m for m in minions if m.get("alive") and int(m.get("wounds_current",0) or 0)>0),None)
+        # Minions only have a CHANCE to soak a hit meant for the player (own
+        # Shock first, then Wounds, same rule as the player) - unless a Bulk
+        # Minion is alive, which ALWAYS draws the attack instead, for any
+        # Origin, while it lives.
+        alive_minions=[m for m in minions if m.get("alive") and int(m.get("wounds_current",0) or 0)>0]
+        bulk_minion=next((m for m in alive_minions if m.get("bulk")),None)
+        if bulk_minion:
+            target_minion=bulk_minion
+        elif alive_minions and random.random()<INC_MINION_TANK_CHANCE:
+            target_minion=alive_minions[0]
+        else:
+            target_minion=None
         if hit:
             total_damage,damage_rolls=_inc_roll_damage(enemy.get("weapon_damage",0),enemy.get("weapon_ed",0))
             if critical:
@@ -8832,9 +8856,10 @@ def _inc_render_minion_status(run, node):
                 roll_html = "<div class='inc-dice-empty'>No rolls yet</div>"
             ability = str(minion.get("ability") or "").strip()
             ability_html = f"<div class='inc-minion-ability'>{html.escape(ability)}</div>" if ability else ""
+            bulk_badge = "<span class='inc-bulk-badge' title='Always draws every enemy attack while alive'>BULK</span>" if minion.get("bulk") else ""
             st.markdown(
                 f"<div class='inc-enemy {rarity_cls}'>"
-                f"<div class='inc-enemy-strip'><span>{_inc_minion_glyph_html(minion.get('origin'))}{html.escape(str(minion.get('name','Minion')))}</span><span>{status}</span></div>"
+                f"<div class='inc-enemy-strip'><span>{_inc_minion_glyph_html(minion.get('origin'))}{html.escape(str(minion.get('name','Minion')))}{bulk_badge}</span><span>{status}</span></div>"
                 f"<div class='inc-npc-vitals'>"
                 f"<span class='inc-vital wounds' style='--vital-pct:{wounds_pct:.1f}%;--vital-pct-num:{wounds_pct/100:.3f};--vital-color:#b23a35'><b>{wounds_cur}/{wounds_max}</b><span class='inc-vital-label'>WOUNDS</span></span>"
                 f"<span class='inc-vital shock' style='--vital-pct:{shock_pct:.1f}%;--vital-color:#9b72c2'><b>{shock_cur}/{shock_max}</b><span class='inc-vital-label'>SHOCK</span></span>"
@@ -9523,11 +9548,17 @@ def _inc_origin_attributes(origin):
 # Minions are cumulative - buying a DIFFERENT Minion adds it alongside any
 # others; buying the SAME Minion again levels the existing one up (full
 # heal, better stats) instead of adding a duplicate. All fight alongside
-# you every player action (pool driven by your Fellowship), tank hits
-# meant for you in order until they drop ("leva o dano na frente"), and
-# revive to full on Rest. Never a separate equip step - bought = active.
+# you every player action (pool driven by your Fellowship), and revive to
+# full on Rest. Never a separate equip step - bought = active.
+#
+# Tanking is a CHANCE, not a guarantee (see _inc_enemy_turn): each enemy
+# hit has INC_MINION_TANK_CHANCE odds of landing on the first alive Minion
+# instead of the player - UNLESS a Bulk Minion (a named-variant trait, see
+# INC_MINION_CATALOG/_inc_minion_stats) is alive, in which case it ALWAYS
+# draws every attack while it lives, for any Origin.
 INC_MINION_ORIGINS = ("Human", "Tyranid-Pattern")
 INC_MINION_MAX = 4
+INC_MINION_TANK_CHANCE = 0.5
 INC_MINION_RARITY_STATS = {
     "Common":    {"wounds": 8,  "shock": 4,  "resilience": 2, "damage": 3,  "ed": 1, "cost": 15},
     "Uncommon":  {"wounds": 14, "shock": 6,  "resilience": 3, "damage": 5,  "ed": 1, "cost": 30},
@@ -9549,7 +9580,7 @@ INC_MINION_CATALOG = {
         "Common": [{"name": "Conscript Aide", "icon": "🪖"}, {"name": "Servitor Drudge", "icon": "🤖"}, {"name": "Menial Grunt", "icon": "🔧"}],
         "Uncommon": [{"name": "Chem-Dog Handler", "icon": "🐕"}, {"name": "Scout Sniper", "icon": "🎯"}, {"name": "Combat Medic", "icon": "⚕"}],
         "Rare": [{"name": "Rough Rider Outrider", "icon": "🐴"}, {"name": "Storm Trooper", "icon": "🪂"}, {"name": "Flamer Support", "icon": "🔥"}],
-        "Legendary": [{"name": "Ogryn Bodyguard", "icon": "💪"}, {"name": "Tech-Priest Enginseer", "icon": "⚙"}, {"name": "Veteran Sergeant", "icon": "🎖"}],
+        "Legendary": [{"name": "Ogryn Bodyguard", "icon": "💪", "bulk": True}, {"name": "Tech-Priest Enginseer", "icon": "⚙"}, {"name": "Veteran Sergeant", "icon": "🎖"}],
         "Unique": [{"name": "Primaris Lieutenant Escort", "icon": "🎖"}, {"name": "Inquisitorial Agent", "icon": "🕵"}, {"name": "Living Saint's Herald", "icon": "✨"}],
     },
     "Tyranid-Pattern": {
@@ -9557,7 +9588,7 @@ INC_MINION_CATALOG = {
         "Uncommon": [{"name": "Termagant Brood", "icon": "🐛"}, {"name": "Gargoyle Swarm", "icon": "🦇"}, {"name": "Cursed Cherub Swarm", "icon": "🐦"}],
         "Rare": [{"name": "Hormagaunt Pack", "icon": "🏃"}, {"name": "Lictor Ambusher", "icon": "🕷"}, {"name": "Raveners", "icon": "🐍"}],
         "Legendary": [{"name": "Tyranid Warrior", "icon": "⚔"}, {"name": "Zoanthrope", "icon": "🧠"}, {"name": "Venomthrope", "icon": "☠"}],
-        "Unique": [{"name": "Broodlord", "icon": "👑"}, {"name": "Hive Tyrant Guard", "icon": "🐲"}, {"name": "Trygon Prime", "icon": "🦖"}],
+        "Unique": [{"name": "Broodlord", "icon": "👑"}, {"name": "Hive Tyrant Guard", "icon": "🐲", "bulk": True}, {"name": "Trygon Prime", "icon": "🦖"}],
     },
 }
 # Minion-related Talents - exclusive to Human/Tyranid-Pattern; a Tyranid
@@ -9576,10 +9607,15 @@ INC_MINION_TALENTS = {
     ],
     "Tyranid-Pattern": [
         {"name": "Hive Instinct", "rarity": "Common", "effect": "Your Minions' max Wounds increase by 10 (each)."},
+        {"name": "Chitinous Growth", "rarity": "Common", "effect": "Your Minions' Resilience increases by 2 (each)."},
         {"name": "Synaptic Link", "rarity": "Uncommon", "effect": "Your Minions' attack pool gains +3 dice (each)."},
+        {"name": "Toxic Bloodline", "rarity": "Uncommon", "effect": "Your Minions inflict 1 Bleeding on any hit, regardless of rarity."},
         {"name": "Adaptive Biomass", "rarity": "Rare", "effect": "Whenever a Minion is hit, you recover 2 Shock."},
+        {"name": "Broodmind Resonance", "rarity": "Rare", "effect": "Your Minions' max Shock increases by 4 (each)."},
         {"name": "Regenerative Swarm", "rarity": "Legendary", "effect": "Each Minion revives once mid-fight if killed (in addition to on Rest)."},
+        {"name": "Endless Swarm", "rarity": "Legendary", "effect": "Defeating an enemy has a 25% chance to spawn a temporary Common Minion for the rest of the fight."},
         {"name": "Norn Queen's Blessing", "rarity": "Unique", "effect": "Your Minions' damage is doubled (each)."},
+        {"name": "Shadow in the Warp", "rarity": "Unique", "effect": "All enemies suffer -1 to their attack pool for the whole fight."},
     ],
 }
 _INC_MINION_LEVEL_GROWTH = 0.25  # +25% to every stat per level beyond 1
@@ -9593,33 +9629,68 @@ _INC_MINION_LEVEL_GROWTH = 0.25  # +25% to every stat per level beyond 1
 INC_TYRANID_WARGEAR = {
     "Common": [{"name": "Chitin Claw", "icon": "🦞", "melee": True, "damage": 5, "ed": 1, "ap": 0,
                 "effect": "On hit, your strongest Minion recovers 2 Wounds.",
-                "minion_support": "heal_strongest_on_hit", "support_value": 2}],
+                "minion_support": "heal_strongest_on_hit", "support_value": 2},
+               {"name": "Toxin Sac Spike", "icon": "🩸", "melee": True, "damage": 4, "ed": 1, "ap": 0,
+                "effect": "On hit, your weakest Minion gains +1 die on its next attack.",
+                "minion_support": "bonus_die_on_hit", "support_value": 1},
+               {"name": "Needle Spinner", "icon": "🪡", "melee": False, "damage": 5, "ed": 1, "ap": 0,
+                "effect": "On hit, your strongest Minion recovers 1 Wound.",
+                "minion_support": "heal_strongest_on_hit", "support_value": 1}],
     "Uncommon": [{"name": "Spore Mine Launcher", "icon": "🍄", "melee": False, "damage": 6, "ed": 1, "ap": 0,
                   "effect": "On hit, all your Minions gain +2 dice on their next attack.",
-                  "minion_support": "bonus_die_on_hit", "support_value": 2}],
+                  "minion_support": "bonus_die_on_hit", "support_value": 2},
+                 {"name": "Flesh Hook Lash", "icon": "🪝", "melee": True, "damage": 7, "ed": 1, "ap": -1,
+                  "effect": "On hit, your strongest Minion recovers 3 Wounds.",
+                  "minion_support": "heal_strongest_on_hit", "support_value": 3},
+                 {"name": "Bio-Plasma Spitter", "icon": "🧪", "melee": False, "damage": 8, "ed": 1, "ap": 0,
+                  "effect": "On a Critical, your weakest Minion fully recovers Shock.",
+                  "minion_support": "shock_heal_weakest_on_crit", "support_value": 0}],
     "Rare": [{"name": "Rending Talons", "icon": "🦂", "melee": True, "damage": 8, "ed": 2, "ap": -1,
               "effect": "On a Critical, your weakest Minion fully recovers Shock.",
-              "minion_support": "shock_heal_weakest_on_crit", "support_value": 0}],
+              "minion_support": "shock_heal_weakest_on_crit", "support_value": 0},
+             {"name": "Impaler Cannon", "icon": "🏹", "melee": False, "damage": 10, "ed": 2, "ap": -1,
+              "effect": "On hit, all your Minions gain +3 dice on their next attack.",
+              "minion_support": "bonus_die_on_hit", "support_value": 3},
+             {"name": "Scything Talons", "icon": "🗡", "melee": True, "damage": 9, "ed": 2, "ap": -1,
+              "effect": "On hit, your strongest Minion recovers 5 Wounds.",
+              "minion_support": "heal_strongest_on_hit", "support_value": 5}],
     "Legendary": [{"name": "Bio-Plasma Cannon", "icon": "☣", "melee": False, "damage": 12, "ed": 2, "ap": -2,
                    "effect": "Every 2 kills, all your Minions permanently gain +1 Damage and +2 max Shock.",
-                   "minion_support": "boost_on_kills", "support_value": 2}],
+                   "minion_support": "boost_on_kills", "support_value": 2},
+                  {"name": "Deathspitter Array", "icon": "💥", "melee": False, "damage": 13, "ed": 2, "ap": -2,
+                   "effect": "Every attack revives one downed Minion at half Wounds and full Shock.",
+                   "minion_support": "revive_on_attack", "support_value": 0},
+                  {"name": "Crushing Claws", "icon": "🦀", "melee": True, "damage": 14, "ed": 2, "ap": -1,
+                   "effect": "Every 2 kills, all your Minions permanently gain +1 Damage and +3 max Shock.",
+                   "minion_support": "boost_on_kills", "support_value": 3}],
     "Unique": [{"name": "The Devourer's Maw", "icon": "👄", "melee": True, "damage": 16, "ed": 3, "ap": -2,
                 "effect": "Every attack revives one downed Minion at half Wounds and full Shock.",
-                "minion_support": "revive_on_attack", "support_value": 0}],
+                "minion_support": "revive_on_attack", "support_value": 0},
+               {"name": "Living Bio-Cannon", "icon": "🌋", "melee": False, "damage": 18, "ed": 3, "ap": -3,
+                "effect": "Every 2 kills, all your Minions permanently gain +2 Damage and +4 max Shock.",
+                "minion_support": "boost_on_kills", "support_value": 4},
+               {"name": "Hive Mind's Wrath", "icon": "🧠", "melee": True, "damage": 17, "ed": 3, "ap": -2,
+                "effect": "On hit, all your Minions gain +5 dice on their next attack.",
+                "minion_support": "bonus_die_on_hit", "support_value": 5}],
 }
 INC_TYRANID_ARMOUR = {
-    "Common": {"name": "Chitin Plating", "icon": "🛡", "armour_rating": 2},
-    "Uncommon": {"name": "Carapace Hide", "icon": "🛡", "armour_rating": 3},
-    "Rare": {"name": "Bio-Plated Hide", "icon": "🛡", "armour_rating": 4},
-    "Legendary": {"name": "Warrior Carapace", "icon": "🛡", "armour_rating": 6},
-    "Unique": {"name": "Broodlord's Exoskeleton", "icon": "🛡", "armour_rating": 8},
+    "Common": [{"name": "Chitin Plating", "icon": "🛡", "armour_rating": 2},
+               {"name": "Hardened Carapace Shell", "icon": "🛡", "armour_rating": 2}],
+    "Uncommon": [{"name": "Carapace Hide", "icon": "🛡", "armour_rating": 3},
+                 {"name": "Layered Chitin", "icon": "🛡", "armour_rating": 3}],
+    "Rare": [{"name": "Bio-Plated Hide", "icon": "🛡", "armour_rating": 4},
+             {"name": "Ossified Exoskeleton", "icon": "🛡", "armour_rating": 4}],
+    "Legendary": [{"name": "Warrior Carapace", "icon": "🛡", "armour_rating": 6},
+                  {"name": "Tyrant's Bio-Plate", "icon": "🛡", "armour_rating": 6}],
+    "Unique": [{"name": "Broodlord's Exoskeleton", "icon": "🛡", "armour_rating": 8},
+               {"name": "Norn Queen's Carapace", "icon": "🛡", "armour_rating": 8}],
 }
 
 
 def _inc_generate_tyranid_wargear_offer():
     rarity = random.choice(_INC_RARITIES)
     if random.random() < 0.35:
-        arm = INC_TYRANID_ARMOUR[rarity]
+        arm = random.choice(INC_TYRANID_ARMOUR[rarity])
         cost = INC_MINION_RARITY_STATS[rarity]["cost"]
         return {"type": "tyranid_armour", "rarity": rarity, "name": arm["name"], "icon": arm["icon"],
                 "armour_rating": arm["armour_rating"], "label": arm["name"], "cost": cost,
@@ -9633,7 +9704,7 @@ def _inc_generate_tyranid_wargear_offer():
             "label": weapon["name"], "cost": cost, "detail": detail}
 
 
-def _inc_minion_stats(name, icon, origin, rarity, level=1, fellowship=INC_ORIGIN_BASE_ATTR):
+def _inc_minion_stats(name, icon, origin, rarity, level=1, fellowship=INC_ORIGIN_BASE_ATTR, bulk=False):
     """Stats keyed on an explicit name/icon (not re-rolled here) so
     levelling up a Minion you already own keeps its identity - only
     _inc_generate_minion_offer picks a random named variant for a NEW one.
@@ -9642,6 +9713,11 @@ def _inc_minion_stats(name, icon, origin, rarity, level=1, fellowship=INC_ORIGIN
     Minion's Shock and Damage at the moment it's recruited/levelled - a
     better commander fields tougher, harder-hitting Minions. Buying or
     levelling later locks in whatever Fellowship you have at that moment.
+
+    bulk: a named-variant trait (see INC_MINION_CATALOG), not rarity-based -
+    a Bulk Minion ALWAYS draws every enemy attack while it's alive (see
+    _inc_enemy_turn); without Bulk, a Minion only has a chance to tank
+    each hit (INC_MINION_TANK_CHANCE).
     """
     stats = INC_MINION_RARITY_STATS[rarity]
     level = max(1, int(level or 1))
@@ -9650,7 +9726,7 @@ def _inc_minion_stats(name, icon, origin, rarity, level=1, fellowship=INC_ORIGIN
     fellowship_bonus = max(0, int(fellowship or INC_ORIGIN_BASE_ATTR) - INC_ORIGIN_BASE_ATTR)
     shock_val = scale(stats["shock"]) + fellowship_bonus
     return {"name": name, "icon": icon, "origin": origin, "rarity": rarity, "level": level,
-            "ability": INC_MINION_RARITY_ABILITY.get(rarity, ""),
+            "ability": INC_MINION_RARITY_ABILITY.get(rarity, ""), "bulk": bool(bulk),
             "wounds_max": scale(stats["wounds"]), "wounds_current": scale(stats["wounds"]),
             "shock_max": shock_val, "shock_current": shock_val,
             "resilience": scale(stats["resilience"]), "damage": scale(stats["damage"]) + fellowship_bonus,
@@ -9662,11 +9738,13 @@ def _inc_generate_minion_offer(origin):
     stats = INC_MINION_RARITY_STATS[rarity]
     variants = INC_MINION_CATALOG.get(origin, {}).get(rarity) or [{"name": f"{rarity} Minion", "icon": "🐾"}]
     entry = random.choice(variants)
+    bulk = bool(entry.get("bulk"))
     ability = INC_MINION_RARITY_ABILITY.get(rarity, "")
     detail = f"{rarity} · {stats['wounds']} Wounds · {stats['shock']} Shock · {stats['damage']} DMG +{stats['ed']} ED · Res {stats['resilience']}"
     if ability: detail += f" · {ability}"
+    if bulk: detail += " · Bulk (always draws every enemy attack while alive)"
     return {"type": "minion", "origin": origin, "rarity": rarity, "name": entry["name"], "icon": entry["icon"],
-            "label": entry["name"], "cost": stats["cost"], "detail": detail}
+            "label": entry["name"], "cost": stats["cost"], "detail": detail, "bulk": bulk}
 
 
 def _inc_revive_minions(run):

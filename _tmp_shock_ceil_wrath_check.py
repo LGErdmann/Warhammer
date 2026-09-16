@@ -38,10 +38,15 @@ def attack_once(run, ch, weapon_key, wounds_max=999999):
     return S._inc_combat_attack(run, ch, [target_uid], weapon_key)
 
 # --- 1) ceil(shock/10) for Astartes and plain origins -----------------------
+# (Agility's own 2%-per-point dice-doubling mechanic can also inflate the
+# rolled pool - zero it out here so only the Shock formula is measured.)
 for origin, shock_val, expected in [("Ultramarines Astartes", 25, 3), ("Aeldari-Pattern", 25, 3),
                                      ("Ultramarines Astartes", 20, 2), ("Aeldari-Pattern", 21, 3)]:
     uid, cid, ch, run = make_player(origin)
-    run = S._inc_persist(run["id"], shock_current=shock_val, shock_max=shock_val)
+    base_agility = S.effective_attributes(S._inc_merge_character(ch, run))["Agility"]
+    run = S._inc_persist(run["id"], shock_current=shock_val, shock_max=shock_val,
+                         incursion_statuses={**(run.get("incursion_statuses") or {}),
+                                              "talent_permanent_attributes": {"Agility": -base_agility}})
     run = S._inc_get_run(run["id"])
     weapon = S._inc_usable_weapons(ch, run)[0]
     merged = S._inc_merge_character(ch, run)

@@ -7046,6 +7046,22 @@ def _inc_agility_pool_double(pool, agility):
     extra_dice = sum(1 for _ in range(excess) if random.random() < 0.02)
     return doubled + extra_dice
 
+
+def _inc_player_shock_bonus(origin, shock_now):
+    """Bonus hit dice from the player's own standing Shock. Tyranid-Pattern
+    and Human are a special case: their Shock pool is tied to an already-
+    strong Minion (Apex Tyranid's Wounds / the Dreadnought's current
+    Wounds) and can run into the hundreds - giving the PLAYER's own attack
+    a 1-die-per-point bonus on top of that would double-dip the same
+    growth twice, so theirs is 1 die per 10 Shock, capped at +10. Every
+    other Origin (Astartes included) instead gets 1 die per 10 Shock too,
+    but rounded UP and never capped."""
+    shock_now = max(0, int(shock_now or 0))
+    if origin in ("Tyranid-Pattern", "Human"):
+        return min(10, shock_now // 10)
+    return math.ceil(shock_now / 10)
+
+
 def _inc_roll_icons(size):
     rolls = [random.randint(1, 6) for _ in range(max(1, int(size)))]
     icons = sum(2 if r == 6 else (1 if r >= 4 else 0) for r in rolls)
@@ -8764,18 +8780,8 @@ def _inc_resolve_player_attack(ch, run, node, target_uids, weapon, bonus_die=0, 
         shock_now = max(0, shock_now - enemy_shock_dealt)
     # Shock still standing adds hit dice - Shock is now the buffer that eats
     # damage before Wounds do, so keeping it topped up is both defence AND
-    # offence, and losing it in a fight costs you both. Tyranid-Pattern and
-    # Human are a special case: their Shock pool is tied to an already-
-    # strong Minion (Apex Tyranid's Wounds / the Dreadnought's current
-    # Wounds) and can run into the hundreds - giving the PLAYER's own
-    # attack a 1-die-per-point bonus on top of that would double-dip the
-    # same growth twice, so theirs is 1 die per 10 Shock, capped at +10.
-    # Every other Origin (Astartes included) instead gets 1 die per 10
-    # Shock too, but rounded UP and never capped.
-    if run.get("origin") in ("Tyranid-Pattern", "Human"):
-        shock_bonus = min(10, shock_now // 10)
-    else:
-        shock_bonus = math.ceil(shock_now / 10)
+    # offence, and losing it in a fight costs you both.
+    shock_bonus = _inc_player_shock_bonus(run.get("origin"), shock_now)
     per_target_pool = max(1, pool - (len(targets) - 1) + int(bonus_die or 0) + extra_pool + shock_bonus)
     agility = int(merged.get("attributes", {}).get("Agility", 1) or 1)
     log = []

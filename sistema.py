@@ -6228,7 +6228,7 @@ def _inc_hydrate_run_pools(run):
 
     # Include upgrades already bought during this run when rebuilding maxima.
     merged = _inc_merge_character(ch, run)
-    pools = _inc_life_pools(merged)
+    pools = _inc_life_pools(merged, run.get("origin"), run.get("minions"))
     armour_rating = _inc_armour_durability(ch, run)[1]
 
     updates = {}
@@ -6693,7 +6693,17 @@ def _inc_player_traits(ch, run):
     return traits
 
 
-def _inc_life_pools(ch):
+def _inc_apex_tyranid_wounds_bonus(minions):
+    """10% of Apex Tyranid's own max Wounds, folded into the Tyranid-Pattern
+    player's Wounds pool (see _inc_life_pools) - the Hive Mind body is
+    fragile on its own and leans on the Apex's growth instead."""
+    apex = next((m for m in (minions or []) if m.get("name") == "Apex Tyranid"), None)
+    if not apex:
+        return 0
+    return round(int(apex.get("wounds_max", 0) or 0) * 0.10)
+
+
+def _inc_life_pools(ch, origin=None, minions=None):
     # Incursion life pools are derived only from the character's starting
     # Attributes. Wounds now defaults to 25 at the baseline Toughness (3)
     # rather than a bare 5 - Shock absorbs damage before Wounds do (see
@@ -6704,8 +6714,17 @@ def _inc_life_pools(ch):
     # Shock base raised to 15 (at baseline Willpower 3) - with Shock now
     # both a damage buffer and a source of bonus hit dice, a base of 4 ran
     # out (and stopped helping either role) almost immediately.
+    #
+    # Tyranid-Pattern is a special case: the player's own body is a fragile
+    # Hive Mind terminal, not a warrior - a fixed 5 Wounds, plus 10% of
+    # whatever Apex Tyranid (its starting Minion) has grown to, instead of
+    # the normal Toughness-scaled formula.
     attrs={a:int((ch.get("attributes") or {}).get(a,1) or 1) for a in ATTRS}
-    return {"wounds_max": int(attrs.get("Toughness",1))+22,
+    if origin == "Tyranid-Pattern":
+        wounds_max = 5 + _inc_apex_tyranid_wounds_bonus(minions)
+    else:
+        wounds_max = int(attrs.get("Toughness",1))+22
+    return {"wounds_max": wounds_max,
             "shock_max": int(attrs.get("Willpower",1))+12,
             "wrath_max": 2}
 
@@ -7239,7 +7258,7 @@ def _inc_pool_updates_for_attribute(ch, run, bonus_attrs, attr):
     if attr not in ("Toughness", "Willpower"):
         return {}
     merged = _inc_merge_character(ch, {**run, "bonus_attributes": bonus_attrs})
-    pools = _inc_life_pools(merged)
+    pools = _inc_life_pools(merged, run.get("origin"), run.get("minions"))
     updates = {}
     if attr == "Toughness":
         delta = max(0, pools["wounds_max"] - run["wounds_max"])
@@ -7557,10 +7576,11 @@ def _inc_stage_after(run):
 
 def _inc_apex_tyranid_consume(minions):
     """Apex Tyranid's species trait: at the end of each Loop, it consumes
-    the weakest other Minion - absorbs 25% of its Wounds and 10% of its
+    the weakest other Minion - absorbs 50% of its Wounds and 50% of its
     Shock (permanently, into its own max), inherits its special ability,
-    and permanently gains +1 attack die. The consumed Minion is removed
-    from the roster."""
+    and permanently gains attack dice equal to the consumed Minion's
+    rarity tier (Common +1 ... Unique +5) - on top of, not instead of,
+    inheriting its ability. The consumed Minion is removed from the roster."""
     apex = next((m for m in minions if m.get("name") == "Apex Tyranid"), None)
     if not apex:
         return minions
@@ -7568,13 +7588,14 @@ def _inc_apex_tyranid_consume(minions):
     if not others:
         return minions
     weakest = min(others, key=lambda m: int(m.get("wounds_max", 0) or 0) + int(m.get("shock_max", 0) or 0))
-    gained_wounds = max(0, round(int(weakest.get("wounds_max", 0) or 0) * 0.25))
-    gained_shock = max(0, round(int(weakest.get("shock_max", 0) or 0) * 0.10))
+    gained_wounds = max(0, round(int(weakest.get("wounds_max", 0) or 0) * 0.50))
+    gained_shock = max(0, round(int(weakest.get("shock_max", 0) or 0) * 0.50))
     apex["wounds_max"] = int(apex.get("wounds_max", 0) or 0) + gained_wounds
     apex["wounds_current"] = int(apex.get("wounds_current", 0) or 0) + gained_wounds
     apex["shock_max"] = int(apex.get("shock_max", 0) or 0) + gained_shock
     apex["shock_current"] = int(apex.get("shock_current", 0) or 0) + gained_shock
-    apex["bonus_die"] = int(apex.get("bonus_die", 0) or 0) + 1
+    dice_gain = _INC_RARITY_RANK.get(weakest.get("rarity", "Common"), 0) + 1
+    apex["bonus_die"] = int(apex.get("bonus_die", 0) or 0) + dice_gain
     consumed_ability = str(weakest.get("ability") or "").strip()
     if consumed_ability and consumed_ability not in str(apex.get("ability") or ""):
         existing = str(apex.get("ability") or "").strip()
@@ -7589,7 +7610,17 @@ def _inc_advance(run, ch):
     node = _inc_build_node_for_stage(nxt, ch, {**run, "loop_no": loop_no})
     updates = {"stage": nxt, "loop_no": loop_no, "pending_boss3_pvp": pending_clear, "node": node}
     if nxt == "start" and run.get("minions"):
-        updates["minions"] = _inc_apex_tyranid_consume([dict(m) for m in run["minions"]])
+        new_minions = _inc_apex_tyranid_consume([dict(m) for m in run["minions"]])
+        updates["minions"] = new_minions
+        if run.get("origin") == "Tyranid-Pattern":
+            # Apex Tyranid just grew - the Tyranid-Pattern player's own
+            # Wounds pool is 5 fixed + 10% of Apex's max Wounds, so it must
+            # be recomputed the moment Apex does (see _inc_life_pools).
+            merged = _inc_merge_character(ch, run)
+            new_max = _inc_life_pools(merged, run.get("origin"), new_minions)["wounds_max"]
+            delta = max(0, new_max - int(run.get("wounds_max", 0) or 0))
+            updates["wounds_max"] = new_max
+            updates["wounds_current"] = min(new_max, int(run.get("wounds_current", 0) or 0) + delta)
     return _inc_persist(run["id"], **updates)
 
 
@@ -7626,7 +7657,18 @@ def _inc_start_run(ch, origin=None):
     if origin and ch.get("kind") == "incursion" and origin in INC_ORIGINS:
         run_ch = dict(ch); run_ch["attributes"] = _inc_origin_attributes(origin)
         origin_talent = dict(INC_ORIGIN_TALENTS[origin])
-    pools = _inc_life_pools(run_ch)
+    starting_minions = []
+    if origin == "Tyranid-Pattern":
+        # Species trait, on top of Hive Mind Link: Apex Tyranid grows by
+        # consuming the weakest other Minion at the end of each Loop - see
+        # _inc_apex_tyranid_consume, called from _inc_advance. It starts
+        # already Bulk (always draws every enemy attack while alive) and
+        # with 3 permanent bonus attack dice baked in from the outset.
+        fellowship = int(_inc_origin_attributes(origin).get("Fellowship", INC_ORIGIN_BASE_ATTR))
+        apex = _inc_minion_stats("Apex Tyranid", "", "Tyranid-Pattern", "Legendary", 1, fellowship, bulk=True)
+        apex["bonus_die"] = 3
+        starting_minions = [apex]
+    pools = _inc_life_pools(run_ch, origin, starting_minions)
     starting_wargear = [dict(w) for w in (run_ch.get("wargear") or []) if not _inc_is_armour_item(w) and w.get("equipped", True)]
     _start_weapons=[w for w in starting_wargear if _inc_is_weapon_item(w)]
     _start_nonweapons=[w for w in starting_wargear if not _inc_is_weapon_item(w)]
@@ -7654,13 +7696,6 @@ def _inc_start_run(ch, origin=None):
                            "details":{"category":"armour","armour_rating":2,"rarity":"Common","incursion_only":True,"stackable":False}}
     starting_wargear.append(standard_armour)
     extra_talents = [origin_talent] if origin_talent else []
-    starting_minions = []
-    if origin == "Tyranid-Pattern":
-        # Species trait, on top of Hive Mind Link: Apex Tyranid grows by
-        # consuming the weakest other Minion at the end of each Loop - see
-        # _inc_apex_tyranid_consume, called from _inc_advance.
-        fellowship = int(_inc_origin_attributes(origin).get("Fellowship", INC_ORIGIN_BASE_ATTR))
-        starting_minions = [_inc_minion_stats("Apex Tyranid", "", "Tyranid-Pattern", "Legendary", 1, fellowship)]
     first_run_stub = {"bonus_attributes": {}, "bonus_skills": {}, "extra_wargear": [], "starting_wargear": starting_wargear,
                       "extra_talents": extra_talents, "extra_powers": [], "equipped_armor_key": _inc_weapon_key(standard_armour),
                       "origin": origin}

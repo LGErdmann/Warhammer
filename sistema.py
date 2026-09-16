@@ -1422,6 +1422,7 @@ def init_db():
         "wrath_current": "INTEGER", "wrath_max": "INTEGER", "armour_durability_current": "INTEGER DEFAULT 0",
         "armour_durability_max": "INTEGER DEFAULT 0", "weapon_durabilities": "TEXT DEFAULT '{}'", "xp_earned": "INTEGER DEFAULT 0",
         "incursion_statuses": "TEXT DEFAULT '{}'", "run_number": "INTEGER DEFAULT 1",
+        "origin": "TEXT DEFAULT ''",
     })
     c.execute("""CREATE TABLE IF NOT EXISTS incursion_pvp_queue(
         id INTEGER PRIMARY KEY AUTOINCREMENT, run_id INTEGER NOT NULL, character_id INTEGER NOT NULL,
@@ -6267,7 +6268,14 @@ def _inc_merge_character(ch, run):
     character sheet never enter the run. Every later change is stored on the run.
     """
     merged = dict(ch)
-    attrs = {a: int((ch.get("attributes") or {}).get(a, 1) or 1) for a in ATTRS}
+    origin = run.get("origin")
+    if origin and ch.get("kind") == "incursion" and origin in INC_ORIGINS:
+        # An incursion-kind account's stored Attributes are just an unused
+        # flat baseline - the run's chosen Origin (picked fresh every run,
+        # see _inc_render_origin_select) is the real source of truth.
+        attrs = _inc_origin_attributes(origin)
+    else:
+        attrs = {a: int((ch.get("attributes") or {}).get(a, 1) or 1) for a in ATTRS}
     for k,v in (run.get("bonus_attributes") or {}).items(): attrs[k] = int(attrs.get(k,1)) + int(v)
     statuses=dict(run.get("incursion_statuses") or {})
     for k,v in (statuses.get("talent_permanent_attributes") or {}).items(): attrs[k]=int(attrs.get(k,1))+int(v)
@@ -6275,7 +6283,9 @@ def _inc_merge_character(ch, run):
     merged["attributes"]=attrs
     merged["skills"]={s:0 for s in SKILLS}
     # Rank/Tier are run-local baselines, not inherited from the character.
-    merged["rank"]=1; merged["tier"]=1; merged["species"]="Human"
+    # species drives species_speed()'s Aeldari/Astartes check, so an
+    # Origin's "-Pattern" name doubles as its Speed identity for free.
+    merged["rank"]=1; merged["tier"]=1; merged["species"]=origin if (origin and ch.get("kind")=="incursion") else "Human"
     initial=[dict(w) for w in (run.get("starting_wargear") or [])]
     wargear=initial + [dict(w) for w in (run.get("extra_wargear") or [])]
     armor_key=run.get("equipped_armor_key")
@@ -7183,11 +7193,21 @@ INC_STANDARD_WEAPON = {
 }
 
 
-def _inc_start_run(ch):
+def _inc_start_run(ch, origin=None):
     if _inc_get_active_run(ch["id"]):
         raise ValueError("run_already_active")
-    pools = _inc_life_pools(ch)
-    starting_wargear = [dict(w) for w in (ch.get("wargear") or []) if not _inc_is_armour_item(w) and w.get("equipped", True)]
+    # An incursion-kind account has no real sheet - Origin is chosen fresh
+    # each run (see _inc_render_origin_select) and its Attributes are used
+    # in place of whatever is on the stored row, which is just a flat,
+    # unused baseline. A real campaign character (origin=None) is
+    # unaffected and keeps using its actual sheet, as before.
+    run_ch = ch
+    origin_talent = None
+    if origin and ch.get("kind") == "incursion" and origin in INC_ORIGINS:
+        run_ch = dict(ch); run_ch["attributes"] = _inc_origin_attributes(origin)
+        origin_talent = dict(INC_ORIGIN_TALENTS[origin])
+    pools = _inc_life_pools(run_ch)
+    starting_wargear = [dict(w) for w in (run_ch.get("wargear") or []) if not _inc_is_armour_item(w) and w.get("equipped", True)]
     _start_weapons=[w for w in starting_wargear if _inc_is_weapon_item(w)]
     _start_nonweapons=[w for w in starting_wargear if not _inc_is_weapon_item(w)]
     if not _start_weapons:
@@ -7196,9 +7216,10 @@ def _inc_start_run(ch):
     standard_armour = {"name":"Incursion Field Plate","effect":"Standard Incursion armour. Armour Rating +2.","equipped":True,"quantity":1,
                        "details":{"category":"armour","armour_rating":2,"rarity":"Common","incursion_only":True,"stackable":False}}
     starting_wargear.append(standard_armour)
+    extra_talents = [origin_talent] if origin_talent else []
     first_run_stub = {"bonus_attributes": {}, "bonus_skills": {}, "extra_wargear": [], "starting_wargear": starting_wargear,
-                      "extra_talents": [], "extra_powers": [], "equipped_armor_key": _inc_weapon_key(standard_armour)}
-    first_offers = _inc_generate_first_encampment_offers(ch, first_run_stub)
+                      "extra_talents": extra_talents, "extra_powers": [], "equipped_armor_key": _inc_weapon_key(standard_armour)}
+    first_offers = _inc_generate_first_encampment_offers(run_ch, first_run_stub)
     first_node = {"type": "shop", "subtype": "first_encampment", "offers": first_offers}
     initial_armour_key = _inc_weapon_key(standard_armour)
     armour_max = _inc_wargear_durability_max(standard_armour)
@@ -7216,10 +7237,12 @@ def _inc_start_run(ch):
     cur = conn.execute(
         "INSERT INTO incursion_run(character_id,status,stage,loop_no,run_number,wounds_current,wounds_max,"
         "shock_current,shock_max,wrath_current,wrath_max,xp,xp_earned,armour_durability_current,"
-        "armour_durability_max,weapon_durabilities,incursion_statuses,node,created_at,equipped_armor_key,starting_wargear) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "armour_durability_max,weapon_durabilities,incursion_statuses,node,created_at,equipped_armor_key,starting_wargear,"
+        "extra_talents,origin) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (ch["id"], "active", "start", 1, run_number, pools["wounds_max"], pools["wounds_max"],
          pools["shock_max"], pools["shock_max"], pools["wrath_max"], pools["wrath_max"], 0, 0,
-         armour_max, armour_max, json.dumps(weapon_values), json.dumps({}), json.dumps(first_node), now_iso(), initial_armour_key, json.dumps(starting_wargear)))
+         armour_max, armour_max, json.dumps(weapon_values), json.dumps({}), json.dumps(first_node), now_iso(), initial_armour_key, json.dumps(starting_wargear),
+         json.dumps(extra_talents), origin or ""))
     conn.commit()
     new_id = cur.lastrowid
     conn.close()
@@ -8105,7 +8128,13 @@ def _inc_render_login_leaderboard():
 # ---- UI ------------------------------------------------------------------
 def _inc_render_hud(ch, run):
     merged=_inc_merge_character(ch,run); traits=derived_traits(merged); adapters=_inc_talent_adapters(ch,run)
-    st.markdown(f"<div class='inc-identity'><div class='inc-kicker'>OPERATIVE RECORD // ACTIVE DEPLOYMENT</div><div class='inc-hero-name'>{html.escape(str(ch.get('name') or 'Unnamed'))}</div><div class='inc-hero-sub'>{html.escape(str(ch.get('archetype') or ch.get('species') or 'Operative'))} · TIER {int(ch.get('tier',1) or 1)} · RANK {int(ch.get('rank',1) or 1)} · STATUS: DEPLOYED</div></div>",unsafe_allow_html=True)
+    if ch.get("kind") == "incursion":
+        # No sheet, no Tier for a self-registered Operative - Origin (a
+        # per-run choice) is the identity that matters here instead.
+        subtitle = f"{html.escape(str(run.get('origin') or 'Unassigned Origin'))} · STATUS: DEPLOYED"
+    else:
+        subtitle = f"{html.escape(str(ch.get('archetype') or ch.get('species') or 'Operative'))} · TIER {int(ch.get('tier',1) or 1)} · RANK {int(ch.get('rank',1) or 1)} · STATUS: DEPLOYED"
+    st.markdown(f"<div class='inc-identity'><div class='inc-kicker'>OPERATIVE RECORD // ACTIVE DEPLOYMENT</div><div class='inc-hero-name'>{html.escape(str(ch.get('name') or 'Unnamed'))}</div><div class='inc-hero-sub'>{subtitle}</div></div>",unsafe_allow_html=True)
     wounds_pct=100.0*max(0,int(run['wounds_current'] or 0))/max(1,int(run['wounds_max'] or 1)); shock_pct=100.0*max(0,int(run['shock_current'] or 0))/max(1,int(run['shock_max'] or 1)); wounds_hue=max(0.0,min(120.0,wounds_pct*1.2))
     armour_current, armour_max = _inc_armour_durability(ch, run)
     armour_label = f"{armour_current}/{armour_max}" if armour_max else "NONE"
@@ -8209,6 +8238,31 @@ def _inc_render_tutorial():
             "</div>", unsafe_allow_html=True)
 
 
+def _inc_render_origin_select(ch, key_prefix):
+    """Origin picker + compact battle sheet, shown before starting a run
+    for an incursion-kind account. Origin is a per-run choice, not locked
+    to the account, so this is offered fresh every time - changing it here
+    has no effect on anything except the run about to start."""
+    origins = list(INC_ORIGINS.keys())
+    key = f"{key_prefix}_origin"
+    if st.session_state.get(key) not in origins:
+        st.session_state[key] = origins[0]
+    origin = st.selectbox("Origin", origins, key=key)
+    attrs = _inc_origin_attributes(origin)
+    talent = INC_ORIGIN_TALENTS[origin]
+    attr_line = " · ".join(f"{a} {attrs[a]}" for a in ATTRS)
+    weapon_dmg = int(attrs.get("Strength", 3)) + 2
+    st.markdown(
+        f"<div class='inc-card'><div class='inc-title'>Battle Sheet · {html.escape(origin)}</div>"
+        f"<div class='inc-flavor'>{html.escape(attr_line)}</div>"
+        f"<div class='inc-offer'><div class='ot'>Signature Talent</div><div class='on'>{html.escape(talent['name'])}</div>"
+        f"<div class='od'>{html.escape(talent['effect'])}</div></div>"
+        f"<div class='inc-offer'><div class='ot'>Starting Wargear</div><div class='on'>Incursion Combat Knife · Field Plate</div>"
+        f"<div class='od'>Knife: {weapon_dmg} DMG · +1 ED · melee. Field Plate: +2 Armour.</div></div>"
+        f"</div>", unsafe_allow_html=True)
+    return origin
+
+
 def _inc_render_intro(ch):
     st.markdown(
         "<div class='inc-card'><div class='inc-title'>Begin the Incursion</div>"
@@ -8218,9 +8272,10 @@ def _inc_render_intro(ch):
         "another player who reached the same gate. The Incursion continues until you fall.</div></div>",
         unsafe_allow_html=True)
     _inc_render_tutorial()
+    origin = _inc_render_origin_select(ch, "inc_intro") if ch.get("kind") == "incursion" else None
     if st.button("BEGIN INCURSION", key="inc_start", use_container_width=True):
         try:
-            _inc_start_run(ch)
+            _inc_start_run(ch, origin=origin)
         except ValueError:
             pass
         st.rerun()
@@ -8236,9 +8291,10 @@ def _inc_render_dead(run, ch):
         f"<div class='inc-chip'><b>{run['bosses_cleared']}</b>Champions</div>"
         f"<div class='inc-chip'><b>{run['xp']}</b>Final XP</div>"
         "</div></div>", unsafe_allow_html=True)
+    origin = _inc_render_origin_select(ch, "inc_dead") if ch.get("kind") == "incursion" else None
     if st.button("NEW INCURSION", key="inc_restart", use_container_width=True):
         try:
-            _inc_start_run(ch)
+            _inc_start_run(ch, origin=origin)
         except ValueError:
             pass
         st.rerun()
@@ -8652,19 +8708,40 @@ def mode_chooser_page():
 ## same login here instead, unaffected by any of this.
 INC_ORIGINS = {
     "Human": {"Fellowship": 1, "Intellect": 1},
-    "Astartes-Pattern": {"Strength": 1, "Toughness": 2},
-    "Aeldari-Pattern": {"Agility": 2, "Initiative": 1},
-    "Ork-Pattern": {"Strength": 2, "Toughness": 1},
+    "Astartes-Pattern": {"Strength": 2, "Toughness": 2},
+    "Aeldari-Pattern": {"Agility": 2, "Initiative": 2},
+    "Ork-Pattern": {"Strength": 2, "Toughness": 2},
 }
 INC_ORIGIN_BASE_ATTR = 3
 
+# Each Origin's signature Talent - unique to that Origin, never offered
+# through the ordinary shop pool, granted automatically for the run once
+# that Origin is chosen. Origin (and therefore this Talent) is a per-run
+# choice, not locked to the account - see _inc_render_origin_select.
+INC_ORIGIN_TALENTS = {
+    "Human": {"name": "Indomitable", "effect": "Once per Incursion, reroll any one failed Test."},
+    "Astartes-Pattern": {"name": "Angel of Death", "effect": "Once per fight, add your current Loop in bonus ED to a single melee attack."},
+    "Aeldari-Pattern": {"name": "Battle Precognition", "effect": "Once per fight, reroll your Wrath Die."},
+    "Ork-Pattern": {"name": "WAAAGH!", "effect": "While below half Wounds, add +1 bonus die to all melee attacks."},
+}
 
-def _inc_register_account(username, pw, origin):
+
+def _inc_origin_attributes(origin):
+    attrs = {a: INC_ORIGIN_BASE_ATTR for a in ATTRS}
+    for k, v in INC_ORIGINS.get(origin, {}).items():
+        attrs[k] = attrs.get(k, INC_ORIGIN_BASE_ATTR) + v
+    return attrs
+
+
+def _inc_register_account(username, pw):
+    """No character sheet, no Tier, no Origin at account creation - Origin
+    is chosen (and can be changed) each time a run is started instead, via
+    _inc_render_origin_select. This row exists only so char_id_for_user /
+    load_character have something to find; none of its fields are read for
+    an incursion-kind character once a run's Origin takes over."""
     username = (username or "").strip()
     if not username or not pw:
         return False, "Designation and Access Code are required."
-    if origin not in INC_ORIGINS:
-        origin = "Human"
     conn = get_conn()
     existing = conn.execute("SELECT id FROM users WHERE username=?", (username,)).fetchone()
     if existing:
@@ -8676,13 +8753,11 @@ def _inc_register_account(username, pw, origin):
         (username, hash_pw(pw, salt), salt, "player", now_iso()))
     uid = cur.lastrowid
     attrs = {a: INC_ORIGIN_BASE_ATTR for a in ATTRS}
-    for k, v in INC_ORIGINS[origin].items():
-        attrs[k] = attrs.get(k, INC_ORIGIN_BASE_ATTR) + v
     conn.execute(
         """INSERT INTO characters(user_id,kind,name,species,archetype,tier,starting_tier,rank,
             attributes,skills,talents,powers,wargear,armour,creation_mode,updated_at)
            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-        (uid, "incursion", username, origin, "Incursion Operative", 2, 2, 1,
+        (uid, "incursion", username, "", "Incursion Operative", 1, 1, 1,
          json.dumps(attrs), "{}", "[]", "[]", "[]", 0, "incursion", now_iso()))
     conn.commit()
     conn.close()
@@ -8707,20 +8782,15 @@ def incursion_login_page():
                 st.error("Access denied.")
 
         with st.expander("New Operative? Register Here", expanded=False):
-            st.caption("No character sheet needed, no Magister approval - pick an Origin for a small "
-                       "Attribute bonus and descend immediately. Already have a campaign character? "
-                       "Just log in above with that same account instead.")
+            st.caption("No character sheet needed, no Magister approval - descend immediately. Origin is "
+                       "chosen fresh (and can be changed) every time you begin an Incursion. Already have "
+                       "a campaign character? Just log in above with that same account instead.")
             with st.form("incursion_register"):
                 ru = st.text_input("Designation", key="inc_reg_user")
                 rpw = st.text_input("Access Code", type="password", key="inc_reg_pw")
-                origin = st.selectbox(
-                    "Origin", list(INC_ORIGINS.keys()),
-                    format_func=lambda o: f"{o} ({', '.join(f'+{v} {k}' for k, v in INC_ORIGINS[o].items())})",
-                    key="inc_reg_origin",
-                )
                 reg_ok = st.form_submit_button("Register & Descend")
             if reg_ok:
-                success, err = _inc_register_account(ru, rpw, origin)
+                success, err = _inc_register_account(ru, rpw)
                 if success:
                     user = verify_user(ru.strip(), rpw)
                     st.session_state.user = user; st.rerun()

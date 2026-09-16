@@ -7225,6 +7225,23 @@ def _inc_attribute_cost(current_value):
     return round(15 * (1.6 ** max(0, current_value - 1)))
 
 
+def _inc_attribute_cost_basis(ch, run, attr):
+    """The value _inc_attribute_cost scales from: the Origin's own baseline
+    plus every point bought from the shop, deliberately EXCLUDING anything
+    from an Astartes Gene-Implant (talent_permanent_attributes) or a
+    combat-only bonus/debuff. "Quando comprar o implante de Toughness...
+    sem aumentar o valor da xp para comprar" - tripling an Attribute via
+    implant surgery must never make the NEXT ordinary purchase of that same
+    Attribute more expensive; only ordinary purchases should ever do that."""
+    origin = run.get("origin")
+    if origin and ch.get("kind") == "incursion" and origin in INC_ORIGINS:
+        base = int(_inc_origin_attributes(origin).get(attr, INC_ORIGIN_BASE_ATTR))
+    else:
+        base = int((ch.get("attributes") or {}).get(attr, 1) or 1)
+    bought = int((run.get("bonus_attributes") or {}).get(attr, 0) or 0)
+    return base + bought
+
+
 def _inc_is_psyker(ch):
     skills = ch.get("skills") or {}
     if int(skills.get("Psychic Mastery", 0) or 0) > 0:
@@ -7242,7 +7259,8 @@ def _inc_generate_offers(ch, run):
     is_minion_origin = origin in INC_MINION_ORIGINS
     candidates=[]
     for attr in ATTRS:
-        cur=int(attrs.get(attr,1)); candidates.append({"type":"attribute","attr":attr,"cost":_inc_attribute_cost(cur),"label":f"+1 {attr}","detail":f"Current: {cur}","rarity":"Common"})
+        cur=int(attrs.get(attr,1)); cost_basis=_inc_attribute_cost_basis(ch,run,attr)
+        candidates.append({"type":"attribute","attr":attr,"cost":_inc_attribute_cost(cost_basis),"label":f"+1 {attr}","detail":f"Current: {cur}","rarity":"Common"})
     if is_tyranid:
         # "eles só podem usar coisas de tyranídeos" - a Tyranid run's
         # wargear is ALWAYS drawn from its own bio-wargear pool, never the
@@ -8204,8 +8222,7 @@ def _inc_skill_cost(current_value):
 
 def _inc_rest_train_attribute(run, ch, attr):
     free = not run["free_upgrade_used"]
-    merged = _inc_merge_character(ch, run)
-    cost = 0 if free else _inc_attribute_cost(int(effective_attributes(merged).get(attr, 1)))
+    cost = 0 if free else _inc_attribute_cost(_inc_attribute_cost_basis(ch, run, attr))
     if run["xp"] < cost:
         raise ValueError("not_enough_xp")
     bonus_attrs = dict(run.get("bonus_attributes") or {})
@@ -8743,7 +8760,16 @@ def _inc_resolve_player_attack(ch, run, node, target_uids, weapon, bonus_die=0, 
     # Every point of Shock still standing adds a hit die - Shock is now the
     # buffer that eats damage before Wounds do, so keeping it topped up is
     # both defence AND offence, and losing it in a fight costs you both.
-    shock_bonus = shock_now
+    # Tyranid-Pattern and Human are the exception: their Shock pool is tied
+    # to an already-strong Minion (Apex Tyranid's Wounds / the
+    # Dreadnought's current Wounds) and can run into the hundreds - giving
+    # the PLAYER's own attack a 1-die-per-point bonus on top of that would
+    # double-dip the same growth twice. Their Shock instead only contributes
+    # 1 die per 10 Shock, capped at +10, so the Minion stays the powerhouse.
+    if run.get("origin") in ("Tyranid-Pattern", "Human"):
+        shock_bonus = min(10, shock_now // 10)
+    else:
+        shock_bonus = shock_now
     per_target_pool = max(1, pool - (len(targets) - 1) + int(bonus_die or 0) + extra_pool + shock_bonus)
     agility = int(merged.get("attributes", {}).get("Agility", 1) or 1)
     log = []
@@ -9747,7 +9773,7 @@ def _inc_render_rest_upgrade(run, ch):
     with c1:
         st.markdown("**Train Attribute**")
         attr_pick = st.selectbox("Attribute", ATTRS, key=f"inc_attr_pick_{run['id']}", label_visibility="collapsed")
-        cost = 0 if free else _inc_attribute_cost(int(attrs.get(attr_pick, 1)))
+        cost = 0 if free else _inc_attribute_cost(_inc_attribute_cost_basis(ch, run, attr_pick))
         st.caption(f"Current {attr_pick}: {attrs.get(attr_pick, 1)} · Cost: {cost} XP")
         if st.button("Train Attribute", key=f"inc_train_attr_{run['id']}", disabled=run["xp"] < cost,
                      use_container_width=True):

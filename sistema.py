@@ -7511,10 +7511,18 @@ def _inc_generate_post_combat_offers(ch, run, node):
             return [{**o, "offer_id": i} for i, o in enumerate(candidates)]
         available = talent_candidates(0)
         candidates = []
-        for row, pr in random.sample(available, min(3, len(available))):
+        # "toda loja de boss deve aparecer um aprimoramento para o
+        # dreadnought" - a Human's boss reward always includes a free
+        # Dreadnought module alongside 2 Talents, never just the generic 3.
+        talent_slots = 2 if origin == "Human" else 3
+        for row, pr in random.sample(available, min(talent_slots, len(available))):
             candidates.append({"type": "talent", "craft_id": int(row["id"]), "name": row["name"],
                                 "effect": row.get("effect", ""), "cost": 0, "label": row["name"],
                                 "detail": f"{pr['rarity']} · {row.get('effect', '')}", "rarity": pr["rarity"]})
+        if origin == "Human":
+            module_offer = dict(_inc_generate_dreadnought_module_offer())
+            module_offer["cost"] = 0
+            candidates.append(module_offer)
         return [{**o, "offer_id": i} for i, o in enumerate(candidates)]
 
     min_rank = _inc_reward_min_rarity(difficulty, enemy_count)
@@ -7668,6 +7676,70 @@ def _inc_apex_tyranid_consume(minions):
     return [m for m in minions if m is not weakest]
 
 
+def _inc_minion_loop_growth(minion, run=None):
+    """Every Minion gets SOME growth at the end of each Loop - the same
+    idea as Apex Tyranid's own per-Loop consume growth, just without
+    needing another Minion to eat, so the Dreadnought, every helper Minion
+    (see INC_ORIGIN_HELPER_MINION) and any bought Minion all keep pace with
+    escalating enemies (see _inc_scale_factor) instead of falling behind.
+
+    Apex/Dreadnought and any bought Minion use the flat "standard" curve;
+    each helper Minion instead carries its own growth_profile (set at
+    creation - see _inc_start_run) so the 22 of them scale in visibly
+    different, thematic ways rather than one identical formula:
+      bulwark   - mostly Wounds/Resilience (tanky)
+      berserker - almost entirely Damage (glass cannon)
+      swarm     - broad and balanced across everything
+      psyker    - Shock grows with its owner's OWN current Shock
+      kill_fed  - Damage grows with Bosses cleared this run
+    """
+    profile = str(minion.get("growth_profile") or "standard")
+    run = run or {}
+    m = dict(minion)
+    def bump(field, pct, cap_field=None):
+        base = int(m.get(field, 0) or 0)
+        new = max(0, round(base * (1 + pct)))
+        if cap_field:
+            m[cap_field] = new
+        m[field] = new
+    if profile == "bulwark":
+        bump("wounds_max", 0.14); m["wounds_current"] = min(m["wounds_max"], round(int(minion.get("wounds_current", 0) or 0) * 1.14))
+        bump("resilience", 0.10)
+        bump("shock_max", 0.04); m["shock_current"] = min(m["shock_max"], round(int(minion.get("shock_current", 0) or 0) * 1.04))
+        bump("damage", 0.03)
+    elif profile == "berserker":
+        bump("damage", 0.14)
+        bump("wounds_max", 0.03); m["wounds_current"] = min(m["wounds_max"], round(int(minion.get("wounds_current", 0) or 0) * 1.03))
+        bump("shock_max", 0.02); m["shock_current"] = min(m["shock_max"], round(int(minion.get("shock_current", 0) or 0) * 1.02))
+        bump("resilience", 0.02)
+    elif profile == "swarm":
+        bump("wounds_max", 0.10); m["wounds_current"] = min(m["wounds_max"], round(int(minion.get("wounds_current", 0) or 0) * 1.10))
+        bump("shock_max", 0.10); m["shock_current"] = min(m["shock_max"], round(int(minion.get("shock_current", 0) or 0) * 1.10))
+        bump("resilience", 0.10)
+        bump("damage", 0.04)
+    elif profile == "psyker":
+        # Shock grows with the OWNER's own current Shock, not a flat %.
+        owner_shock = max(0, int(run.get("shock_current", 0) or 0))
+        gain = round(owner_shock * 0.05)
+        m["shock_max"] = int(m.get("shock_max", 0) or 0) + gain
+        m["shock_current"] = min(m["shock_max"], int(m.get("shock_current", 0) or 0) + gain)
+        bump("wounds_max", 0.06); m["wounds_current"] = min(m["wounds_max"], round(int(minion.get("wounds_current", 0) or 0) * 1.06))
+        bump("damage", 0.04)
+    elif profile == "kill_fed":
+        # Damage grows with Bosses cleared THIS run, not a flat %.
+        bosses_cleared = max(0, int(run.get("bosses_cleared", 0) or 0))
+        m["damage"] = max(1, int(m.get("damage", 0) or 0) + bosses_cleared)
+        bump("wounds_max", 0.06); m["wounds_current"] = min(m["wounds_max"], round(int(minion.get("wounds_current", 0) or 0) * 1.06))
+        bump("shock_max", 0.04); m["shock_current"] = min(m["shock_max"], round(int(minion.get("shock_current", 0) or 0) * 1.04))
+    else:
+        growth = 0.08  # +8% Wounds/Shock, +6% Damage/Resilience, compounding per Loop
+        bump("wounds_max", growth); m["wounds_current"] = min(m["wounds_max"], round(int(minion.get("wounds_current", 0) or 0) * (1 + growth)))
+        bump("shock_max", growth); m["shock_current"] = min(m["shock_max"], round(int(minion.get("shock_current", 0) or 0) * (1 + growth)))
+        bump("damage", growth * 0.75)
+        bump("resilience", growth * 0.75)
+    return m
+
+
 def _inc_advance(run, ch):
     nxt = _inc_stage_after(run)
     loop_no = run["loop_no"] + 1 if nxt == "start" else run["loop_no"]
@@ -7676,6 +7748,7 @@ def _inc_advance(run, ch):
     updates = {"stage": nxt, "loop_no": loop_no, "pending_boss3_pvp": pending_clear, "node": node}
     if nxt == "start" and run.get("minions"):
         new_minions = _inc_apex_tyranid_consume([dict(m) for m in run["minions"]])
+        new_minions = [_inc_minion_loop_growth(m, run) for m in new_minions]
         updates["minions"] = new_minions
         if run.get("origin") == "Tyranid-Pattern":
             # Apex Tyranid just grew - the Tyranid-Pattern player's own
@@ -7737,14 +7810,14 @@ def _inc_start_run(ch, origin=None):
     if origin == "Human":
         # Species trait: a Dreadnought sarcophagus, sealed for the whole
         # Incursion - 20x the pilot's own Wounds, gains a permanent attack
-        # die for every Wrath spent (see _inc_record_wrath_spend), and only
-        # gets back up at the start of the NEXT run - no mid-fight passive
-        # revival, no revival on Rest (see no_mid_run_revive).
+        # die for every Wrath spent (see _inc_record_wrath_spend). Unlike
+        # Tyranid Minions, it never self-repairs mid-fight - only an actual
+        # Rest brings it back (see _inc_revive_minions/_inc_choose_start),
+        # and skipping that Rest while it's down loses it for good.
         fellowship = int(_inc_origin_attributes(origin).get("Fellowship", INC_ORIGIN_BASE_ATTR))
         dread = _inc_minion_stats("Dreadnought", "", "Human", "Unique", 1, fellowship)
         dread["wounds_max"] = pools["wounds_max"] * 20
         dread["wounds_current"] = dread["wounds_max"]
-        dread["no_mid_run_revive"] = True
         starting_minions = [dread]
     elif origin in INC_ORIGIN_HELPER_MINION:
         # Every other Origin gets ONE starting helper Minion too, so
@@ -7755,7 +7828,10 @@ def _inc_start_run(ch, origin=None):
         # for the whole Incursion, reviving normally on Rest.
         helper = INC_ORIGIN_HELPER_MINION[origin]
         fellowship = int(_inc_origin_attributes(origin).get("Fellowship", INC_ORIGIN_BASE_ATTR))
-        starting_minions = [_inc_minion_stats(helper["name"], helper.get("icon", ""), origin, "Uncommon", 1, fellowship)]
+        helper_minion = _inc_minion_stats(helper["name"], helper.get("icon", ""), origin, "Uncommon", 1, fellowship)
+        helper_minion["ability"] = helper.get("ability", "")
+        helper_minion["growth_profile"] = helper.get("growth", "standard")
+        starting_minions = [helper_minion]
     starting_wargear = [dict(w) for w in (run_ch.get("wargear") or []) if not _inc_is_armour_item(w) and w.get("equipped", True)]
     _start_weapons=[w for w in starting_wargear if _inc_is_weapon_item(w)]
     _start_nonweapons=[w for w in starting_wargear if not _inc_is_weapon_item(w)]
@@ -7830,7 +7906,16 @@ def _inc_choose_start(run, ch, choice):
         offers = _inc_generate_first_encampment_offers(ch, run)
         return _inc_persist(run["id"], node={"type": "shop", "subtype": "first_encampment", "offers": offers})
     if choice == "shop":
-        return _inc_persist(run["id"], node={"type": "shop", "subtype": "start", "offers": _inc_generate_offers(ch, run)})
+        # Skipping the Rest is a real cost for anyone but a Tyranid: any
+        # non-Tyranid Minion (Dreadnought and every base helper included)
+        # still down when you push on instead of resting is lost for good.
+        # Tyranid Minions self-repair regardless and are never at risk here.
+        minions = run.get("minions") or []
+        survivors = [m for m in minions if m.get("alive") or m.get("origin") == "Tyranid-Pattern"]
+        updates = {"node": {"type": "shop", "subtype": "start", "offers": _inc_generate_offers(ch, run)}}
+        if len(survivors) != len(minions):
+            updates["minions"] = survivors
+        return _inc_persist(run["id"], **updates)
     raise ValueError("invalid_choice")
 
 
@@ -8542,15 +8627,16 @@ def _inc_finish_combat_round(run, ch, node, round_log, wrath_gained=0, minions=N
     if minions:
         # Every 2 turns, one downed Minion crawls back up on its own - half
         # Wounds, full Shock - independent of Rest or what action you took.
-        # Last Stand Together / Regenerative Swarm speeds this up to every turn.
+        # Last Stand Together / Regenerative Swarm speeds this up to every
+        # turn. Tyranid-Pattern only: its biology self-repairs mid-fight.
+        # Every other Origin's Minions (Dreadnought included) need an actual
+        # Rest to come back - see _inc_revive_minions/_inc_choose_start.
         statuses = _inc_talent_status(run)
         turn_count = int(statuses.get("combat_turn_count", 0) or 0) + 1
         statuses["combat_turn_count"] = turn_count
         revive_every = 1 if _inc_minion_talent_mods(ch, run).get("fast_revive") else 2
         if turn_count % revive_every == 0:
-            # A Dreadnought (no_mid_run_revive) only gets back up at the
-            # start of the pilot's NEXT run - never mid-fight, never on Rest.
-            dead = next((m for m in minions if not m.get("alive") and not m.get("no_mid_run_revive")), None)
+            dead = next((m for m in minions if not m.get("alive") and m.get("origin") == "Tyranid-Pattern"), None)
             if dead:
                 dead["alive"] = True
                 dead["wounds_current"] = max(1, int(dead.get("wounds_max", 1) or 1) // 2)
@@ -9803,29 +9889,58 @@ INC_MINION_TANK_CHANCE = 0.5
 # fixed for the run: no shop offers, no levelling, just a themed companion
 # that fights and tanks alongside its owner using the same rules as any
 # other Minion (chance to tank, revives on Rest).
+# "growth" picks which curve _inc_minion_loop_growth applies each Loop -
+# bulwark (tanky: Wounds/Resilience), berserker (glass cannon: almost all
+# Damage), swarm (broad/balanced), psyker (Shock grows with its owner's own
+# current Shock), kill_fed (Damage grows with Bosses cleared) or the
+# Dreadnought/Apex-style "standard" flat curve. "ability" is real flavour
+# text (not a rarity-tier default) shown right on the card, same place
+# Apex/Dreadnought's own text goes.
 INC_ORIGIN_HELPER_MINION = {
-    "Aeldari-Pattern": {"name": "Wraithguard Sentinel", "icon": ""},
-    "Ork-Pattern": {"name": "Grot Orderly", "icon": ""},
-    "Necron-Pattern": {"name": "Scarab Swarm", "icon": ""},
-    "Tau-Pattern": {"name": "Gun Drone", "icon": ""},
-    "Ogryn-Pattern": {"name": "Ratling Spotter", "icon": ""},
-    "Custodes-Pattern": {"name": "Contemptor Honour Guard", "icon": ""},
-    "Sororitas-Pattern": {"name": "Battle Sister Novice", "icon": ""},
-    "Kroot-Pattern": {"name": "Kroot Hound", "icon": ""},
-    "Genestealer-Cultist-Pattern": {"name": "Aberrant Muscle", "icon": ""},
-    "Death-Guard-Pattern": {"name": "Plague Drone", "icon": ""},
-    "Grey-Knight-Pattern": {"name": "Purgation Servo-Skull", "icon": ""},
-    "Chaos-Pattern": {"name": "Chaos Familiar", "icon": ""},
-    "Ultramarines Astartes": {"name": "Cogitator Servo-Skull", "icon": ""},
-    "Blood Angels Astartes": {"name": "Sanguinary Servitor", "icon": ""},
-    "Dark Angels Astartes": {"name": "Deathwing Servitor", "icon": ""},
-    "Space Wolves Astartes": {"name": "Fenrisian Wolf", "icon": ""},
-    "Imperial Fists Astartes": {"name": "Bastion Servitor", "icon": ""},
-    "Salamanders Astartes": {"name": "Promethean Servitor", "icon": ""},
-    "Raven Guard Astartes": {"name": "Shadow Scout", "icon": ""},
-    "White Scars Astartes": {"name": "Attack Bike Rider", "icon": ""},
-    "Iron Hands Astartes": {"name": "Servitor Cyborg", "icon": ""},
-    "Black Templars Astartes": {"name": "Neophyte Squire", "icon": ""},
+    "Aeldari-Pattern": {"name": "Wraithguard Sentinel", "icon": "", "growth": "bulwark",
+                         "ability": "Wraithbone construct - immune to Bleeding, grows into a wall of Wounds and Resilience."},
+    "Ork-Pattern": {"name": "Grot Orderly", "icon": "", "growth": "kill_fed",
+                     "ability": "Learns from every kill it watches - Damage grows with Bosses defeated."},
+    "Necron-Pattern": {"name": "Scarab Swarm", "icon": "", "growth": "swarm",
+                        "ability": "Self-repairing nanoscarabs - broad, balanced growth every Loop."},
+    "Tau-Pattern": {"name": "Gun Drone", "icon": "", "growth": "berserker",
+                     "ability": "Twin-linked burst cannons - grows almost entirely into raw Damage."},
+    "Ogryn-Pattern": {"name": "Ratling Spotter", "icon": "", "growth": "kill_fed",
+                       "ability": "Calls in kill confirmations - Damage grows with Bosses defeated."},
+    "Custodes-Pattern": {"name": "Contemptor Honour Guard", "icon": "", "growth": "bulwark",
+                          "ability": "Ancient Adeptus Custodes war machine - grows into a wall of Wounds and Resilience."},
+    "Sororitas-Pattern": {"name": "Battle Sister Novice", "icon": "", "growth": "psyker",
+                           "ability": "Sustained by faith - its Shock grows with its Sister-Militant's own."},
+    "Kroot-Pattern": {"name": "Kroot Hound", "icon": "", "growth": "berserker",
+                       "ability": "A predator's hunger - grows almost entirely into raw Damage."},
+    "Genestealer-Cultist-Pattern": {"name": "Aberrant Muscle", "icon": "", "growth": "swarm",
+                                     "ability": "Mutating hybrid strain - broad, balanced growth every Loop."},
+    "Death-Guard-Pattern": {"name": "Plague Drone", "icon": "", "growth": "bulwark",
+                             "ability": "Nurgle's bloat - grows into a wall of Wounds and Resilience."},
+    "Grey-Knight-Pattern": {"name": "Purgation Servo-Skull", "icon": "", "growth": "psyker",
+                             "ability": "Psychically attuned - its Shock grows with its Grey Knight's own."},
+    "Chaos-Pattern": {"name": "Chaos Familiar", "icon": "", "growth": "kill_fed",
+                       "ability": "Feeds on the souls of the fallen - Damage grows with Bosses defeated."},
+    "Ultramarines Astartes": {"name": "Cogitator Servo-Skull", "icon": "", "growth": "standard",
+                               "ability": "Tactical cogitator - steady, even growth every Loop."},
+    "Blood Angels Astartes": {"name": "Sanguinary Servitor", "icon": "", "growth": "berserker",
+                               "ability": "The Red Thirst runs deep - grows almost entirely into raw Damage."},
+    "Dark Angels Astartes": {"name": "Deathwing Servitor", "icon": "", "growth": "bulwark",
+                              "ability": "Terminator-pattern plating - grows into a wall of Wounds and Resilience."},
+    "Space Wolves Astartes": {"name": "Fenrisian Wolf", "icon": "", "growth": "berserker",
+                               "ability": "A predator's hunger - grows almost entirely into raw Damage."},
+    "Imperial Fists Astartes": {"name": "Bastion Servitor", "icon": "", "growth": "bulwark",
+                                 "ability": "Never breaks, never falls back - grows into a wall of Wounds and Resilience."},
+    "Salamanders Astartes": {"name": "Promethean Servitor", "icon": "", "growth": "swarm",
+                              "ability": "Forge-tempered - broad, balanced growth every Loop."},
+    "Raven Guard Astartes": {"name": "Shadow Scout", "icon": "", "growth": "kill_fed",
+                              "ability": "Marks its prey before the kill - Damage grows with Bosses defeated."},
+    "White Scars Astartes": {"name": "Attack Bike Rider", "icon": "", "growth": "berserker",
+                              "ability": "Hit and run - grows almost entirely into raw Damage."},
+    "Iron Hands Astartes": {"name": "Servitor Cyborg", "icon": "", "growth": "bulwark",
+                             "ability": "The flesh is weak, the machine is eternal - grows into a wall of Wounds and Resilience."},
+    "Black Templars Astartes": {"name": "Neophyte Squire", "icon": "", "growth": "swarm",
+                                 "ability": "Eager and unblooded - broad, balanced growth every Loop."},
 }
 INC_MINION_RARITY_STATS = {
     "Common":    {"wounds": 8,  "shock": 4,  "resilience": 2, "damage": 3,  "ed": 1, "cost": 15},
@@ -10039,13 +10154,13 @@ def _inc_generate_minion_offer(origin):
 
 
 def _inc_revive_minions(run):
-    """Full heal on Rest - every dead Minion comes back at max Wounds/Shock,
-    except a Dreadnought (no_mid_run_revive) - it only gets back up at the
-    start of the pilot's next run, Rest included."""
+    """Full heal on Rest - every Minion still on the roster comes back at
+    max Wounds/Shock (Tyranid-Pattern's own also self-repair mid-fight, see
+    _inc_finish_combat_round; everyone else needs this actual Rest - skip
+    it and a downed non-Tyranid Minion is lost for good, see
+    _inc_choose_start)."""
     minions = [dict(m) for m in (run.get("minions") or [])]
     for m in minions:
-        if m.get("no_mid_run_revive") and not m.get("alive"):
-            continue
         m["wounds_current"] = int(m.get("wounds_max", 0) or 0)
         m["shock_current"] = int(m.get("shock_max", 0) or 0)
         m["alive"] = True

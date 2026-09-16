@@ -6392,8 +6392,9 @@ def _inc_weapon_durability_map(run):
 
 
 def _inc_weapon_durability(ch, run, weapon_key, weapon_item=None):
-    weapon_item = weapon_item or next((w for w in (list(ch.get("wargear") or []) + list(run.get("extra_wargear") or []))
-                                       if _inc_weapon_key(w) == weapon_key), None)
+    weapon_item = weapon_item or next(
+        (w for w in (list(run.get("starting_wargear") or []) + list(ch.get("wargear") or []) + list(run.get("extra_wargear") or []))
+         if _inc_weapon_key(w) == weapon_key), None)
     if weapon_item is None:
         return 0, 0
     maximum = _inc_wargear_durability_max(weapon_item)
@@ -6493,7 +6494,7 @@ def _inc_armour_rating(ch, run=None):
 
 def _inc_armour_durability(ch, run):
     armor_key = run.get("equipped_armor_key")
-    all_gear = list(ch.get("wargear") or []) + list(run.get("extra_wargear") or [])
+    all_gear = list(run.get("starting_wargear") or []) + list(ch.get("wargear") or []) + list(run.get("extra_wargear") or [])
     destroyed = _inc_destroyed_keys(run)
     selected = None
     if armor_key and str(armor_key) not in destroyed:
@@ -6768,10 +6769,16 @@ def _inc_spawn_group(difficulty, loop_no):
     # The fallen-mob pool is only ever fetched (one DB round trip, at most
     # once per fight) if the dice actually call for it - most fights never
     # roll a fallen mob at all, so this saves a query on the common path.
+    # Never on "easy": a fallen mob's pool/damage come from whatever the
+    # source character's real sheet could do at time of death, not a
+    # book-balanced tier-1 number - a former player character can hit far
+    # harder than a fresh Bestiary Cultist even when correctly filed under
+    # tier 1. Reserved for medium/hard/boss, where a rough surprise is
+    # appropriate and the player already has some XP or gear.
     fallen_pool = None
     enemies = []
     for i in range(count):
-        if random.random() < INC_FALLEN_CHANCE:
+        if difficulty != "easy" and random.random() < INC_FALLEN_CHANCE:
             if fallen_pool is None:
                 fallen_pool = _inc_fetch_fallen_pool(tier) or []
             if fallen_pool:
@@ -6846,11 +6853,41 @@ def _inc_generate_offers(ch, run):
     return [{**o,"offer_id":i} for i,o in enumerate(random.sample(candidates,min(3,len(candidates))))]
 
 def _inc_generate_first_encampment_offers(ch, run):
-    offers = _inc_generate_offers(ch, run)
-    for offer in offers:
-        offer["cost"] = 0
-        offer["first_encampment_free"] = True
-    return offers
+    """The very first choice of an Incursion, and only this one: exactly two
+    Wargear items plus one Talent, all free - pick ONE, the rest are lost.
+    A dedicated pool rather than _inc_generate_offers()'s general random mix,
+    so a fresh run never opens on three Attribute offers with nothing to
+    actually equip."""
+    merged = _inc_merge_character(ch, run)
+    pool = [r for r in list_craft_items("wargear", active_only=True) if craft_details(r).get("incursion_only")]
+    weapons = [r for r in pool if str(craft_details(r).get("category", "")).lower() in ("firearm", "melee")]
+    armour = [r for r in pool if _inc_is_armour_item({"details": craft_details(r)})]
+    item_rows = random.sample(weapons, min(1, len(weapons))) + random.sample(armour, min(1, len(armour)))
+    remaining_pool = [r for r in pool if r not in item_rows]
+    while len(item_rows) < 2 and remaining_pool:
+        item_rows.append(remaining_pool.pop(random.randrange(len(remaining_pool))))
+
+    candidates = []
+    for row in item_rows:
+        d = craft_details(row)
+        candidates.append({"type": "wargear", "craft_id": int(row["id"]), "name": row["name"],
+                            "effect": row.get("effect", ""), "cost": 0,
+                            "label": row["name"], "detail": f"{d.get('rarity', 'Common')} · {row.get('effect', '')}",
+                            "first_encampment_free": True})
+
+    talent_catalog = {int(r["id"]): r for r in list_craft_items("talent", active_only=False)}
+    available_talents = []
+    for pr in _inc_talent_pool_rows():
+        row = next((r for r in talent_catalog.values() if str(r["name"]).lower() == str(pr["name"]).lower()), None)
+        if row and craft_details(row).get("incursion_only"):
+            available_talents.append((row, pr))
+    if available_talents:
+        row, pr = random.choice(available_talents)
+        candidates.append({"type": "talent", "craft_id": int(row["id"]), "name": row["name"],
+                            "effect": row.get("effect", ""), "cost": 0, "label": row["name"],
+                            "detail": f"{pr['rarity']} · {row.get('effect', '')}", "first_encampment_free": True})
+
+    return [{**o, "offer_id": i} for i, o in enumerate(candidates)]
 
 
 def _inc_pool_updates_for_attribute(ch, run, bonus_attrs, attr):
@@ -6992,16 +7029,25 @@ def _inc_loot_take_and_continue(run, ch):
     return _inc_loot_take(run, ch)
 
 # ---- node/stage state machine -----------------------------------------
-INC_RUN_ESCALATION_PER_ATTEMPT = 1.5  # extra "loops" worth of scaling per prior run this character has started
+INC_RUN_ESCALATION_PER_ATTEMPT = 0.35  # extra "loops" worth of scaling per attempt past the grace window
+INC_RUN_ESCALATION_GRACE_ATTEMPTS = 2  # this many attempts (run_number 1, 2) get zero bonus - no punishing an early death
+INC_RUN_ESCALATION_CAP = 4.0           # hard ceiling, however many times this character has tried
 
 
 def _inc_effective_loop(run):
     """The loop_no actually fed to enemy scaling: this run's own progress
-    PLUS a bump from every previous run this character has started (dead or
-    not) - so a character's 6th attempt starts harder than their 1st, on
-    top of the normal within-run escalation."""
+    PLUS a small, capped bump from previous attempts (dead or not) beyond
+    a short grace window - so a long-time veteran sees a harder world, but
+    someone who just died on attempt 2 does NOT get punished with an even
+    tougher attempt 3. Uncapped, this used to compound (1.5 loops per
+    attempt, no grace, no ceiling) into effectively unwinnable openings for
+    exactly the players who most needed an easy one - a character with 13
+    prior deaths was inheriting +18 effective loops on their very first,
+    supposedly-easiest fight."""
     run_number = int(run.get("run_number", 1) or 1)
-    return run["loop_no"] + (run_number - 1) * INC_RUN_ESCALATION_PER_ATTEMPT
+    attempts_past_grace = max(0, run_number - INC_RUN_ESCALATION_GRACE_ATTEMPTS)
+    bonus = min(INC_RUN_ESCALATION_CAP, attempts_past_grace * INC_RUN_ESCALATION_PER_ATTEMPT)
+    return run["loop_no"] + bonus
 
 
 def _inc_scaled_xp(base, loop_no):

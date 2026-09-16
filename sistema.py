@@ -6796,6 +6796,8 @@ def _inc_usable_weapons(ch, run):
             "melee": bool(details.get("damage_attribute")) or str(details.get("damage", "")).strip().upper().startswith("(S)"),
             "consumable": is_consumable,
             "remaining": remaining,
+            "minion_support": details.get("minion_support"),
+            "support_value": int(details.get("support_value", 0) or 0),
         })
     if not weapons:
         s = int(attrs.get("Strength", 1))
@@ -7088,19 +7090,26 @@ def _inc_generate_offers(ch, run):
     candidates=[]
     for attr in ATTRS:
         cur=int(attrs.get(attr,1)); candidates.append({"type":"attribute","attr":attr,"cost":_inc_attribute_cost(cur),"label":f"+1 {attr}","detail":f"Current: {cur}","rarity":"Common"})
-    pool=[r for r in list_craft_items("wargear", active_only=True) if craft_details(r).get("incursion_only")]
-    weapons=[r for r in pool if str(craft_details(r).get("category","")).lower() in ("firearm","melee")]
-    armour=[r for r in pool if _inc_is_armour_item({"details":craft_details(r)})]
-    consumables=[r for r in pool if str(craft_details(r).get("category","")).lower() in ("consumable","grenade")]
-    owned_weapons=[w for w in (merged.get("wargear") or []) if _inc_is_weapon_item(w)]
-    talent_rows=[r for r in _inc_talent_pool_rows() if craft_details(next((x for x in list_craft_items("talent",active_only=False) if int(x["id"])==int(r.get("id",-1))),{})).get("incursion_only")]
-    def add_random(rows, n=2):
-        for row in random.sample(rows,min(n,len(rows))):
-            d=craft_details(row); rarity=d.get("rarity","Common")
-            candidates.append({"type":"wargear","craft_id":int(row["id"]),"name":row["name"],"effect":row.get("effect",""),"cost":max(10,int(row.get("cost",20) or 20)),"label":row["name"],"detail":f"{rarity} · {row.get('effect','')}","rarity":rarity})
-    add_random(weapons,2)
-    add_random(armour,1)
-    add_random(consumables,1)
+    if is_tyranid:
+        # "eles só podem usar coisas de tyranídeos" - a Tyranid run's
+        # wargear is ALWAYS drawn from its own bio-wargear pool, never the
+        # generic Imperium catalog, and every piece supports the Minions.
+        for _ in range(3):
+            candidates.append(_inc_generate_tyranid_wargear_offer())
+    else:
+        pool=[r for r in list_craft_items("wargear", active_only=True) if craft_details(r).get("incursion_only")]
+        weapons=[r for r in pool if str(craft_details(r).get("category","")).lower() in ("firearm","melee")]
+        armour=[r for r in pool if _inc_is_armour_item({"details":craft_details(r)})]
+        consumables=[r for r in pool if str(craft_details(r).get("category","")).lower() in ("consumable","grenade")]
+        owned_weapons=[w for w in (merged.get("wargear") or []) if _inc_is_weapon_item(w)]
+        talent_rows=[r for r in _inc_talent_pool_rows() if craft_details(next((x for x in list_craft_items("talent",active_only=False) if int(x["id"])==int(r.get("id",-1))),{})).get("incursion_only")]
+        def add_random(rows, n=2):
+            for row in random.sample(rows,min(n,len(rows))):
+                d=craft_details(row); rarity=d.get("rarity","Common")
+                candidates.append({"type":"wargear","craft_id":int(row["id"]),"name":row["name"],"effect":row.get("effect",""),"cost":max(10,int(row.get("cost",20) or 20)),"label":row["name"],"detail":f"{rarity} · {row.get('effect','')}","rarity":rarity})
+        add_random(weapons,2)
+        add_random(armour,1)
+        add_random(consumables,1)
     # Talent offers: a Tyranid-Pattern run's Talents are ALWAYS Minion
     # Talents only, never the general combat pool - "os tyranídios só têm
     # talentos relacionados a minions". Human (the other Minion-eligible
@@ -7265,12 +7274,34 @@ def _inc_apply_purchase(run, ch, offer):
         shock_bonus=_INC_TALENT_SHOCK_BONUS.get(rarity,2)
         new_shock_max=int(run.get("shock_max",0) or 0)+shock_bonus
         pool_updates.update({"shock_max":new_shock_max,"shock_current":min(new_shock_max,int(run.get("shock_current",0) or 0)+shock_bonus)})
+    elif offer["type"]=="tyranid_wargear":
+        if sum(1 for w in starting_wargear+extra_wargear if _inc_is_weapon_item(w))>=3: raise ValueError("weapon_limit")
+        entry={"name":offer["name"],"effect":offer.get("effect",""),"equipped":True,"quantity":1,
+               "details":{"category":"melee weapon" if offer.get("melee") else "firearm",
+                          "damage":str(offer["damage"]),"ed":int(offer.get("ed",0) or 0),"ap":int(offer.get("ap",0) or 0),
+                          "rarity":offer["rarity"],"incursion_only":True,"stackable":False,
+                          "minion_support":offer.get("minion_support"),"support_value":int(offer.get("support_value",0) or 0)}}
+        extra_wargear.append(entry)
+    elif offer["type"]=="tyranid_armour":
+        entry={"name":offer["name"],"effect":offer.get("effect","Tyranid bio-armour."),"equipped":True,"quantity":1,
+               "details":{"category":"armour","armour_rating":int(offer["armour_rating"]),"rarity":offer["rarity"],
+                          "incursion_only":True,"stackable":False}}
+        starting_wargear=[w for w in starting_wargear if not _inc_is_armour_item(w)]
+        extra_wargear=[w for w in extra_wargear if not _inc_is_armour_item(w)]
+        extra_wargear.append(entry)
+        key=_inc_weapon_key(entry); maximum=_inc_wargear_durability_max(entry)
+        pool_updates.update({"equipped_armor_key":key,"armour_durability_current":maximum,"armour_durability_max":maximum})
     else: raise ValueError("unknown_offer_type")
     updated=_inc_persist(run["id"],xp=run["xp"]-offer["cost"],bonus_attributes=bonus_attrs,starting_wargear=starting_wargear,extra_wargear=extra_wargear,extra_talents=extra_talents,extra_powers=[],extra_keywords=extra_keywords,heal_charges=heal_charges,**pool_updates)
     if offer["type"]=="wargear":
         allgear=updated.get("starting_wargear",[])+updated.get("extra_wargear",[])
         added=next((w for w in allgear if int(w.get("craft_id",-1) or -1)==int(offer.get("craft_id",-2))),None)
         if added and _inc_is_weapon_item(added):
+            vals=_inc_weapon_durability_map(updated); key=_inc_weapon_key(added); vals.setdefault(key,_inc_wargear_durability_max(added)); updated=_inc_persist(updated["id"],weapon_durabilities=vals)
+    elif offer["type"]=="tyranid_wargear":
+        allgear=updated.get("starting_wargear",[])+updated.get("extra_wargear",[])
+        added=next((w for w in allgear if w.get("name")==offer["name"]),None)
+        if added:
             vals=_inc_weapon_durability_map(updated); key=_inc_weapon_key(added); vals.setdefault(key,_inc_wargear_durability_max(added)); updated=_inc_persist(updated["id"],weapon_durabilities=vals)
     return updated
 
@@ -7853,6 +7884,40 @@ def _inc_apply_talent_trigger(node, trigger, selected_indices):
     target["statuses"] = statuses
     return len(selected)
 
+def _inc_apply_weapon_minion_support(run, minions, support, value, hit_any, crit_any, kills):
+    """Every piece of Tyranid-Pattern Wargear (see INC_TYRANID_WARGEAR)
+    supports the Minions rather than the player directly - this is where
+    each named effect actually happens, once per Strike action."""
+    alive = [m for m in minions if m.get("alive") and int(m.get("wounds_current", 0) or 0) > 0]
+    if support == "heal_strongest_on_hit" and hit_any and alive:
+        strongest = max(alive, key=lambda m: int(m.get("wounds_max", 0) or 0))
+        strongest["wounds_current"] = min(int(strongest.get("wounds_max", 0) or 0), int(strongest.get("wounds_current", 0) or 0) + value)
+    elif support == "bonus_die_on_hit" and hit_any:
+        for m in minions:
+            m["next_bonus_die"] = int(m.get("next_bonus_die", 0) or 0) + value
+    elif support == "shock_heal_weakest_on_crit" and crit_any and alive:
+        weakest = min(alive, key=lambda m: int(m.get("shock_current", 0) or 0))
+        weakest["shock_current"] = int(weakest.get("shock_max", 0) or 0)
+    elif support == "boost_on_kills" and kills:
+        statuses = _inc_talent_status(run)
+        kill_count = int(statuses.get("tyranid_weapon_kills", 0) or 0) + kills
+        procs, remainder = divmod(kill_count, 2)
+        if procs > 0:
+            for m in minions:
+                m["damage"] = int(m.get("damage", 0) or 0) + procs
+                m["shock_max"] = int(m.get("shock_max", 0) or 0) + procs * value
+                m["shock_current"] = int(m.get("shock_current", 0) or 0) + procs * value
+        statuses["tyranid_weapon_kills"] = remainder
+        run = _inc_talent_persist_status(run, statuses)
+    elif support == "revive_on_attack":
+        dead = next((m for m in minions if not m.get("alive")), None)
+        if dead:
+            dead["alive"] = True
+            dead["wounds_current"] = max(1, int(dead.get("wounds_max", 1) or 1) // 2)
+            dead["shock_current"] = int(dead.get("shock_max", 0) or 0)
+    return run
+
+
 def _inc_minion_group_attack(minions, node, merged):
     """Every alive Minion fights alongside you, no matter what action you
     took this turn (Attack, Heal, Recover Shock, use an Item...) - one
@@ -7870,7 +7935,7 @@ def _inc_minion_group_attack(minions, node, merged):
         swings = 2 if rarity in ("Legendary", "Unique") else 1
         dmg_mult = 1.5 if rarity == "Unique" else 1.0
         bleeds = rarity in ("Rare", "Legendary", "Unique")
-        m_pool = fellowship + max(0, int(minion.get("shock_current", 0) or 0))
+        m_pool = fellowship + max(0, int(minion.get("shock_current", 0) or 0)) + int(minion.pop("next_bonus_die", 0) or 0)
         for _swing in range(swings):
             live_targets = [e for e in node["enemies"] if e["alive"]]
             if not live_targets:
@@ -8022,6 +8087,12 @@ def _inc_resolve_player_attack(ch, run, node, target_uids, weapon, bonus_die=0, 
         if hit:
             triggers = _inc_attack_talent_triggers(ch, run, target, rolls)
             if triggers: node["pending_talent_triggers"] = triggers
+    support = weapon.get("minion_support")
+    if support and minions:
+        run = _inc_apply_weapon_minion_support(run, minions, support, int(weapon.get("support_value", 0) or 0),
+                                                hit_any=any(e["hit"] for e in log),
+                                                crit_any=any(e.get("wrath_crit") for e in log),
+                                                kills=sum(1 for e in log if e.get("target_defeated")))
     if node.get("pending_talent_triggers"):
         return pre_log + log, wrath_gained, minions
     log += _inc_minion_group_attack(minions, node, merged)
@@ -8875,7 +8946,8 @@ def _inc_render_shop(run, ch, node):
     offers = offers or []
     type_label = {"attribute": "Attribute", "wargear": "Wargear", "talent": "Talent",
                   "power": "Psychic Power", "heal_charge": "Supply", "keyword": "Keyword",
-                  "minion": "Minion", "talent_minion": "Minion Talent"}
+                  "minion": "Minion", "talent_minion": "Minion Talent",
+                  "tyranid_wargear": "Bio-Weapon", "tyranid_armour": "Bio-Armour"}
     if not offers:
         st.caption("Nothing left to buy here.")
     else:
@@ -9351,6 +9423,54 @@ INC_MINION_TALENTS = [
     {"name": "Alpha Predator", "rarity": "Unique", "effect": "Your Minions' damage is doubled (each)."},
 ]
 _INC_MINION_LEVEL_GROWTH = 0.25  # +25% to every stat per level beyond 1
+
+# Tyranid-Pattern's own Wargear pool - "eles só podem usar coisas de
+# tyranídeos": a Tyranid run's wargear offers are drawn ONLY from here
+# (see _inc_generate_offers), never the generic Imperium catalog, and
+# every single piece supports the Minions rather than just the player.
+# minion_support is checked in _inc_resolve_player_attack; support_value
+# is that effect's magnitude.
+INC_TYRANID_WARGEAR = {
+    "Common": [{"name": "Chitin Claw", "icon": "🦞", "melee": True, "damage": 5, "ed": 1, "ap": 0,
+                "effect": "On hit, your strongest Minion recovers 2 Wounds.",
+                "minion_support": "heal_strongest_on_hit", "support_value": 2}],
+    "Uncommon": [{"name": "Spore Mine Launcher", "icon": "🍄", "melee": False, "damage": 6, "ed": 1, "ap": 0,
+                  "effect": "On hit, all your Minions gain +2 dice on their next attack.",
+                  "minion_support": "bonus_die_on_hit", "support_value": 2}],
+    "Rare": [{"name": "Rending Talons", "icon": "🦂", "melee": True, "damage": 8, "ed": 2, "ap": -1,
+              "effect": "On a Critical, your weakest Minion fully recovers Shock.",
+              "minion_support": "shock_heal_weakest_on_crit", "support_value": 0}],
+    "Legendary": [{"name": "Bio-Plasma Cannon", "icon": "☣", "melee": False, "damage": 12, "ed": 2, "ap": -2,
+                   "effect": "Every 2 kills, all your Minions permanently gain +1 Damage and +2 max Shock.",
+                   "minion_support": "boost_on_kills", "support_value": 2}],
+    "Unique": [{"name": "The Devourer's Maw", "icon": "👄", "melee": True, "damage": 16, "ed": 3, "ap": -2,
+                "effect": "Every attack revives one downed Minion at half Wounds and full Shock.",
+                "minion_support": "revive_on_attack", "support_value": 0}],
+}
+INC_TYRANID_ARMOUR = {
+    "Common": {"name": "Chitin Plating", "icon": "🛡", "armour_rating": 2},
+    "Uncommon": {"name": "Carapace Hide", "icon": "🛡", "armour_rating": 3},
+    "Rare": {"name": "Bio-Plated Hide", "icon": "🛡", "armour_rating": 4},
+    "Legendary": {"name": "Warrior Carapace", "icon": "🛡", "armour_rating": 6},
+    "Unique": {"name": "Broodlord's Exoskeleton", "icon": "🛡", "armour_rating": 8},
+}
+
+
+def _inc_generate_tyranid_wargear_offer():
+    rarity = random.choice(_INC_RARITIES)
+    if random.random() < 0.35:
+        arm = INC_TYRANID_ARMOUR[rarity]
+        cost = INC_MINION_RARITY_STATS[rarity]["cost"]
+        return {"type": "tyranid_armour", "rarity": rarity, "name": arm["name"], "icon": arm["icon"],
+                "armour_rating": arm["armour_rating"], "label": arm["name"], "cost": cost,
+                "detail": f"{rarity} · Armour Rating +{arm['armour_rating']} · Tyranid bio-armour"}
+    weapon = random.choice(INC_TYRANID_WARGEAR[rarity])
+    cost = INC_MINION_RARITY_STATS[rarity]["cost"]
+    detail = f"{rarity} · {weapon['damage']} DMG +{weapon['ed']} ED · AP {weapon['ap']} · {weapon['effect']}"
+    return {"type": "tyranid_wargear", "rarity": rarity, "name": weapon["name"], "icon": weapon["icon"],
+            "melee": weapon["melee"], "damage": weapon["damage"], "ed": weapon["ed"], "ap": weapon["ap"],
+            "effect": weapon["effect"], "minion_support": weapon["minion_support"], "support_value": weapon["support_value"],
+            "label": weapon["name"], "cost": cost, "detail": detail}
 
 
 def _inc_minion_stats(name, icon, origin, rarity, level=1):

@@ -7328,7 +7328,10 @@ def _inc_apply_purchase(run, ch, offer):
         new_shock_max=int(run.get("shock_max",0) or 0)+shock_bonus
         pool_updates.update({"shock_max":new_shock_max,"shock_current":min(new_shock_max,int(run.get("shock_current",0) or 0)+shock_bonus)})
     elif offer["type"]=="tyranid_wargear":
-        if sum(1 for w in starting_wargear+extra_wargear if _inc_is_weapon_item(w))>=3: raise ValueError("weapon_limit")
+        # Tyranid bio-weapons are grown, not carried - only one at a time.
+        # Buying another replaces (never stacks alongside) the old one.
+        starting_wargear=[w for w in starting_wargear if not _inc_is_weapon_item(w)]
+        extra_wargear=[w for w in extra_wargear if not _inc_is_weapon_item(w)]
         entry={"name":offer["name"],"effect":offer.get("effect",""),"equipped":True,"quantity":1,
                "details":{"category":"melee weapon" if offer.get("melee") else "firearm",
                           "damage":str(offer["damage"]),"ed":int(offer.get("ed",0) or 0),"ap":int(offer.get("ap",0) or 0),
@@ -7380,6 +7383,8 @@ def _inc_generate_post_combat_offers(ch, run, node):
     downing a Champion), never wargear or attributes."""
     difficulty = str(node.get("difficulty", "easy"))
     enemy_count = len(node.get("enemies", []) or [])
+    origin = run.get("origin")
+    is_tyranid = (origin == "Tyranid-Pattern")
     talent_catalog = {int(r["id"]): r for r in list_craft_items("talent", active_only=False)}
 
     def talent_candidates(min_rank):
@@ -7390,7 +7395,22 @@ def _inc_generate_post_combat_offers(ch, run, node):
                 out.append((row, pr))
         return out
 
+    def minion_talent_candidates(min_rank):
+        pool = [mt for mt in INC_MINION_TALENTS.get(origin, []) if _INC_RARITY_RANK.get(mt["rarity"], 0) >= min_rank]
+        return pool or INC_MINION_TALENTS.get(origin, [])
+
+    def minion_talent_offer(mt):
+        return {"type": "talent_minion", "name": mt["name"], "effect": mt["effect"], "cost": 0,
+                "label": mt["name"], "detail": f"{mt['rarity']} · {mt['effect']}", "rarity": mt["rarity"]}
+
     if difficulty == "boss":
+        # "os tyranídeos só têm talentos relacionados a minions" applies
+        # here too - a Tyranid boss reward is always 3 Minion Talents,
+        # never the generic combat Talent pool from other races.
+        if is_tyranid:
+            pool = INC_MINION_TALENTS.get(origin, [])
+            candidates = [minion_talent_offer(mt) for mt in random.sample(pool, min(3, len(pool)))]
+            return [{**o, "offer_id": i} for i, o in enumerate(candidates)]
         available = talent_candidates(0)
         candidates = []
         for row, pr in random.sample(available, min(3, len(available))):
@@ -7400,26 +7420,35 @@ def _inc_generate_post_combat_offers(ch, run, node):
         return [{**o, "offer_id": i} for i, o in enumerate(candidates)]
 
     min_rank = _inc_reward_min_rarity(difficulty, enemy_count)
-    pool = [r for r in list_craft_items("wargear", active_only=True) if craft_details(r).get("incursion_only")]
-    def rank_of(row):
-        return _INC_RARITY_RANK.get(craft_details(row).get("rarity", "Common"), 0)
-    filtered = [r for r in pool if rank_of(r) >= min_rank] or pool
-    wargear_candidates = filtered
-
-    available_talents = talent_candidates(min_rank) or talent_candidates(0)
-
     candidates = []
     attrs = effective_attributes(_inc_merge_character(ch, run))
-    for row in random.sample(wargear_candidates, min(2, len(wargear_candidates))):
-        d = craft_details(row); rarity = d.get("rarity", "Common")
-        candidates.append({"type": "wargear", "craft_id": int(row["id"]), "name": row["name"],
-                            "effect": row.get("effect", ""), "cost": 0, "label": row["name"],
-                            "detail": f"{rarity} · {row.get('effect', '')}", "rarity": rarity})
-    if available_talents:
-        row, pr = random.choice(available_talents)
-        candidates.append({"type": "talent", "craft_id": int(row["id"]), "name": row["name"],
-                            "effect": row.get("effect", ""), "cost": 0, "label": row["name"],
-                            "detail": f"{pr['rarity']} · {row.get('effect', '')}", "rarity": pr["rarity"]})
+    if is_tyranid:
+        # Same rule outside boss fights: a Tyranid's post-combat wargear is
+        # always drawn from its own bio-wargear pool, never the generic
+        # Imperium catalog, and its Talent is always a Minion Talent.
+        for _ in range(2):
+            offer = dict(_inc_generate_tyranid_wargear_offer())
+            offer["cost"] = 0
+            candidates.append(offer)
+        talent_pool = minion_talent_candidates(min_rank)
+        if talent_pool:
+            candidates.append(minion_talent_offer(random.choice(talent_pool)))
+    else:
+        pool = [r for r in list_craft_items("wargear", active_only=True) if craft_details(r).get("incursion_only")]
+        def rank_of(row):
+            return _INC_RARITY_RANK.get(craft_details(row).get("rarity", "Common"), 0)
+        wargear_candidates = [r for r in pool if rank_of(r) >= min_rank] or pool
+        available_talents = talent_candidates(min_rank) or talent_candidates(0)
+        for row in random.sample(wargear_candidates, min(2, len(wargear_candidates))):
+            d = craft_details(row); rarity = d.get("rarity", "Common")
+            candidates.append({"type": "wargear", "craft_id": int(row["id"]), "name": row["name"],
+                                "effect": row.get("effect", ""), "cost": 0, "label": row["name"],
+                                "detail": f"{rarity} · {row.get('effect', '')}", "rarity": rarity})
+        if available_talents:
+            row, pr = random.choice(available_talents)
+            candidates.append({"type": "talent", "craft_id": int(row["id"]), "name": row["name"],
+                                "effect": row.get("effect", ""), "cost": 0, "label": row["name"],
+                                "detail": f"{pr['rarity']} · {row.get('effect', '')}", "rarity": pr["rarity"]})
     while len(candidates) < 3:
         attr = random.choice(ATTRS); cur = int(attrs.get(attr, 1))
         candidates.append({"type": "attribute", "attr": attr, "cost": 0, "label": f"+1 {attr}",
@@ -7513,9 +7542,10 @@ def _inc_stage_after(run):
 
 def _inc_apex_tyranid_consume(minions):
     """Apex Tyranid's species trait: at the end of each Loop, it consumes
-    the weakest other Minion - absorbs half its Wounds/Shock (permanently,
-    into its own max), inherits its special ability, and permanently
-    gains +1 attack die. The consumed Minion is removed from the roster."""
+    the weakest other Minion - absorbs 25% of its Wounds and 10% of its
+    Shock (permanently, into its own max), inherits its special ability,
+    and permanently gains +1 attack die. The consumed Minion is removed
+    from the roster."""
     apex = next((m for m in minions if m.get("name") == "Apex Tyranid"), None)
     if not apex:
         return minions
@@ -7523,8 +7553,8 @@ def _inc_apex_tyranid_consume(minions):
     if not others:
         return minions
     weakest = min(others, key=lambda m: int(m.get("wounds_max", 0) or 0) + int(m.get("shock_max", 0) or 0))
-    gained_wounds = max(0, int(weakest.get("wounds_max", 0) or 0) // 2)
-    gained_shock = max(0, int(weakest.get("shock_max", 0) or 0) // 2)
+    gained_wounds = max(0, round(int(weakest.get("wounds_max", 0) or 0) * 0.25))
+    gained_shock = max(0, round(int(weakest.get("shock_max", 0) or 0) * 0.10))
     apex["wounds_max"] = int(apex.get("wounds_max", 0) or 0) + gained_wounds
     apex["wounds_current"] = int(apex.get("wounds_current", 0) or 0) + gained_wounds
     apex["shock_max"] = int(apex.get("shock_max", 0) or 0) + gained_shock
@@ -8388,9 +8418,18 @@ def _inc_combat_attack(run, ch, target_uids, weapon_key, bonus_die=0, six_mode="
     round_log,wrath_gained,minions=_inc_resolve_player_attack(ch,run,node,target_uids,weapon,bonus_die=bonus_die,six_mode=six_mode,guaranteed_hit=guaranteed_hit)
     weapon_ones = sum(1 for entry in round_log if entry.get("actor") == "player" and entry.get("rolls") and int(entry["rolls"][-1]) == 1)
     if weapon_ones and weapon.get("key") != "__unarmed__":
-        run, lost, weapon_cur, weapon_max = _inc_damage_weapon_from_wrath_one(run, ch, weapon["key"])
-        round_log.append({"actor":"player","action":"weapon_damage","amount":lost,"weapon":weapon.get("name","Weapon"),
-                          "durability_current":weapon_cur,"durability_max":weapon_max})
+        if run.get("origin") == "Tyranid-Pattern":
+            # Tyranid wargear is grown from its own body, not carried gear -
+            # a Wrath Die 1 costs the Tyranid a Wound instead of durability.
+            wounds_lost = min(1, int(run.get("wounds_current", 0) or 0))
+            new_wounds = max(0, int(run.get("wounds_current", 0) or 0) - wounds_lost)
+            run = _inc_persist(run["id"], wounds_current=new_wounds)
+            round_log.append({"actor":"player","action":"weapon_bio_damage","amount":wounds_lost,
+                              "weapon":weapon.get("name","Bio-weapon"),"wounds_current":new_wounds})
+        else:
+            run, lost, weapon_cur, weapon_max = _inc_damage_weapon_from_wrath_one(run, ch, weapon["key"])
+            round_log.append({"actor":"player","action":"weapon_damage","amount":lost,"weapon":weapon.get("name","Weapon"),
+                              "durability_current":weapon_cur,"durability_max":weapon_max})
     if weapon.get("consumable"):
         charges=dict(run.get("consumable_charges") or {}); charges[weapon["key"]]=max(0,int(weapon["remaining"])-1); run=_inc_persist(run["id"],consumable_charges=charges)
     return _inc_finish_combat_round(run,ch,node,round_log,wrath_gained,minions=minions)

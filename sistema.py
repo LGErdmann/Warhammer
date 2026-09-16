@@ -8511,10 +8511,17 @@ def _inc_minion_talent_mods(ch, run):
         damage_mult *= 2.0
     if _inc_talent_has(ch, run, "Shadow in the Warp"):
         enemy_pool_penalty += 1
+    # "Quem deve ter bulk são os astartes, não os minions deles - eles
+    # tankam para os minions": reversed from every other Origin - the
+    # Astartes player is the one who is Bulk, always drawing every enemy
+    # attack itself, so its companion is never targeted at all (see
+    # _inc_enemy_turn's player_always_tanks check).
+    player_always_tanks = is_astartes(str(run.get("origin") or ""))
     return {"wounds_bonus": wounds_bonus, "resilience_bonus": resilience_bonus, "shock_max_bonus": shock_max_bonus,
             "pool_bonus": pool_bonus, "damage_mult": damage_mult, "always_bleed": always_bleed,
             "enemy_pool_penalty": enemy_pool_penalty, "fast_revive": fast_revive,
-            "shock_on_minion_hit": shock_on_minion_hit, "endless_swarm": endless_swarm}
+            "shock_on_minion_hit": shock_on_minion_hit, "endless_swarm": endless_swarm,
+            "player_always_tanks": player_always_tanks}
 
 
 def _inc_enemy_turn(enemies, player_traits, player_shock_current=0, minions=None, talent_mods=None):
@@ -8545,15 +8552,20 @@ def _inc_enemy_turn(enemies, player_traits, player_shock_current=0, minions=None
         # Minions only have a CHANCE to soak a hit meant for the player (own
         # Shock first, then Wounds, same rule as the player) - unless a Bulk
         # Minion is alive, which ALWAYS draws the attack instead, for any
-        # Origin, while it lives.
-        alive_minions=[m for m in minions if m.get("alive") and int(m.get("wounds_current",0) or 0)>0]
-        bulk_minion=next((m for m in alive_minions if m.get("bulk")),None)
-        if bulk_minion:
-            target_minion=bulk_minion
-        elif alive_minions and random.random()<INC_MINION_TANK_CHANCE:
-            target_minion=alive_minions[0]
-        else:
+        # Origin, while it lives. Astartes is reversed - the PLAYER is Bulk
+        # (see _inc_minion_talent_mods), so its companion is never targeted
+        # at all, no chance roll needed.
+        if talent_mods.get("player_always_tanks"):
             target_minion=None
+        else:
+            alive_minions=[m for m in minions if m.get("alive") and int(m.get("wounds_current",0) or 0)>0]
+            bulk_minion=next((m for m in alive_minions if m.get("bulk")),None)
+            if bulk_minion:
+                target_minion=bulk_minion
+            elif alive_minions and random.random()<INC_MINION_TANK_CHANCE:
+                target_minion=alive_minions[0]
+            else:
+                target_minion=None
         if hit:
             total_damage,damage_rolls=_inc_roll_damage(enemy.get("weapon_damage",0),enemy.get("weapon_ed",0))
             if critical:
@@ -10408,30 +10420,32 @@ INC_ORIGIN_HELPER_MINION = {
                              "ability": "Psychically attuned - its Shock grows with its Grey Knight's own."},
     "Chaos-Pattern": {"name": "Chaos Familiar", "icon": "", "growth": "kill_fed",
                        "ability": "Feeds on the souls of the fallen - Damage grows with Bosses defeated."},
-    # Every Astartes Chapter's companion is Bulk (always draws every enemy
-    # attack while alive - normally a Human/Tyranid-only trait, Astartes is
-    # the one deliberate exception) and scales almost entirely into Damage
-    # ("seus companheiros escalam com dano"), regardless of Chapter flavour.
-    "Ultramarines Astartes": {"name": "Cogitator Servo-Skull", "icon": "", "growth": "berserker", "bulk": True,
-                               "ability": "Tactical cogitator, Bulk - draws every attack, grows almost entirely into raw Damage."},
-    "Blood Angels Astartes": {"name": "Sanguinary Servitor", "icon": "", "growth": "berserker", "bulk": True,
-                               "ability": "The Red Thirst runs deep, Bulk - draws every attack, grows almost entirely into raw Damage."},
-    "Dark Angels Astartes": {"name": "Deathwing Servitor", "icon": "", "growth": "berserker", "bulk": True,
-                              "ability": "Terminator-pattern plating, Bulk - draws every attack, grows almost entirely into raw Damage."},
-    "Space Wolves Astartes": {"name": "Fenrisian Wolf", "icon": "", "growth": "berserker", "bulk": True,
-                               "ability": "A predator's hunger, Bulk - draws every attack, grows almost entirely into raw Damage."},
-    "Imperial Fists Astartes": {"name": "Bastion Servitor", "icon": "", "growth": "berserker", "bulk": True,
-                                 "ability": "Never breaks, never falls back, Bulk - draws every attack, grows almost entirely into raw Damage."},
-    "Salamanders Astartes": {"name": "Promethean Servitor", "icon": "", "growth": "berserker", "bulk": True,
-                              "ability": "Forge-tempered, Bulk - draws every attack, grows almost entirely into raw Damage."},
-    "Raven Guard Astartes": {"name": "Shadow Scout", "icon": "", "growth": "berserker", "bulk": True,
-                              "ability": "Marks its prey before the kill, Bulk - draws every attack, grows almost entirely into raw Damage."},
-    "White Scars Astartes": {"name": "Attack Bike Rider", "icon": "", "growth": "berserker", "bulk": True,
-                              "ability": "Hit and run, Bulk - draws every attack, grows almost entirely into raw Damage."},
-    "Iron Hands Astartes": {"name": "Servitor Cyborg", "icon": "", "growth": "berserker", "bulk": True,
-                             "ability": "The flesh is weak, the machine is eternal, Bulk - draws every attack, grows almost entirely into raw Damage."},
-    "Black Templars Astartes": {"name": "Neophyte Squire", "icon": "", "growth": "berserker", "bulk": True,
-                                 "ability": "Eager and unblooded, Bulk - draws every attack, grows almost entirely into raw Damage."},
+    # "Quem deve ter bulk são os astartes, não os minions deles - eles
+    # tankam para os minions": the PLAYER is Bulk for every Astartes
+    # Chapter (see _inc_minion_talent_mods' player_always_tanks), so its
+    # companion is never targeted at all and never needs Bulk of its own.
+    # It still scales almost entirely into Damage ("seus companheiros
+    # escalam com dano"), regardless of Chapter flavour.
+    "Ultramarines Astartes": {"name": "Cogitator Servo-Skull", "icon": "", "growth": "berserker",
+                               "ability": "Tactical cogitator - its Astartes tanks for it, grows almost entirely into raw Damage."},
+    "Blood Angels Astartes": {"name": "Sanguinary Servitor", "icon": "", "growth": "berserker",
+                               "ability": "The Red Thirst runs deep - its Astartes tanks for it, grows almost entirely into raw Damage."},
+    "Dark Angels Astartes": {"name": "Deathwing Servitor", "icon": "", "growth": "berserker",
+                              "ability": "Terminator-pattern plating - its Astartes tanks for it, grows almost entirely into raw Damage."},
+    "Space Wolves Astartes": {"name": "Fenrisian Wolf", "icon": "", "growth": "berserker",
+                               "ability": "A predator's hunger - its Astartes tanks for it, grows almost entirely into raw Damage."},
+    "Imperial Fists Astartes": {"name": "Bastion Servitor", "icon": "", "growth": "berserker",
+                                 "ability": "Never breaks, never falls back - its Astartes tanks for it, grows almost entirely into raw Damage."},
+    "Salamanders Astartes": {"name": "Promethean Servitor", "icon": "", "growth": "berserker",
+                              "ability": "Forge-tempered - its Astartes tanks for it, grows almost entirely into raw Damage."},
+    "Raven Guard Astartes": {"name": "Shadow Scout", "icon": "", "growth": "berserker",
+                              "ability": "Marks its prey before the kill - its Astartes tanks for it, grows almost entirely into raw Damage."},
+    "White Scars Astartes": {"name": "Attack Bike Rider", "icon": "", "growth": "berserker",
+                              "ability": "Hit and run - its Astartes tanks for it, grows almost entirely into raw Damage."},
+    "Iron Hands Astartes": {"name": "Servitor Cyborg", "icon": "", "growth": "berserker",
+                             "ability": "The flesh is weak, the machine is eternal - its Astartes tanks for it, grows almost entirely into raw Damage."},
+    "Black Templars Astartes": {"name": "Neophyte Squire", "icon": "", "growth": "berserker",
+                                 "ability": "Eager and unblooded - its Astartes tanks for it, grows almost entirely into raw Damage."},
 }
 INC_MINION_RARITY_STATS = {
     "Common":    {"wounds": 8,  "shock": 4,  "resilience": 2, "damage": 3,  "ed": 1, "cost": 15},

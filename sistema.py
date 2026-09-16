@@ -4175,6 +4175,25 @@ def inject_theme():
     .inc-enemy.inc-just-hit{animation:inc-hit-shake .4s ease, inc-hit-glow .8s ease}
     .inc-enemy.inc-just-missed{animation:inc-miss-fade .5s ease}
     .inc-hit-flash-player{animation:inc-player-flash 2.4s ease forwards;text-align:center;font-family:Cinzel,serif;letter-spacing:.14em;color:#ff8a80;background:rgba(178,58,53,.14);border:1px solid #b23a35;padding:8px;margin:0 0 10px;text-transform:uppercase}
+    /* Dice tray: the live roll display shown up front in combat instead of a
+       scrolling log below the fold - one glance shows both sides' last roll. */
+    .inc-dice-tray{display:flex;gap:14px;justify-content:space-between;background:rgba(10,10,14,.55);border:1px solid rgba(198,163,90,.35);border-radius:8px;padding:10px 14px;margin:0 0 12px}
+    .inc-dice-col{flex:1;min-width:0}
+    .inc-dice-label{font-family:Cinzel,serif;letter-spacing:.12em;font-size:.7rem;opacity:.8;margin-bottom:6px;text-transform:uppercase}
+    .inc-dice-label.you{color:#8fd3ff}
+    .inc-dice-label.foe{color:#ff8a80}
+    .inc-dice-row-inner{display:flex;flex-wrap:wrap;gap:6px}
+    .inc-die{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:5px;background:#1c1c22;border:1px solid rgba(255,255,255,.18);color:#ddd;font-weight:700;font-size:.85rem;animation:inc-die-roll .4s ease both;animation-delay:calc(var(--d) * 60ms)}
+    .inc-die.icon1{box-shadow:0 0 6px 1px rgba(255,215,120,.55);border-color:rgba(255,215,120,.6);color:#ffe9b0}
+    .inc-die.icon2{box-shadow:0 0 10px 3px rgba(255,190,60,.75);border-color:rgba(255,190,60,.9);color:#fff3d0}
+    .inc-die.wrath{outline:2px solid rgba(178,58,53,.85);outline-offset:2px}
+    .inc-die.wrath.crit{animation:inc-die-roll .4s ease both,inc-wrath-crit 1.2s ease-in-out .4s infinite;box-shadow:0 0 16px 5px rgba(255,80,60,.9)}
+    .inc-dice-meta{display:flex;gap:8px;margin-top:6px;font-size:.7rem;opacity:.85}
+    .inc-dice-result.hit{color:#8fd98f;font-weight:700}
+    .inc-dice-result.miss{color:#999;font-weight:700}
+    .inc-dice-empty{opacity:.5;font-style:italic;font-size:.8rem}
+    @keyframes inc-die-roll{from{transform:rotate(-35deg) scale(.4);opacity:0}to{transform:rotate(0) scale(1);opacity:1}}
+    @keyframes inc-wrath-crit{0%,100%{box-shadow:0 0 16px 5px rgba(255,80,60,.9)}50%{box-shadow:0 0 24px 10px rgba(255,140,60,1)}}
     /* Field Loadout: purchased/looted items as visible badges, not just an
        entry buried inside the discard dropdown - the whole point is that a
        player can SEE a purchase actually landed. */
@@ -8037,55 +8056,54 @@ def _inc_render_hud(ch, run):
     _inc_render_tutorial()
 
 
-def _inc_render_log(log):
-    lines = []
-    for e in reversed(log or []):
-        if e.get("action") == "heal":
-            lines.append(f"<div class='inc-log-line system'>You use medicae supplies and recover "
-                         f"<b>{e['amount']}</b> Wounds.</div>")
-            continue
-        if e.get("action") == "recover_shock":
-            lines.append(f"<div class='inc-log-line system'>You spend 1 Wrath and recover "
-                         f"<b>{e['amount']}</b> Shock.</div>")
-            continue
-        if e.get("action") == "talent_trigger":
-            lines.append(f"<div class='inc-log-line player'><b>Blood Must Die</b> marks {html.escape(str(e.get('target_name','the target')))} with <b>Bleeding [{int(e.get('amount',0))}]</b>.</div>")
-            continue
-        if e.get("action") == "attack" and e.get("talent_bleeding"):
-            lines.append(f"<div class='inc-log-line player'><b>{html.escape(str(e.get('talent_bleeding')))}</b> Bleeding from Incursion Talent.</div>")
-        if e.get("action") == "attack" and e.get("enemy_armour_damage"):
-            lines.append(f"<div class='inc-log-line player'><b>Enemy armour</b> loses {int(e.get('enemy_armour_damage',0))} durability from a Critical Hit.</div>")
-        if e.get("action") == "weapon_damage":
-            lines.append(f"<div class='inc-log-line system'><b>{html.escape(str(e.get('weapon','Weapon')))}</b> loses 1 durability from the Wrath Die. "
-                         f"Durability {int(e.get('durability_current',0))}/{int(e.get('durability_max',0))}.</div>")
-            continue
-        if e.get("action") == "armour_damage":
-            lines.append(f"<div class='inc-log-line enemy'><b>Armour</b> loses {int(e.get('amount',0))} durability from an enemy critical. "
-                         f"Durability {int(e.get('armour_durability',0))}.</div>")
-            continue
-        if e.get("action") == "armour_broken":
-            lines.append("<div class='inc-log-line enemy'><b>Armour broken.</b> The item is lost.</div>")
-            continue
-        if e.get("action") == "flee":
-            result="ESCAPED" if e.get("success") else "FAILED · enemy turn"
-            lines.append(f"<div class='inc-log-line player'><b>You</b> contest Speed against {html.escape(str(e.get('target_name','the target')))} · {e.get('icons',0)} vs {e.get('target_icons',0)} Icons · <b>{result}</b></div>")
-            continue
-        who = "You" if e["actor"] == "player" else e.get("actor_name", "Enemy")
-        cls = "player" if e["actor"] == "player" else "enemy"
-        target = f" at {html.escape(e['target_name'])}" if e.get("target_name") else ""
-        wrath_tag = " <span class='dice'>(Wrath Die critical, +1 Wrath)</span>" if e.get("wrath_crit") else ""
-        if not e["hit"]:
-            lines.append(f"<div class='inc-log-line {cls}'><b>{html.escape(who)}</b> attacks{target} with "
-                         f"{html.escape(e['weapon'])} · <i>misses</i> ({e['pool']}d6, {e['icons']} icons){wrath_tag}</div>")
+def _inc_render_dice_tray(node):
+    """Shows the last roll for each side up front, in place of a scrolling
+    log. Icons glow (double glow on a 6/Exalted); the Wrath Die is ringed,
+    and pulses if it crit."""
+    log = node.get("log") or []
+    def last_attack(actor):
+        return next((e for e in reversed(log) if e.get("actor") == actor and e.get("action") == "attack"), None)
+    def dice_html(entry):
+        if not entry:
+            return "<div class='inc-dice-empty'>No rolls yet</div>"
+        rolls = entry.get("rolls") or []
+        n = len(rolls)
+        dice = []
+        for i, r in enumerate(rolls):
+            is_wrath = (i == n - 1)
+            icon_cls = "icon2" if r == 6 else ("icon1" if r >= 4 else "")
+            wrath_cls = "wrath" if is_wrath else ""
+            crit_cls = "crit" if (is_wrath and r == 6) else ""
+            dice.append(f"<span class='inc-die {icon_cls} {wrath_cls} {crit_cls}' style='--d:{i}'>{r}</span>")
+        hit_cls = "hit" if entry.get("hit") else "miss"
+        weapon = html.escape(str(entry.get("weapon", "")))
+        if not entry.get("hit"):
+            result_label = "MISS"
         else:
-            defeated = " · <b>defeated!</b>" if e.get("target_defeated") else ""
-            lines.append(f"<div class='inc-log-line {cls}'><b>{html.escape(who)}</b> hits{target} with "
-                         f"{html.escape(e['weapon'])}: <b>{e['damage']}</b> damage"
-                         f"{(' → ' + str(e.get('wounds', 0)) + ' Wounds') if e.get('wounds', 0) else ((' → ' + str(e.get('shock', 0)) + ' Shock') if e.get('shock', 0) else '')}"
-                         f"{defeated} ({e['pool']}d6, {e['icons']} icons){wrath_tag}</div>")
-    if not lines:
-        lines = ["<div class='inc-log-line system'>The battle begins...</div>"]
-    st.markdown(f"<div class='inc-log'>{''.join(lines)}</div>", unsafe_allow_html=True)
+            # Lead with what actually landed, not the pre-Resilience damage
+            # roll - a "12 damage" headline next to a target that only lost
+            # 4 Wounds reads as a miscalc when it was really Resilience
+            # eating the rest.
+            wounds_dealt = int(entry.get("wounds", 0) or 0)
+            shock_dealt = int(entry.get("shock", 0) or 0)
+            if wounds_dealt:
+                result_label = f"{wounds_dealt} WOUNDS"
+            elif shock_dealt:
+                result_label = f"{shock_dealt} SHOCK"
+            else:
+                result_label = "NO EFFECT"
+            if entry.get("target_defeated"):
+                result_label += " · DEFEATED"
+        wrath_note = " · WRATH CRIT" if entry.get("wrath_crit") else ""
+        return (f"<div class='inc-dice-row-inner'>{''.join(dice)}</div>"
+                f"<div class='inc-dice-meta'><span class='inc-dice-result {hit_cls}'>{result_label}</span>"
+                f"<span class='inc-dice-icons'>{int(entry.get('icons', 0) or 0)} ICONS · rolled {int(entry.get('damage',0) or 0)} dmg{wrath_note}</span>"
+                f"<span class='inc-dice-weapon'>{weapon}</span></div>")
+    st.markdown(
+        f"<div class='inc-dice-tray'>"
+        f"<div class='inc-dice-col'><div class='inc-dice-label you'>YOUR ROLL</div>{dice_html(last_attack('player'))}</div>"
+        f"<div class='inc-dice-col'><div class='inc-dice-label foe'>ENEMY ROLL</div>{dice_html(last_attack('enemy'))}</div>"
+        f"</div>", unsafe_allow_html=True)
 
 
 def _inc_render_duel_log(log):
@@ -8314,6 +8332,7 @@ def _inc_render_combat(run, ch, node):
         selected_targets=[live[0]["uid"]]
     st.session_state[target_key]=selected_targets
     st.markdown(f"<div class='inc-combat-header'><div class='inc-kicker'>THREAT CONTACT</div><div class='inc-title'>{diff_label}</div><div class='inc-flavor'>⚔ Select targets directly. One strike can hit every locked contact.</div></div>",unsafe_allow_html=True)
+    _inc_render_dice_tray(node)
     if node.get("resolved"):
         msg="ESCAPED INTO THE DARK · NO XP AWARDED" if node.get("fled") else f"VICTORY · +{node['reward_xp']} XP"
         st.markdown(f"<div class='inc-banner-win'>{msg}</div>",unsafe_allow_html=True)
@@ -8361,7 +8380,7 @@ def _inc_render_combat(run, ch, node):
                     current=list(st.session_state.get(target_key,[])); current.remove(e["uid"]) if e["uid"] in current else current.append(e["uid"]); st.session_state[target_key]=current; st.rerun()
     if node.get("resolved"):
         if st.button("CONTINUE",key="inc_combat_continue",use_container_width=True): _inc_combat_continue(run,ch); st.rerun()
-        _inc_render_log(node.get("log")); return
+        return
     pending=node.get("pending_talent_triggers") or []
     if pending:
         tr=pending[0]; choices=[int(i) for i in tr.get("dice_indices",[])]
@@ -8372,7 +8391,7 @@ def _inc_render_combat(run, ch, node):
             if st.button(("SELECTED" if active else "SELECT")+f" · DIE {i+1}",key=key,use_container_width=True):
                 picked=list(picked); picked.remove(i) if i in picked else picked.append(i); st.session_state[f"inc_bmd_{run['id']}"]=picked; st.rerun()
         if st.button("APPLY BLOOD",key=f"inc_bmd_apply_{run['id']}",disabled=not picked,use_container_width=True): _inc_resolve_pending_talent(run,ch,picked); st.rerun()
-        _inc_render_log(node.get("log")); return
+        return
     action=st.radio("",["ATTACK","FLEE","HEAL"],key=f"inc_action_{run['id']}",horizontal=True,label_visibility="collapsed")
     with st.container(border=True):
         if action=="ATTACK":
@@ -8418,7 +8437,6 @@ def _inc_render_combat(run, ch, node):
                 try: _inc_combat_heal(run,ch,spend_wrath=int(spend))
                 except ValueError as exc: st.error(str(exc).replace('_',' ').title())
                 st.rerun()
-    _inc_render_log(node.get("log"))
 
 
 def _inc_render_loot(run, ch, node):

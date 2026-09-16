@@ -1421,7 +1421,7 @@ def init_db():
         "wounds_current": "INTEGER", "wounds_max": "INTEGER", "shock_current": "INTEGER", "shock_max": "INTEGER",
         "wrath_current": "INTEGER", "wrath_max": "INTEGER", "armour_durability_current": "INTEGER DEFAULT 0",
         "armour_durability_max": "INTEGER DEFAULT 0", "weapon_durabilities": "TEXT DEFAULT '{}'", "xp_earned": "INTEGER DEFAULT 0",
-        "incursion_statuses": "TEXT DEFAULT '{}'",
+        "incursion_statuses": "TEXT DEFAULT '{}'", "run_number": "INTEGER DEFAULT 1",
     })
     c.execute("""CREATE TABLE IF NOT EXISTS incursion_pvp_queue(
         id INTEGER PRIMARY KEY AUTOINCREMENT, run_id INTEGER NOT NULL, character_id INTEGER NOT NULL,
@@ -4156,6 +4156,28 @@ def inject_theme():
     .inc-talent-reaction{border:1px solid #7b2b2b;background:linear-gradient(135deg,#190b0b,#0d0808);padding:16px;margin:12px 0;box-shadow:0 0 22px rgba(120,0,0,.18)}
     .inc-talent-card{border-left:3px solid #77633c;background:#14100b;padding:9px 12px;margin:6px 0;border-radius:2px}.inc-talent-card.active{border-left-color:#b23a35}.inc-talent-card.passive{border-left-color:#3e7f5a}.inc-talent-card.manual{border-left-color:#6d5a39;opacity:.7}.inc-talent-card span{display:block;font-size:.72rem;opacity:.72;margin-top:3px;line-height:1.45}
     .inc-chip small{display:block;font-size:.52rem;letter-spacing:.14em;opacity:.58;margin-top:2px}.inc-chip.wound b{color:#d85a50}.inc-chip.shock b{color:#d4a94c}.inc-chip.wrath b{color:#e8c96a}.inc-enemy{transition:transform .15s ease,border-color .15s ease}.inc-enemy:hover{transform:translateY(-2px);border-color:#80602c}
+    /* Combat feedback: a one-shot animation on whichever card the most
+       recent action actually touched, so a hit/miss/damage taken reads as
+       an event instead of just numbers changing on the same static card.
+       Runs once per render because Streamlit gives each rerun a fresh DOM
+       node - a CSS `animation` (not `transition`) always autoplays once on
+       a newly-mounted element. */
+    @keyframes inc-hit-shake{0%{transform:translateX(0)}20%{transform:translateX(-6px)}40%{transform:translateX(5px)}60%{transform:translateX(-3px)}80%{transform:translateX(2px)}100%{transform:translateX(0)}}
+    @keyframes inc-hit-glow{0%{box-shadow:0 0 0 rgba(178,58,53,0)}25%{box-shadow:0 0 26px rgba(178,58,53,.85)}100%{box-shadow:0 0 0 rgba(178,58,53,0)}}
+    @keyframes inc-miss-fade{0%{opacity:.4}100%{opacity:1}}
+    @keyframes inc-player-flash{0%{opacity:0;transform:translateY(-4px)}15%{opacity:1;transform:translateY(0)}85%{opacity:1}100%{opacity:0}}
+    .inc-enemy.inc-just-hit{animation:inc-hit-shake .4s ease, inc-hit-glow .8s ease}
+    .inc-enemy.inc-just-missed{animation:inc-miss-fade .5s ease}
+    .inc-hit-flash-player{animation:inc-player-flash 2.4s ease forwards;text-align:center;font-family:Cinzel,serif;letter-spacing:.14em;color:#ff8a80;background:rgba(178,58,53,.14);border:1px solid #b23a35;padding:8px;margin:0 0 10px;text-transform:uppercase}
+    /* Field Loadout: purchased/looted items as visible badges, not just an
+       entry buried inside the discard dropdown - the whole point is that a
+       player can SEE a purchase actually landed. */
+    .inc-gear-badges{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 14px}
+    .inc-gear-badge{display:inline-block;border:1px solid #5a4523;background:#171009;color:#e8dcc0;font-size:.72rem;letter-spacing:.02em;padding:5px 10px;border-radius:2px}
+    .inc-tutorial{display:flex;flex-direction:column;gap:8px;margin-top:6px}
+    .inc-tutorial-row{border-left:3px solid #6d5a39;background:#14100b;padding:8px 12px;border-radius:2px}
+    .inc-tutorial-row b{display:block;font-family:Cinzel,serif;color:var(--gold2);letter-spacing:.1em;font-size:.76rem;margin-bottom:3px}
+    .inc-tutorial-row span{display:block;font-size:.78rem;line-height:1.5;opacity:.85}
     /* ============================================================
        RESPONSIVE / MOBILE
        Streamlit has no reliable server-side "is this a phone" signal,
@@ -6285,12 +6307,14 @@ def _inc_render_inventory_management(run, ch):
 
     st.markdown(
         "<div class='inc-card'><div class='inc-title'>FIELD LOADOUT</div>"
-        "<div class='inc-flavor'>Discard unwanted Wargear here. This is unavailable during combat.</div></div>",
+        "<div class='inc-flavor'>Everything you are carrying this descent. Discard unwanted Wargear "
+        "below; that control is unavailable during combat.</div></div>",
         unsafe_allow_html=True,
     )
 
     options = []
     seen = set()
+    badges = []
     for item in items:
         key = _inc_weapon_key(item)
         if key in seen:
@@ -6308,6 +6332,9 @@ def _inc_render_inventory_management(run, ch):
             current, maximum = _inc_weapon_durability(ch, run, key, item)
             label += f" · DUR {current}/{maximum}"
         options.append((key, label))
+        badges.append(f"<span class='inc-gear-badge'>{html.escape(label)}</span>")
+
+    st.markdown(f"<div class='inc-gear-badges'>{''.join(badges)}</div>", unsafe_allow_html=True)
 
     keys = [x[0] for x in options]
     labels = dict(options)
@@ -6731,7 +6758,6 @@ def _inc_build_enemy_from_fallen(row, loop_no, idx):
 def _inc_spawn_group(difficulty, loop_no):
     tier = INC_DIFFICULTY_TIER[difficulty]
     book_pool = _inc_bestiary_by_tier(tier)
-    fallen_pool = _inc_fetch_fallen_pool(tier)
     count = 1
     if difficulty == "medium":
         count = 2 if (loop_no >= 2 and random.random() < 0.5) else 1
@@ -6739,12 +6765,19 @@ def _inc_spawn_group(difficulty, loop_no):
         count = 2 if random.random() < 0.6 else 1
     if difficulty == "boss":
         count = 1 + (loop_no - 1) // 4
+    # The fallen-mob pool is only ever fetched (one DB round trip, at most
+    # once per fight) if the dice actually call for it - most fights never
+    # roll a fallen mob at all, so this saves a query on the common path.
+    fallen_pool = None
     enemies = []
     for i in range(count):
-        if fallen_pool and random.random() < INC_FALLEN_CHANCE:
-            enemies.append(_inc_build_enemy_from_fallen(random.choice(fallen_pool), loop_no, i))
-        else:
-            enemies.append(_inc_build_enemy_from_bestiary(random.choice(book_pool), loop_no, i))
+        if random.random() < INC_FALLEN_CHANCE:
+            if fallen_pool is None:
+                fallen_pool = _inc_fetch_fallen_pool(tier) or []
+            if fallen_pool:
+                enemies.append(_inc_build_enemy_from_fallen(random.choice(fallen_pool), loop_no, i))
+                continue
+        enemies.append(_inc_build_enemy_from_bestiary(random.choice(book_pool), loop_no, i))
     return enemies
 
 
@@ -6959,6 +6992,18 @@ def _inc_loot_take_and_continue(run, ch):
     return _inc_loot_take(run, ch)
 
 # ---- node/stage state machine -----------------------------------------
+INC_RUN_ESCALATION_PER_ATTEMPT = 1.5  # extra "loops" worth of scaling per prior run this character has started
+
+
+def _inc_effective_loop(run):
+    """The loop_no actually fed to enemy scaling: this run's own progress
+    PLUS a bump from every previous run this character has started (dead or
+    not) - so a character's 6th attempt starts harder than their 1st, on
+    top of the normal within-run escalation."""
+    run_number = int(run.get("run_number", 1) or 1)
+    return run["loop_no"] + (run_number - 1) * INC_RUN_ESCALATION_PER_ATTEMPT
+
+
 def _inc_scaled_xp(base, loop_no):
     return round(base * (1 + (loop_no - 1) * 0.15))
 
@@ -6972,25 +7017,26 @@ def _inc_combat_node(difficulty, loop_no, subtype=None):
 
 
 def _inc_build_node_for_stage(stage, ch, run):
+    eff_loop = _inc_effective_loop(run)
     if stage == "start":
         return {"type": "choice_start"}
     if stage == "easy":
-        return _inc_combat_node("easy", run["loop_no"])
+        return _inc_combat_node("easy", eff_loop)
     if stage == "random":
         roll = random.random()
         if roll < 0.4:
-            return _inc_combat_node("medium", run["loop_no"], subtype="ambush")
+            return _inc_combat_node("medium", eff_loop, subtype="ambush")
         if roll < 0.7:
             return {"type": "shop", "subtype": "random", "offers": _inc_generate_offers(ch, run)}
-        return {"type": "reward", "subtype": "random", "xp_bonus": _inc_scaled_xp(20, run["loop_no"])}
+        return {"type": "reward", "subtype": "random", "xp_bonus": _inc_scaled_xp(20, eff_loop)}
     if stage == "medium":
-        return _inc_combat_node("medium", run["loop_no"])
+        return _inc_combat_node("medium", eff_loop)
     if stage == "pvp_mid":
         return {"type": "pvp_choice", "checkpoint": "mid"}
     if stage == "hard":
-        return _inc_combat_node("hard", run["loop_no"])
+        return _inc_combat_node("hard", eff_loop)
     if stage == "boss":
-        return _inc_combat_node("boss", run["loop_no"])
+        return _inc_combat_node("boss", eff_loop)
     if stage == "pvp_boss3":
         return {"type": "pvp_choice", "checkpoint": "boss3"}
     return {"type": "choice_start"}
@@ -7023,6 +7069,16 @@ def _inc_mark_dead(run, ch, reason):
     return _inc_get_run(run["id"])
 
 
+## Guaranteed the moment starting_wargear turns out to have no weapon at all
+## (a caster/support character, or a fresh account with an empty sheet) -
+## nobody should start an Incursion able to only throw fists.
+INC_STANDARD_WEAPON = {
+    "name": "Incursion Combat Knife", "effect": "Standard Incursion sidearm.", "equipped": True, "quantity": 1,
+    "details": {"category": "melee weapon", "damage": "(S) +2", "damage_attribute": "Strength", "ed": 1, "ap": 0,
+                "rarity": "Common", "incursion_only": True, "stackable": False},
+}
+
+
 def _inc_start_run(ch):
     if _inc_get_active_run(ch["id"]):
         raise ValueError("run_already_active")
@@ -7030,6 +7086,8 @@ def _inc_start_run(ch):
     starting_wargear = [dict(w) for w in (ch.get("wargear") or []) if not _inc_is_armour_item(w) and w.get("equipped", True)]
     _start_weapons=[w for w in starting_wargear if _inc_is_weapon_item(w)]
     _start_nonweapons=[w for w in starting_wargear if not _inc_is_weapon_item(w)]
+    if not _start_weapons:
+        _start_weapons = [dict(INC_STANDARD_WEAPON)]
     starting_wargear=_start_weapons[:3]+_start_nonweapons
     standard_armour = {"name":"Incursion Field Plate","effect":"Standard Incursion armour. Armour Rating +2.","equipped":True,"quantity":1,
                        "details":{"category":"armour","armour_rating":2,"rarity":"Common","incursion_only":True,"stackable":False}}
@@ -7046,11 +7104,16 @@ def _inc_start_run(ch):
         if w.get("equipped", True) and details.get("damage") not in (None, ""):
             weapon_values[_inc_weapon_key(w)] = _inc_wargear_durability_max(w)
     conn = get_conn()
+    # Each prior run (dead or otherwise) this character has started makes the
+    # Bestiary hit harder from the first fight of this new one - see
+    # _inc_combat_node()'s use of run_number. Counted, not stored per-run
+    # elsewhere, so it survives across every future attempt automatically.
+    run_number = int((conn.execute("SELECT COUNT(*) AS n FROM incursion_run WHERE character_id=?", (ch["id"],)).fetchone() or {"n": 0})["n"]) + 1
     cur = conn.execute(
-        "INSERT INTO incursion_run(character_id,status,stage,loop_no,wounds_current,wounds_max,"
+        "INSERT INTO incursion_run(character_id,status,stage,loop_no,run_number,wounds_current,wounds_max,"
         "shock_current,shock_max,wrath_current,wrath_max,xp,xp_earned,armour_durability_current,"
-        "armour_durability_max,weapon_durabilities,incursion_statuses,node,created_at,equipped_armor_key,starting_wargear) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        (ch["id"], "active", "start", 1, pools["wounds_max"], pools["wounds_max"],
+        "armour_durability_max,weapon_durabilities,incursion_statuses,node,created_at,equipped_armor_key,starting_wargear) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (ch["id"], "active", "start", 1, run_number, pools["wounds_max"], pools["wounds_max"],
          pools["shock_max"], pools["shock_max"], pools["wrath_max"], pools["wrath_max"], 0, 0,
          armour_max, armour_max, json.dumps(weapon_values), json.dumps({}), json.dumps(first_node), now_iso(), initial_armour_key, json.dumps(starting_wargear)))
     conn.commit()
@@ -7919,6 +7982,7 @@ def _inc_render_hud(ch, run):
     st.markdown(f"<div class='inc-track'>{track}</div>",unsafe_allow_html=True)
     with st.expander(f"TALENT CODEX · {len(adapters)}",expanded=False):
         for t in adapters: st.markdown(f"<div class='inc-talent-card {t.get('status','manual')}'><b>{html.escape(t['name'])}</b><span>{html.escape(t['rule'])}</span></div>",unsafe_allow_html=True)
+    _inc_render_tutorial()
 
 
 def _inc_render_log(log):
@@ -7988,6 +8052,32 @@ def _inc_render_duel_log(log):
     st.markdown(f"<div class='inc-log'>{''.join(lines)}</div>", unsafe_allow_html=True)
 
 
+def _inc_render_tutorial():
+    with st.expander("HOW TO PLAY · read this first", expanded=False):
+        st.markdown(
+            "<div class='inc-tutorial'>"
+            "<div class='inc-tutorial-row'><b>WOUNDS</b><span>Your life. Hits zero, the Incursion ends.</span></div>"
+            "<div class='inc-tutorial-row'><b>SHOCK</b><span>A buffer in front of Wounds - damage empties this "
+            "first, and only the leftover reaches Wounds. Rest fully restores it; MEDICAE and Wrath can too.</span></div>"
+            "<div class='inc-tutorial-row'><b>WRATH</b><span>Earned when your Wrath Die (one die in every roll) "
+            "shows a 6 on a hit. Spend it for a bonus attack die, or to recover Shock mid-fight.</span></div>"
+            "<div class='inc-tutorial-row'><b>ICONS</b><span>Every attack rolls a pool of d6: 4-5 = 1 Icon, "
+            "6 = 2 Icons. You need Icons ≥ the target's Defence to hit; extra Icons add bonus damage.</span></div>"
+            "<div class='inc-tutorial-row'><b>⚔ STRIKE</b><span>Pick one or more locked targets and attack with "
+            "your selected Weapon. Hitting several at once splits your dice thinner across each.</span></div>"
+            "<div class='inc-tutorial-row'><b>MEDICAE / FLEE</b><span>Spend a turn to heal instead of attacking, "
+            "or try to break contact and skip this fight (the enemy still gets to act either way).</span></div>"
+            "<div class='inc-tutorial-row'><b>SUPPLIES</b><span>Between fights, spend this run's own XP - never "
+            "your real Wealth - on Attributes, Wargear, Talents, Psychic Powers or Medicae charges.</span></div>"
+            "<div class='inc-tutorial-row'><b>DUEL OF GLORY</b><span>Every third Champion slain may open a duel "
+            "against another player at the same gate - purely optional, and worth a lot of XP if you win.</span></div>"
+            "<div class='inc-tutorial-row'><b>ONE-WAY DOOR</b><span>Everything here - Attributes bought, gear "
+            "found, XP earned - lives only in this run. Nothing is ever written back to your real character "
+            "sheet, and each new Incursion starts fresh (though the Bestiary remembers how many runs you've "
+            "survived, and hits harder for it).</span></div>"
+            "</div>", unsafe_allow_html=True)
+
+
 def _inc_render_intro(ch):
     st.markdown(
         "<div class='inc-card'><div class='inc-title'>Begin the Incursion</div>"
@@ -7996,6 +8086,7 @@ def _inc_render_intro(ch):
         "is written back to your real sheet. Every third Champion slain may open a Duel of Glory against "
         "another player who reached the same gate. The Incursion continues until you fall.</div></div>",
         unsafe_allow_html=True)
+    _inc_render_tutorial()
     if st.button("BEGIN INCURSION", key="inc_start", use_container_width=True):
         try:
             _inc_start_run(ch)
@@ -8095,6 +8186,13 @@ def _inc_render_rest_upgrade(run, ch):
 
 
 def _inc_render_shop(run, ch, node):
+    flash_key = f"inc_purchase_flash_{run['id']}"
+    flash = st.session_state.pop(flash_key, None)
+    if flash:
+        st.success(flash)
+    error_flash = st.session_state.pop(f"{flash_key}_error", None)
+    if error_flash:
+        st.error(error_flash)
     if node.get("subtype") == "first_encampment":
         st.markdown("<div class='inc-card'><div class='inc-title'>First Encampment</div>"
                     "<div class='inc-flavor'>Choose ONE acquisition. Cost: 0 XP. The other offers are lost.</div></div>", unsafe_allow_html=True)
@@ -8123,8 +8221,10 @@ def _inc_render_shop(run, ch, node):
                              use_container_width=True):
                     try:
                         _inc_shop_buy(run, ch, offer["offer_id"])
-                    except ValueError:
-                        pass
+                        st.session_state[flash_key] = f"Acquired: {offer['label']} — see FIELD LOADOUT above."
+                    except ValueError as e:
+                        st.session_state[flash_key] = None
+                        st.session_state[f"{flash_key}_error"] = f"Could not acquire {offer['label']} ({e})."
                     st.rerun()
     if node.get("subtype") != "first_encampment":
         if st.button("Continue", key="inc_shop_leave", use_container_width=True):
@@ -8161,10 +8261,24 @@ def _inc_render_combat(run, ch, node):
     if live and not selected_targets:
         selected_targets=[live[0]["uid"]]
     st.session_state[target_key]=selected_targets
-    st.markdown(f"<div class='inc-combat-header'><div class='inc-kicker'>THREAT CONTACT</div><div class='inc-title'>{diff_label}</div><div class='inc-flavor'>Select targets directly. One strike can hit every locked contact.</div></div>",unsafe_allow_html=True)
+    st.markdown(f"<div class='inc-combat-header'><div class='inc-kicker'>THREAT CONTACT</div><div class='inc-title'>{diff_label}</div><div class='inc-flavor'>⚔ Select targets directly. One strike can hit every locked contact.</div></div>",unsafe_allow_html=True)
     if node.get("resolved"):
         msg="ESCAPED INTO THE DARK · NO XP AWARDED" if node.get("fled") else f"VICTORY · +{node['reward_xp']} XP"
         st.markdown(f"<div class='inc-banner-win'>{msg}</div>",unsafe_allow_html=True)
+    # One-shot "just happened" animations: compare this render's log length
+    # against what was stored last render, so only entries added by the most
+    # recent action animate - not the whole fight's history replaying every
+    # rerun.
+    log_now = node.get("log") or []
+    log_seen_key = f"inc_log_seen_{run['id']}_{node['difficulty']}"
+    prev_seen = st.session_state.get(log_seen_key, len(log_now))
+    fresh = log_now[prev_seen:] if len(log_now) > prev_seen else []
+    st.session_state[log_seen_key] = len(log_now)
+    fresh_hit_uids = {e.get("target_uid") for e in fresh if e.get("actor") == "player" and e.get("hit") and e.get("target_uid")}
+    fresh_miss_uids = {e.get("target_uid") for e in fresh if e.get("actor") == "player" and not e.get("hit") and e.get("target_uid")}
+    player_damage_taken = sum(int(e.get("damage", 0) or 0) for e in fresh if e.get("actor") == "enemy" and e.get("hit"))
+    if player_damage_taken > 0:
+        st.markdown(f"<div class='inc-hit-flash-player'>⚠ YOU TOOK {player_damage_taken} DAMAGE</div>", unsafe_allow_html=True)
     cols=st.columns(min(4,max(1,len(node["enemies"]))))
     for i,e in enumerate(node["enemies"]):
         with cols[i%len(cols)]:
@@ -8178,10 +8292,11 @@ def _inc_render_combat(run, ch, node):
             state_cls="selected" if e["uid"] in selected_targets else ("dead" if not e["alive"] else "")
             threat_cls=f"tier-{max(1,min(4,int(e.get('tier',1) or 1)))}"
             visual_cls=f"enemy-v{i % 4}"
+            anim_cls = "inc-just-hit" if e["uid"] in fresh_hit_uids else ("inc-just-missed" if e["uid"] in fresh_miss_uids else "")
             bleed_html=f"<span class='inc-status-blood'>BLEEDING {bleed}</span>" if bleed else ""
             st.markdown(
-                f"<div class='inc-enemy {state_cls} {threat_cls}'>"
-                f"<div class='inc-enemy-strip'><span>THREAT {i+1:02d}</span><span>{state}</span></div>"
+                f"<div class='inc-enemy {state_cls} {threat_cls} {anim_cls}'>"
+                f"<div class='inc-enemy-strip'><span>⚔ THREAT {i+1:02d}</span><span>{state}</span></div>"
                 f"<div class='en'>{html.escape(e['name'])}</div>"
                 f"<div class='et'>TIER {e['tier']} · {html.escape(e['weapon_name'])}</div>"
                 f"<div class='inc-npc-vitals'><span class='inc-vital wounds' style='--vital-pct:{wounds_pct:.1f}%;--vital-pct-num:{wounds_pct/100:.3f};--vital-color:#b23a35'><b>{wounds_cur}/{wounds_max}</b><span class='inc-vital-label'>WOUNDS · LIFE</span></span><span class='inc-vital shock' style='--vital-pct:{shock_pct:.1f}%;--vital-pct-num:{shock_pct/100:.3f};--vital-color:hsl(270,55%,{shock_light:.1f}%)'><b>{shock_cur}/{shock_max}</b><span class='inc-vital-label'>SHOCK</span></span><span><b>{e.get('wrath_current',0)}</b>WRATH</span></div>"
@@ -8212,8 +8327,9 @@ def _inc_render_combat(run, ch, node):
             weapons=_inc_usable_weapons(ch,run); keys=[w["key"] for w in weapons]; wk=f"inc_weapon_{run['id']}"
             if st.session_state.get(wk) not in keys: st.session_state[wk]=keys[0]
             def wl(k):
-                w=next(w for w in weapons if w["key"]==k); return f"{w['name']} · {w['damage']} DMG · DUR {int(w.get('durability_current',0))}/{int(w.get('durability_max',0))} · +{int(w.get('ed',0) or 0)} ED · AP {int(w.get('ap',0) or 0)}"
-            c1,c2=st.columns([2,1]); c1.selectbox("Weapon",keys,key=wk,format_func=wl); c2.markdown(f"<div class='inc-mini-readout'><b>{len(selected_targets)}</b><span>LOCKED</span></div>",unsafe_allow_html=True)
+                w=next(w for w in weapons if w["key"]==k); icon="⚔" if w.get("melee") else "▸"
+                return f"{icon} {w['name']} · {w['damage']} DMG · DUR {int(w.get('durability_current',0))}/{int(w.get('durability_max',0))} · +{int(w.get('ed',0) or 0)} ED · AP {int(w.get('ap',0) or 0)}"
+            c1,c2=st.columns([2,1]); c1.selectbox("⚔ Weapon",keys,key=wk,format_func=wl); c2.markdown(f"<div class='inc-mini-readout'><b>{len(selected_targets)}</b><span>LOCKED</span></div>",unsafe_allow_html=True)
             spend=0
             if int(run.get("wrath_current",0))>0:
                 spend=_inc_wrath_spend_control(run['id'],int(run.get('wrath_current',0)),"inc_attack_wrath","WRATH TO DICE")
@@ -8222,7 +8338,7 @@ def _inc_render_combat(run, ch, node):
                 st.markdown("<div class='inc-shock-action'><span>ALTERNATIVE WRATH USE</span><b>Recover Rank + Tier Shock</b><small>Costs exactly 1 Wrath and still attacks. No bonus attack die.</small></div>",unsafe_allow_html=True)
             a1,a2=st.columns(2)
             with a1:
-                if st.button("STRIKE",key="inc_attack",use_container_width=True,disabled=not selected_targets):
+                if st.button("⚔ STRIKE",key="inc_attack",use_container_width=True,disabled=not selected_targets):
                     try: _inc_combat_attack(run,ch,selected_targets,st.session_state.get(wk),bonus_die=int(spend),restore_shock=False)
                     except ValueError as exc: st.error(str(exc).replace('_',' ').title())
                     st.session_state[target_key]=[]; st.rerun()
@@ -8366,6 +8482,52 @@ def mode_chooser_page():
     st.markdown("<div class='foot'>THE EMPEROR PROTECTS</div>", unsafe_allow_html=True)
 
 
+## Incursion has its own, separate registration path: no character sheet,
+## no Magister approval, no waiting. Pick a Designation, an Access Code,
+## and an Origin (a handful of flat Attribute bonuses) and you can descend
+## immediately. This is entirely independent of the Cogitador's own
+## self-registration (create_player, pending until the Magister approves) -
+## a player who already has a real campaign character keeps using that
+## same login here instead, unaffected by any of this.
+INC_ORIGINS = {
+    "Human": {"Fellowship": 1, "Intellect": 1},
+    "Astartes-Pattern": {"Strength": 1, "Toughness": 2},
+    "Aeldari-Pattern": {"Agility": 2, "Initiative": 1},
+    "Ork-Pattern": {"Strength": 2, "Toughness": 1},
+}
+INC_ORIGIN_BASE_ATTR = 3
+
+
+def _inc_register_account(username, pw, origin):
+    username = (username or "").strip()
+    if not username or not pw:
+        return False, "Designation and Access Code are required."
+    if origin not in INC_ORIGINS:
+        origin = "Human"
+    conn = get_conn()
+    existing = conn.execute("SELECT id FROM users WHERE username=?", (username,)).fetchone()
+    if existing:
+        conn.close()
+        return False, "That Designation is already taken."
+    salt = secrets.token_hex(16)
+    cur = conn.execute(
+        "INSERT INTO users(username,pw_hash,salt,role,created_at) VALUES (?,?,?,?,?)",
+        (username, hash_pw(pw, salt), salt, "player", now_iso()))
+    uid = cur.lastrowid
+    attrs = {a: INC_ORIGIN_BASE_ATTR for a in ATTRS}
+    for k, v in INC_ORIGINS[origin].items():
+        attrs[k] = attrs.get(k, INC_ORIGIN_BASE_ATTR) + v
+    conn.execute(
+        """INSERT INTO characters(user_id,kind,name,species,archetype,tier,starting_tier,rank,
+            attributes,skills,talents,powers,wargear,armour,creation_mode,updated_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (uid, "incursion", username, origin, "Incursion Operative", 2, 2, 1,
+         json.dumps(attrs), "{}", "[]", "[]", "[]", 0, "incursion", now_iso()))
+    conn.commit()
+    conn.close()
+    return True, None
+
+
 def incursion_login_page():
     if st.button("← Imperial Cogitator", key="incursion_login_back"):
         st.session_state.app_mode = "system"; st.rerun()
@@ -8382,6 +8544,27 @@ def incursion_login_page():
                 st.session_state.user = user; st.rerun()
             else:
                 st.error("Access denied.")
+
+        with st.expander("New Operative? Register Here", expanded=False):
+            st.caption("No character sheet needed, no Magister approval - pick an Origin for a small "
+                       "Attribute bonus and descend immediately. Already have a campaign character? "
+                       "Just log in above with that same account instead.")
+            with st.form("incursion_register"):
+                ru = st.text_input("Designation", key="inc_reg_user")
+                rpw = st.text_input("Access Code", type="password", key="inc_reg_pw")
+                origin = st.selectbox(
+                    "Origin", list(INC_ORIGINS.keys()),
+                    format_func=lambda o: f"{o} ({', '.join(f'+{v} {k}' for k, v in INC_ORIGINS[o].items())})",
+                    key="inc_reg_origin",
+                )
+                reg_ok = st.form_submit_button("Register & Descend")
+            if reg_ok:
+                success, err = _inc_register_account(ru, rpw, origin)
+                if success:
+                    user = verify_user(ru.strip(), rpw)
+                    st.session_state.user = user; st.rerun()
+                else:
+                    st.error(err)
     _inc_render_login_leaderboard()
     st.markdown("<div class='foot'>THE EMPEROR PROTECTS</div>", unsafe_allow_html=True)
 
@@ -10173,9 +10356,22 @@ def player_view():
 # ============================================================
 #  MAIN
 # ============================================================
+@st.cache_resource(show_spinner=False)
+def _ensure_schema_once():
+    # init_db() is pure schema setup (CREATE TABLE IF NOT EXISTS + a column
+    # check per table) - dozens of round trips to Postgres. main() used to
+    # call it unconditionally on every single rerun (every click, from
+    # every connected session), which was most of what made the app feel
+    # slow. st.cache_resource runs this body exactly once for the life of
+    # the server process and shares that across every session, same as the
+    # connection pool below already does.
+    init_db()
+    return True
+
+
 def main():
     st.set_page_config(page_title="Cogitador Imperial", page_icon="✠", layout="wide")
-    inject_theme(); init_db()
+    inject_theme(); _ensure_schema_once()
     st.session_state.setdefault("user", None)
     st.session_state.setdefault("editing", None)
     st.session_state.setdefault("app_mode", "system")

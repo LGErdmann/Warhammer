@@ -6496,7 +6496,7 @@ def _inc_render_backpack(run, ch):
             icon = "🛡"; sub = "EQUIPPED" if equipped else "STORED"
             equipped_cls = "equipped" if equipped else ""
         elif is_weapon:
-            melee = bool(details.get("damage_attribute")) or str(details.get("damage", "")).strip().upper().startswith("(S)")
+            melee = bool(details.get("damage_attribute")) or str(details.get("damage", "")).strip().upper().startswith("(S)") or "melee" in str(details.get("category", "")).lower()
             icon = "⚔" if melee else "🔫"
             current, maximum = _inc_weapon_durability(ch, run, key, item)
             sub = f"DUR {current}/{maximum}"
@@ -6780,7 +6780,7 @@ def _inc_best_weapon(ch):
                 "damage": dmg,
                 "ed": int(details.get("ed", 0) or 0),
                 "ap": int(details.get("ap", 0) or 0),
-                "melee": bool(details.get("damage_attribute")) or str(details.get("damage", "")).strip().upper().startswith("(S)"),
+                "melee": bool(details.get("damage_attribute")) or str(details.get("damage", "")).strip().upper().startswith("(S)") or "melee" in str(details.get("category", "")).lower(),
             }
     if best is None:
         s = int(attrs.get("Strength", 1))
@@ -6841,7 +6841,7 @@ def _inc_usable_weapons(ch, run):
             "durability_max": durability_max,
             "ed": int(details.get("ed", 0) or 0),
             "ap": int(details.get("ap", 0) or 0),
-            "melee": bool(details.get("damage_attribute")) or str(details.get("damage", "")).strip().upper().startswith("(S)"),
+            "melee": bool(details.get("damage_attribute")) or str(details.get("damage", "")).strip().upper().startswith("(S)") or "melee" in str(details.get("category", "")).lower(),
             "consumable": is_consumable,
             "remaining": remaining,
             "minion_support": details.get("minion_support"),

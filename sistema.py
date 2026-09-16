@@ -4261,6 +4261,7 @@ def inject_theme():
     .inc-dice-label{font-family:Cinzel,serif;letter-spacing:.12em;font-size:.7rem;opacity:.8;margin-bottom:6px;text-transform:uppercase}
     .inc-dice-label.you{color:#8fd3ff}
     .inc-dice-label.foe{color:#ff8a80}
+    .inc-dice-label.minion-roll{color:#d8a8ff;font-size:.6rem;margin-bottom:4px}
     .inc-dice-row-inner{display:flex;flex-wrap:wrap;gap:6px}
     .inc-die{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:5px;background:#1c1c22;border:1px solid rgba(255,255,255,.18);color:#ddd;font-weight:700;font-size:.85rem;animation:inc-die-roll .4s ease both;animation-delay:calc(var(--d) * 60ms)}
     .inc-die.icon1{box-shadow:0 0 6px 1px rgba(255,215,120,.55);border-color:rgba(255,215,120,.6);color:#ffe9b0}
@@ -6451,7 +6452,7 @@ def _inc_render_backpack(run, ch):
     """Right-side loadout panel: every carried item as a rarity-coloured
     tile - a firearm/melee icon and an EQUIPPED marker for Armour instead
     of a dropdown you had to open to see what you're even carrying."""
-    for minion in (run.get("minions") or []):
+    for _minion_idx, minion in enumerate(run.get("minions") or []):
         rarity_cls = f"rarity-{str(minion.get('rarity') or 'Common').lower()}"
         status = "ACTIVE" if minion.get("alive") else "DOWN · revives on Rest"
         level = int(minion.get("level", 1) or 1)
@@ -6465,7 +6466,7 @@ def _inc_render_backpack(run, ch):
             f"<span class='pack-sub'>{int(minion.get('wounds_current',0))}/{int(minion.get('wounds_max',0))}W · "
             f"{int(minion.get('shock_current',0))}/{int(minion.get('shock_max',0))}S · {status}</span>{ability_html}</div>",
             unsafe_allow_html=True)
-        if st.button("Release", key=f"inc_release_minion_{run['id']}_{minion.get('name')}", use_container_width=True):
+        if st.button("Release", key=f"inc_release_minion_{run['id']}_{_minion_idx}_{minion.get('name')}", use_container_width=True):
             try:
                 _inc_release_minion(run, ch, minion.get("name"))
             except ValueError as exc:
@@ -6971,8 +6972,13 @@ def _inc_bestiary_by_tier(tier):
     return pool or [e for e in _BESTIARY_ENTRIES if e[1] == 1]
 
 
-def _inc_scale_factor(loop_no):
-    return 1 + (loop_no - 1) * 0.18
+def _inc_scale_factor(loop_no, bosses_cleared=0):
+    # Bosses cleared is a permanent ratchet, never a reset - the difficulty
+    # of every fight from here on is pinned to at least what the last
+    # Champion the player downed already proved they could handle, then
+    # keeps climbing with the Loop count on top of that ("a dificuldade
+    # deve partir do último boss que foi enfrentado").
+    return 1 + (loop_no - 1) * 0.18 + int(bosses_cleared or 0) * 0.35
 
 
 def _inc_enemy_sheet(name, tier, species, faction, attrs, skill_pools, wargear, abilities=""):
@@ -6992,10 +6998,11 @@ def _inc_enemy_sheet(name, tier, species, faction, attrs, skill_pools, wargear, 
     atk_skill, atk_pool = _inc_best_attack_pool(sheet)
     return sheet, traits, weapon, atk_skill, atk_pool
 
-def _inc_build_enemy_from_bestiary(entry, loop_no, idx):
+def _inc_build_enemy_from_bestiary(entry, loop_no, idx, bosses_cleared=0):
     name, tier, species, faction, attrs_list, skill_pools, wargear, abilities = entry
-    scale = _inc_scale_factor(loop_no)
-    attrs = {a: max(1, round(v + (loop_no - 1) * 0.6)) for a, v in zip(ATTRS, attrs_list)}
+    bosses_cleared = int(bosses_cleared or 0)
+    scale = _inc_scale_factor(loop_no, bosses_cleared)
+    attrs = {a: max(1, round(v + (loop_no - 1) * 0.6 + bosses_cleared * 1.5)) for a, v in zip(ATTRS, attrs_list)}
     sheet, traits, weapon, atk_skill, atk_pool = _inc_enemy_sheet(
         name, tier, species, faction, attrs, skill_pools, wargear, abilities
     )
@@ -7005,7 +7012,7 @@ def _inc_build_enemy_from_bestiary(entry, loop_no, idx):
     return {
         "uid": f"b-{name}-{idx}-{random.randint(0, 999999)}", "name": name, "tier": int(tier),
         "species": species, "faction": faction, "attributes": attrs,
-        "attack_skill": atk_skill, "attack_pool": max(1, round(atk_pool * (1 + (loop_no - 1) * 0.12))),
+        "attack_skill": atk_skill, "attack_pool": max(1, round(atk_pool * (1 + (loop_no - 1) * 0.12 + bosses_cleared * 0.25))),
         "defence": int(traits["Defence"]), "resilience": int(traits["Resilience"]), "base_resilience": int(traits["Resilience"]),
         "speed": int(traits["Speed"]), "statuses": {},
         "armour_rating": enemy_armour_rating, "armour_durability_max": enemy_armour_max, "armour_durability_current": enemy_armour_max,
@@ -7028,10 +7035,11 @@ def _inc_fetch_fallen_pool(tier, limit=20):
     return [dict(r) for r in rows]
 
 
-def _inc_build_enemy_from_fallen(row, loop_no, idx):
-    scale = _inc_scale_factor(loop_no)
+def _inc_build_enemy_from_fallen(row, loop_no, idx, bosses_cleared=0):
+    bosses_cleared = int(bosses_cleared or 0)
+    scale = _inc_scale_factor(loop_no, bosses_cleared)
     base_attrs = _inc_json_field(row.get("attributes"), {})
-    attrs = {k: max(1, round(v + (loop_no - 1) * 0.6)) for k, v in base_attrs.items()}
+    attrs = {k: max(1, round(v + (loop_no - 1) * 0.6 + bosses_cleared * 1.5)) for k, v in base_attrs.items()}
     tier = int(row["tier"])
     sheet = {
         "name": row["name"], "kind": "npc", "species": row.get("species", "Human"),
@@ -7043,7 +7051,7 @@ def _inc_build_enemy_from_fallen(row, loop_no, idx):
         "uid": f"f-{row['id']}-{idx}-{random.randint(0, 999999)}", "name": row["name"], "tier": tier,
         "species": row.get("species", ""), "faction": "Fallen", "attributes": attrs,
         "attack_skill": row["attack_skill"],
-        "attack_pool": max(1, round(int(row["attack_pool"]) * (1 + (loop_no - 1) * 0.12))),
+        "attack_pool": max(1, round(int(row["attack_pool"]) * (1 + (loop_no - 1) * 0.12 + bosses_cleared * 0.25))),
         "defence": int(traits["Defence"]), "resilience": int(traits["Resilience"]), "base_resilience": int(traits["Resilience"]),
         "speed": int(traits["Speed"]), "statuses": {},
         "armour_rating": 0, "armour_durability_max": 0, "armour_durability_current": 0,
@@ -7055,16 +7063,25 @@ def _inc_build_enemy_from_fallen(row, loop_no, idx):
         "alive": True, "fallen": True,
     }
 
-def _inc_spawn_group(difficulty, loop_no):
+def _inc_spawn_group(difficulty, loop_no, bosses_cleared=0):
     tier = INC_DIFFICULTY_TIER[difficulty]
     book_pool = _inc_bestiary_by_tier(tier)
+    bosses_cleared = int(bosses_cleared or 0)
+    # Bosses cleared is a ratchet added on top of the Loop-based escalation
+    # step (every 4 Loops), never reset - "a dificuldade deve partir do
+    # último boss que foi enfrentado": every encounter type, not just
+    # bosses, adds more bodies as both climb.
+    escalation = int(loop_no - 1) // 4 + bosses_cleared
     count = 1
     if difficulty == "medium":
         count = 2 if (loop_no >= 2 and random.random() < 0.5) else 1
+        if escalation >= 2 and random.random() < 0.5: count += 1
     if difficulty == "hard":
         count = 2 if random.random() < 0.6 else 1
+        if escalation >= 1: count += 1
     if difficulty == "boss":
-        count = 1 + int(loop_no - 1) // 4
+        count = 1 + escalation
+    count = max(1, min(6, int(count)))
     # The fallen-mob pool is only ever fetched (one DB round trip, at most
     # once per fight) if the dice actually call for it - most fights never
     # roll a fallen mob at all, so this saves a query on the common path.
@@ -7081,9 +7098,9 @@ def _inc_spawn_group(difficulty, loop_no):
             if fallen_pool is None:
                 fallen_pool = _inc_fetch_fallen_pool(tier) or []
             if fallen_pool:
-                enemies.append(_inc_build_enemy_from_fallen(random.choice(fallen_pool), loop_no, i))
+                enemies.append(_inc_build_enemy_from_fallen(random.choice(fallen_pool), loop_no, i, bosses_cleared))
                 continue
-        enemies.append(_inc_build_enemy_from_bestiary(random.choice(book_pool), loop_no, i))
+        enemies.append(_inc_build_enemy_from_bestiary(random.choice(book_pool), loop_no, i, bosses_cleared))
     if difficulty == "easy":
         # Book NPC pools already bake in a trained Skill rating on top of
         # the Attribute (an Enforcer or Ork Boy prints pool 6-7), which is
@@ -7178,6 +7195,10 @@ def _inc_generate_offers(ch, run):
             cost = max(15, INC_MINION_RARITY_STATS[mt["rarity"]]["cost"])
             candidates.append({"type":"talent_minion","name":mt["name"],"effect":mt["effect"],"cost":cost,
                                 "label":mt["name"],"detail":f"{mt['rarity']} · {mt['effect']}","rarity":mt["rarity"]})
+    if origin == "Human":
+        # Upgrade modules for the Dreadnought - "podem ser comprados modulos
+        # de aprimoramento para ele, como bleeding, bulk etc".
+        candidates.append(_inc_generate_dreadnought_module_offer())
     candidates.append({"type":"heal_charge","cost":20,"label":"Medicae Ration","detail":"+1 Medicae use in combat","rarity":"Common"})
     picked = random.sample(candidates, min(3, len(candidates))) if candidates else []
     # Minions get a GUARANTEED slot for Human/Tyranid runs, every shop -
@@ -7382,6 +7403,16 @@ def _inc_apply_purchase(run, ch, offer):
             elif name in ("For the Emperor!","Norn Queen's Blessing"):
                 for m in retro_minions: m["damage"]=int(m.get("damage",0) or 0)*2
                 pool_updates["minions"]=retro_minions
+    elif offer["type"]=="minion_module":
+        current_minions=[dict(m) for m in (run.get("minions") or [])]
+        dread=next((m for m in current_minions if m.get("name")=="Dreadnought"),None)
+        if dread is None: raise ValueError("no_dreadnought")
+        mod=offer["module"]
+        if mod.get("field"):
+            dread[mod["field"]]=int(dread.get(mod["field"],0) or 0)+int(mod["amount"])
+        if mod.get("flag"):
+            dread[mod["flag"]]=True
+        pool_updates["minions"]=[dread if m.get("name")=="Dreadnought" else m for m in current_minions]
     elif offer["type"]=="tyranid_wargear":
         # Tyranid bio-weapons are grown, not carried - only one at a time.
         # Buying the SAME one again upgrades it in place (like normal
@@ -7564,35 +7595,36 @@ def _inc_scaled_xp(base, loop_no):
     return round(base * (1 + (loop_no - 1) * 0.15))
 
 
-def _inc_combat_node(difficulty, loop_no, subtype=None):
+def _inc_combat_node(difficulty, loop_no, subtype=None, bosses_cleared=0):
     return {
         "type": "combat", "difficulty": difficulty, "subtype": subtype,
-        "enemies": _inc_spawn_group(difficulty, loop_no), "log": [],
+        "enemies": _inc_spawn_group(difficulty, loop_no, bosses_cleared), "log": [],
         "reward_xp": _inc_scaled_xp(INC_REWARD_XP[difficulty], loop_no), "resolved": False,
     }
 
 
 def _inc_build_node_for_stage(stage, ch, run):
     eff_loop = _inc_effective_loop(run)
+    bosses_cleared = int(run.get("bosses_cleared", 0) or 0)
     if stage == "start":
         return {"type": "choice_start"}
     if stage == "easy":
-        return _inc_combat_node("easy", eff_loop)
+        return _inc_combat_node("easy", eff_loop, bosses_cleared=bosses_cleared)
     if stage == "random":
         roll = random.random()
         if roll < 0.4:
-            return _inc_combat_node("medium", eff_loop, subtype="ambush")
+            return _inc_combat_node("medium", eff_loop, subtype="ambush", bosses_cleared=bosses_cleared)
         if roll < 0.7:
             return {"type": "shop", "subtype": "random", "offers": _inc_generate_offers(ch, run)}
         return {"type": "reward", "subtype": "random", "xp_bonus": _inc_scaled_xp(20, eff_loop)}
     if stage == "medium":
-        return _inc_combat_node("medium", eff_loop)
+        return _inc_combat_node("medium", eff_loop, bosses_cleared=bosses_cleared)
     if stage == "pvp_mid":
         return {"type": "pvp_choice", "checkpoint": "mid"}
     if stage == "hard":
-        return _inc_combat_node("hard", eff_loop)
+        return _inc_combat_node("hard", eff_loop, bosses_cleared=bosses_cleared)
     if stage == "boss":
-        return _inc_combat_node("boss", eff_loop)
+        return _inc_combat_node("boss", eff_loop, bosses_cleared=bosses_cleared)
     if stage == "pvp_boss3":
         return {"type": "pvp_choice", "checkpoint": "boss3"}
     return {"type": "choice_start"}
@@ -7702,6 +7734,28 @@ def _inc_start_run(ch, origin=None):
         apex["bonus_die"] = 3
         starting_minions = [apex]
     pools = _inc_life_pools(run_ch, origin, starting_minions)
+    if origin == "Human":
+        # Species trait: a Dreadnought sarcophagus, sealed for the whole
+        # Incursion - 20x the pilot's own Wounds, gains a permanent attack
+        # die for every Wrath spent (see _inc_record_wrath_spend), and only
+        # gets back up at the start of the NEXT run - no mid-fight passive
+        # revival, no revival on Rest (see no_mid_run_revive).
+        fellowship = int(_inc_origin_attributes(origin).get("Fellowship", INC_ORIGIN_BASE_ATTR))
+        dread = _inc_minion_stats("Dreadnought", "", "Human", "Unique", 1, fellowship)
+        dread["wounds_max"] = pools["wounds_max"] * 20
+        dread["wounds_current"] = dread["wounds_max"]
+        dread["no_mid_run_revive"] = True
+        starting_minions = [dread]
+    elif origin in INC_ORIGIN_HELPER_MINION:
+        # Every other Origin gets ONE starting helper Minion too, so
+        # everyone has something to help them scale - but only Human and
+        # Tyranid-Pattern are "minion-focused" (buyable roster, minion
+        # Talents, minion wargear support): this helper never appears in
+        # the shop, never levels up, and just fights alongside its owner
+        # for the whole Incursion, reviving normally on Rest.
+        helper = INC_ORIGIN_HELPER_MINION[origin]
+        fellowship = int(_inc_origin_attributes(origin).get("Fellowship", INC_ORIGIN_BASE_ATTR))
+        starting_minions = [_inc_minion_stats(helper["name"], helper.get("icon", ""), origin, "Uncommon", 1, fellowship)]
     starting_wargear = [dict(w) for w in (run_ch.get("wargear") or []) if not _inc_is_armour_item(w) and w.get("equipped", True)]
     _start_weapons=[w for w in starting_wargear if _inc_is_weapon_item(w)]
     _start_nonweapons=[w for w in starting_wargear if not _inc_is_weapon_item(w)]
@@ -7925,6 +7979,21 @@ def _inc_record_wrath_spend(run, ch, amount):
     amount = max(0, int(amount or 0))
     if amount <= 0:
         return run
+    if is_astartes(str(run.get("origin") or "")):
+        # Post-human physiology: every Wrath spent floods an Astartes with
+        # adrenaline - +10 Shock recovered right now, +5 max Shock forever,
+        # per point of Wrath spent.
+        new_shock_max = int(run.get("shock_max", 0) or 0) + 5 * amount
+        new_shock_current = min(new_shock_max, int(run.get("shock_current", 0) or 0) + 10 * amount)
+        run = _inc_persist(run["id"], shock_max=new_shock_max, shock_current=new_shock_current)
+    if run.get("origin") == "Human":
+        # Dreadnought's own species trait: a permanent attack die for every
+        # Wrath the pilot spends, for the rest of the Incursion.
+        dread_minions = [dict(m) for m in (run.get("minions") or [])]
+        dread = next((m for m in dread_minions if m.get("name") == "Dreadnought"), None)
+        if dread:
+            dread["bonus_die"] = int(dread.get("bonus_die", 0) or 0) + amount
+            run = _inc_persist(run["id"], minions=dread_minions)
     if not _inc_talent_has(ch, run, "Wrathforged") and not _inc_talent_has(ch, run, "Iron Discipline"):
         return run
     statuses = _inc_talent_status(run)
@@ -8052,6 +8121,11 @@ def _inc_minion_talent_mods(ch, run):
         wounds_bonus += 10
     if _inc_talent_has(ch, run, "Voice of Command") or _inc_talent_has(ch, run, "Synaptic Link"):
         pool_bonus += 3
+    if _inc_talent_has(ch, run, "Hive Mind Link"):
+        # Tyranid-Pattern's own species trait (auto-granted, not purchased)
+        # was pure flavour text until now: "+4 dice, revives once mid-fight".
+        pool_bonus += 4
+        fast_revive = True
     if _inc_talent_has(ch, run, "Chitinous Growth"):
         resilience_bonus += 2
     if _inc_talent_has(ch, run, "Broodmind Resonance"):
@@ -8205,9 +8279,9 @@ def _inc_minion_group_attack(minions, node, merged, talent_mods=None):
         if not (minion.get("alive") and int(minion.get("wounds_current", 0) or 0) > 0):
             continue
         rarity = minion.get("rarity", "Common")
-        swings = 2 if rarity in ("Legendary", "Unique") else 1
+        swings = 2 if rarity in ("Legendary", "Unique") or minion.get("module_double_attack") else 1
         dmg_mult = 1.5 if rarity == "Unique" else 1.0
-        bleeds = rarity in ("Rare", "Legendary", "Unique") or always_bleed
+        bleeds = rarity in ("Rare", "Legendary", "Unique") or always_bleed or minion.get("module_bleed")
         m_pool = fellowship + max(0, int(minion.get("shock_current", 0) or 0)) + int(minion.pop("next_bonus_die", 0) or 0) + int(minion.get("bonus_die", 0) or 0) + pool_bonus
         for _swing in range(swings):
             live_targets = [e for e in node["enemies"] if e["alive"]]
@@ -8377,7 +8451,16 @@ def _inc_resolve_player_attack(ch, run, node, target_uids, weapon, bonus_die=0, 
                 fellowship = int(merged.get("attributes", {}).get("Fellowship", INC_ORIGIN_BASE_ATTR) or INC_ORIGIN_BASE_ATTR)
                 variants = INC_MINION_CATALOG.get(origin, {}).get("Common") or [{"name": "Swarm Spawn", "icon": ""}]
                 entry = random.choice(variants)
-                minions.append(_inc_minion_stats(entry["name"], entry.get("icon", ""), origin, "Common", 1, fellowship))
+                # A roster can never carry two Minions of the same name (the
+                # UI keys widgets off the name) - if this roll matches one
+                # already owned, level it up instead of appending a duplicate.
+                existing = next((m for m in minions if m.get("name") == entry["name"]), None)
+                if existing:
+                    new_level = int(existing.get("level", 1) or 1) + 1
+                    leveled = _inc_minion_stats(entry["name"], entry.get("icon", ""), origin, existing.get("rarity", "Common"), new_level, fellowship, bool(existing.get("bulk")))
+                    minions[:] = [leveled if m.get("name") == entry["name"] else m for m in minions]
+                else:
+                    minions.append(_inc_minion_stats(entry["name"], entry.get("icon", ""), origin, "Common", 1, fellowship))
     if node.get("pending_talent_triggers"):
         return pre_log + log, wrath_gained, minions
     log += _inc_minion_group_attack(minions, node, merged, talent_mods)
@@ -8465,7 +8548,9 @@ def _inc_finish_combat_round(run, ch, node, round_log, wrath_gained=0, minions=N
         statuses["combat_turn_count"] = turn_count
         revive_every = 1 if _inc_minion_talent_mods(ch, run).get("fast_revive") else 2
         if turn_count % revive_every == 0:
-            dead = next((m for m in minions if not m.get("alive")), None)
+            # A Dreadnought (no_mid_run_revive) only gets back up at the
+            # start of the pilot's NEXT run - never mid-fight, never on Rest.
+            dead = next((m for m in minions if not m.get("alive") and not m.get("no_mid_run_revive")), None)
             if dead:
                 dead["alive"] = True
                 dead["wounds_current"] = max(1, int(dead.get("wounds_max", 1) or 1) // 2)
@@ -8991,16 +9076,20 @@ def _inc_render_minion_status(run, node):
             status = "ACTIVE" if minion.get("alive") else "DOWN"
             rarity_cls = f"rarity-{str(minion.get('rarity') or 'Common').lower()}"
             entry = last_attack(minion.get("name"))
+            # Its own dice, clearly labelled - not the player's roll shown
+            # above in the dice tray. n here is THIS minion's own pool size.
             if entry:
                 rolls = entry.get("rolls") or []
-                dice = "".join(f"<span class='inc-die {'icon2' if r == 6 else ('icon1' if r >= 4 else '')}'>{r}</span>" for r in rolls)
+                n = len(rolls)
+                dice = "".join(f"<span class='inc-die {'icon2' if r == 6 else ('icon1' if r >= 4 else '')} {'wrath' if i == n-1 else ''}'>{r}</span>" for i, r in enumerate(rolls))
                 hit_cls = "hit" if entry.get("hit") else "miss"
                 result = "HIT" if entry.get("hit") else "MISS"
-                roll_html = (f"<div class='inc-dice-row-inner'>{dice}</div>"
+                roll_html = (f"<div class='inc-dice-label minion-roll'>MINION'S ROLL</div>"
+                             f"<div class='inc-dice-row-inner'>{dice}</div>"
                              f"<div class='inc-dice-meta'><span class='inc-dice-result {hit_cls}'>{result}</span>"
                              f"<span class='inc-dice-icons'>rolled {int(entry.get('damage',0) or 0)} dmg</span></div>")
             else:
-                roll_html = "<div class='inc-dice-empty'>No rolls yet</div>"
+                roll_html = "<div class='inc-dice-label minion-roll'>MINION'S ROLL</div><div class='inc-dice-empty'>No rolls yet</div>"
             ability = str(minion.get("ability") or "").strip()
             ability_html = f"<div class='inc-minion-ability'>{html.escape(ability)}</div>" if ability else ""
             bulk_badge = "<span class='inc-bulk-badge' title='Always draws every enemy attack while alive'>BULK</span>" if minion.get("bulk") else ""
@@ -9706,6 +9795,38 @@ def _inc_origin_attributes(origin):
 INC_MINION_ORIGINS = ("Human", "Tyranid-Pattern")
 INC_MINION_MAX = 4
 INC_MINION_TANK_CHANCE = 0.5
+
+# Every Origin gets a starting helper Minion (see _inc_start_run) so
+# everyone has something to help them scale - but ONLY Human (Dreadnought)
+# and Tyranid-Pattern (Apex Tyranid) are "minion-focused" with a buyable
+# roster, minion Talents and minion-support wargear. These helpers are
+# fixed for the run: no shop offers, no levelling, just a themed companion
+# that fights and tanks alongside its owner using the same rules as any
+# other Minion (chance to tank, revives on Rest).
+INC_ORIGIN_HELPER_MINION = {
+    "Aeldari-Pattern": {"name": "Wraithguard Sentinel", "icon": ""},
+    "Ork-Pattern": {"name": "Grot Orderly", "icon": ""},
+    "Necron-Pattern": {"name": "Scarab Swarm", "icon": ""},
+    "Tau-Pattern": {"name": "Gun Drone", "icon": ""},
+    "Ogryn-Pattern": {"name": "Ratling Spotter", "icon": ""},
+    "Custodes-Pattern": {"name": "Contemptor Honour Guard", "icon": ""},
+    "Sororitas-Pattern": {"name": "Battle Sister Novice", "icon": ""},
+    "Kroot-Pattern": {"name": "Kroot Hound", "icon": ""},
+    "Genestealer-Cultist-Pattern": {"name": "Aberrant Muscle", "icon": ""},
+    "Death-Guard-Pattern": {"name": "Plague Drone", "icon": ""},
+    "Grey-Knight-Pattern": {"name": "Purgation Servo-Skull", "icon": ""},
+    "Chaos-Pattern": {"name": "Chaos Familiar", "icon": ""},
+    "Ultramarines Astartes": {"name": "Cogitator Servo-Skull", "icon": ""},
+    "Blood Angels Astartes": {"name": "Sanguinary Servitor", "icon": ""},
+    "Dark Angels Astartes": {"name": "Deathwing Servitor", "icon": ""},
+    "Space Wolves Astartes": {"name": "Fenrisian Wolf", "icon": ""},
+    "Imperial Fists Astartes": {"name": "Bastion Servitor", "icon": ""},
+    "Salamanders Astartes": {"name": "Promethean Servitor", "icon": ""},
+    "Raven Guard Astartes": {"name": "Shadow Scout", "icon": ""},
+    "White Scars Astartes": {"name": "Attack Bike Rider", "icon": ""},
+    "Iron Hands Astartes": {"name": "Servitor Cyborg", "icon": ""},
+    "Black Templars Astartes": {"name": "Neophyte Squire", "icon": ""},
+}
 INC_MINION_RARITY_STATS = {
     "Common":    {"wounds": 8,  "shock": 4,  "resilience": 2, "damage": 3,  "ed": 1, "cost": 15},
     "Uncommon":  {"wounds": 14, "shock": 6,  "resilience": 3, "damage": 5,  "ed": 1, "cost": 30},
@@ -9851,6 +9972,29 @@ def _inc_generate_tyranid_wargear_offer():
             "label": weapon["name"], "cost": cost, "detail": detail}
 
 
+# Human's Dreadnought is a single named sarcophagus, not a stackable
+# roster - these are permanent upgrade modules bolted onto it, one at a
+# time, rather than new Minions. "field"+"amount" adds a flat stat bonus;
+# "flag" flips a permanent boolean on the Dreadnought's own dict (see
+# _inc_minion_group_attack for how bulk/module_bleed/module_double_attack
+# are read).
+INC_DREADNOUGHT_MODULES = {
+    "Common": [{"name": "Reinforced Plating", "effect": "Dreadnought's Resilience permanently +5.", "field": "resilience", "amount": 5}],
+    "Uncommon": [{"name": "Siege Hammer Fist", "effect": "Dreadnought's Damage permanently +4.", "field": "damage", "amount": 4}],
+    "Rare": [{"name": "Bleeding Talons", "effect": "Dreadnought's attacks always inflict Bleeding.", "flag": "module_bleed"}],
+    "Legendary": [{"name": "Bulkhead Frame", "effect": "Dreadnought gains Bulk - always draws every enemy attack while alive.", "flag": "bulk"}],
+    "Unique": [{"name": "Twin-Linked Autocannons", "effect": "Dreadnought attacks twice per action.", "flag": "module_double_attack"}],
+}
+
+
+def _inc_generate_dreadnought_module_offer():
+    rarity = random.choice(_INC_RARITIES)
+    mod = random.choice(INC_DREADNOUGHT_MODULES[rarity])
+    cost = INC_MINION_RARITY_STATS[rarity]["cost"]
+    return {"type": "minion_module", "rarity": rarity, "name": mod["name"], "module": mod,
+            "label": mod["name"], "cost": cost, "detail": f"{rarity} · {mod['effect']}"}
+
+
 def _inc_minion_stats(name, icon, origin, rarity, level=1, fellowship=INC_ORIGIN_BASE_ATTR, bulk=False):
     """Stats keyed on an explicit name/icon (not re-rolled here) so
     levelling up a Minion you already own keeps its identity - only
@@ -9895,9 +10039,13 @@ def _inc_generate_minion_offer(origin):
 
 
 def _inc_revive_minions(run):
-    """Full heal on Rest - every dead Minion comes back at max Wounds/Shock."""
+    """Full heal on Rest - every dead Minion comes back at max Wounds/Shock,
+    except a Dreadnought (no_mid_run_revive) - it only gets back up at the
+    start of the pilot's next run, Rest included."""
     minions = [dict(m) for m in (run.get("minions") or [])]
     for m in minions:
+        if m.get("no_mid_run_revive") and not m.get("alive"):
+            continue
         m["wounds_current"] = int(m.get("wounds_max", 0) or 0)
         m["shock_current"] = int(m.get("shock_max", 0) or 0)
         m["alive"] = True
